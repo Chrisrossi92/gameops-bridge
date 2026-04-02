@@ -71,9 +71,26 @@ function parseLineSafe(line: string): NormalizedEvent | null {
   }
 
   ingestStats.seenLines += 1;
+  const isJoinOrLeaveDebugLine =
+    trimmed.includes('Player joined server') ||
+    trimmed.includes('Player connection lost server');
+
+  if (isJoinOrLeaveDebugLine) {
+    console.log(`[debug][journal-line] ${trimmed}`);
+  }
 
   try {
-    return adapter.parseLine(trimmed, { serverId });
+    const parsedEvent = adapter.parseLine(trimmed, { serverId });
+
+    if (isJoinOrLeaveDebugLine) {
+      if (parsedEvent) {
+        console.log(`[debug][journal-match] eventType=${parsedEvent.eventType} player=${parsedEvent.playerName ?? 'unknown'}`);
+      } else {
+        console.log('[debug][journal-parse-miss] join/leave line was ignored by parser');
+      }
+    }
+
+    return parsedEvent;
   } catch (error) {
     ingestStats.parseFailures += 1;
     console.warn(`Parse failure for line: ${trimmed.slice(0, 220)}`, error);

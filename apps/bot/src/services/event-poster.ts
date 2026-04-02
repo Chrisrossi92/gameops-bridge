@@ -3,6 +3,12 @@ import { EmbedBuilder, type Client } from 'discord.js';
 import { resolveEventChannelId } from '../local-config.js';
 import { formatDurationCompact } from './time-format.js';
 
+interface ValheimJournalDetails {
+  worldName: string;
+  joinCode: string;
+  currentPlayerCount: number;
+}
+
 function truncate(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
     return value;
@@ -17,13 +23,51 @@ function formatTimestamp(value: string): string {
   return `<t:${unix}:f> • <t:${unix}:R>`;
 }
 
-function getEventPresentation(event: NormalizedEvent): { title: string; color: number; description: string } {
+function getValheimJournalDetails(event: NormalizedEvent): ValheimJournalDetails | null {
+  const worldName = event.raw?.valheimWorldName;
+  const joinCode = event.raw?.valheimJoinCode;
+  const currentPlayerCount = event.raw?.valheimCurrentPlayerCount;
+
+  if (typeof worldName !== 'string' || typeof joinCode !== 'string' || typeof currentPlayerCount !== 'number') {
+    return null;
+  }
+
+  if (!worldName.trim() || !joinCode.trim() || !Number.isFinite(currentPlayerCount)) {
+    return null;
+  }
+
+  return {
+    worldName: worldName.trim(),
+    joinCode: joinCode.trim(),
+    currentPlayerCount: Math.max(0, Math.floor(currentPlayerCount))
+  };
+}
+
+function getEventPresentation(event: NormalizedEvent): {
+  title: string;
+  color: number;
+  description: string;
+  extraFields?: Array<{ name: string; value: string; inline?: boolean }>;
+} {
   const rawDuration = event.raw?.sessionDurationSeconds;
   const sessionDurationSeconds = typeof rawDuration === 'number' && Number.isFinite(rawDuration)
     ? Math.max(0, Math.floor(rawDuration))
     : null;
+  const valheimDetails = getValheimJournalDetails(event);
 
   if (event.eventType === 'PLAYER_JOIN') {
+    if (valheimDetails) {
+      return {
+        title: 'Player Joined',
+        color: 0x2ecc71,
+        description: `Now **${valheimDetails.currentPlayerCount}** player(s) online.`,
+        extraFields: [
+          { name: 'World', value: valheimDetails.worldName, inline: true },
+          { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
+        ]
+      };
+    }
+
     return {
       title: 'Player Joined',
       color: 0x2ecc71,
@@ -32,6 +76,19 @@ function getEventPresentation(event: NormalizedEvent): { title: string; color: n
   }
 
   if (event.eventType === 'PLAYER_LEAVE') {
+    if (valheimDetails) {
+      const durationText = sessionDurationSeconds !== null ? ` Last session: ${formatDurationCompact(sessionDurationSeconds)}.` : '';
+      return {
+        title: 'Player Left',
+        color: 0x95a5a6,
+        description: `Now **${valheimDetails.currentPlayerCount}** player(s) online.${durationText}`,
+        extraFields: [
+          { name: 'World', value: valheimDetails.worldName, inline: true },
+          { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
+        ]
+      };
+    }
+
     const durationText = sessionDurationSeconds !== null ? ` (session ${formatDurationCompact(sessionDurationSeconds)})` : '';
     return {
       title: 'Player Left',
@@ -66,7 +123,7 @@ function getEventPresentation(event: NormalizedEvent): { title: string; color: n
 function buildEventEmbed(event: NormalizedEvent): EmbedBuilder {
   const presentation = getEventPresentation(event);
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(presentation.color)
     .setTitle(presentation.title)
     .setDescription(presentation.description)
@@ -74,6 +131,12 @@ function buildEventEmbed(event: NormalizedEvent): EmbedBuilder {
       { name: 'Server', value: event.serverId, inline: true },
       { name: 'When', value: formatTimestamp(event.occurredAt), inline: true }
     );
+
+  if (presentation.extraFields && presentation.extraFields.length > 0) {
+    embed.addFields(...presentation.extraFields);
+  }
+
+  return embed;
 }
 
 export async function postRoutedEvent(client: Client, event: NormalizedEvent): Promise<boolean> {

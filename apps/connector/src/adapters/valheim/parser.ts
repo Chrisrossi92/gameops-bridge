@@ -21,11 +21,39 @@ function splitTimestampAndMessage(line: string): { occurredAt: string; message: 
   };
 }
 
+function normalizeJournalPrefixes(message: string): string {
+  let normalized = message.trim();
+
+  // Example: Apr 02 10:28:44 ubuntu-32gb-ash-2 run-valheim.sh[467370]:
+  normalized = normalized.replace(
+    /^[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:\s*/,
+    ''
+  );
+
+  // Example: 04/02/2026 10:28:44:
+  normalized = normalized.replace(/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}:\s*/, '');
+
+  return normalized.trim();
+}
+
 function createEvent(input: Omit<NormalizedEvent, 'game'>): NormalizedEvent {
   return normalizedEventSchema.parse({
     ...input,
     game: 'valheim'
   });
+}
+
+function extractPlayerCount(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function extractPlayerName(message: string, pattern: RegExp): string | null {
@@ -47,7 +75,8 @@ function extractPlayerName(message: string, pattern: RegExp): string | null {
 export const valheimAdapter: GameLogAdapter = {
   game: 'valheim',
   parseLine(line: string, context: ParseContext): NormalizedEvent | null {
-    const { occurredAt, message } = splitTimestampAndMessage(line);
+    const { occurredAt, message: rawMessage } = splitTimestampAndMessage(line);
+    const message = normalizeJournalPrefixes(rawMessage);
 
     if (!message) {
       return null;
@@ -62,9 +91,65 @@ export const valheimAdapter: GameLogAdapter = {
       });
     }
 
+    const structuredJoinMatch = /player joined server "([^"]+)" that has join code (\d+), now (\d+) player\(s\)/i.exec(message);
+    if (structuredJoinMatch) {
+      const worldName = structuredJoinMatch[1]?.trim();
+      const joinCode = structuredJoinMatch[2]?.trim();
+      const currentPlayerCount = extractPlayerCount(structuredJoinMatch[3]);
+
+      if (!worldName || !joinCode || currentPlayerCount === null) {
+        return null;
+      }
+
+      console.log(
+        `[debug][valheim-structured-match] world=${worldName} joinCode=${joinCode} players=${currentPlayerCount}`
+      );
+
+      return createEvent({
+        serverId: context.serverId,
+        eventType: 'PLAYER_JOIN',
+        occurredAt,
+        message: `World "${worldName}" now has ${currentPlayerCount} player(s) online.`,
+        raw: {
+          valheimWorldName: worldName,
+          valheimJoinCode: joinCode,
+          valheimCurrentPlayerCount: currentPlayerCount,
+          valheimEventSource: 'journal'
+        }
+      });
+    }
+
+    const structuredLeaveMatch = /player connection lost server "([^"]+)" that has join code (\d+), now (\d+) player\(s\)/i.exec(message);
+    if (structuredLeaveMatch) {
+      const worldName = structuredLeaveMatch[1]?.trim();
+      const joinCode = structuredLeaveMatch[2]?.trim();
+      const currentPlayerCount = extractPlayerCount(structuredLeaveMatch[3]);
+
+      if (!worldName || !joinCode || currentPlayerCount === null) {
+        return null;
+      }
+
+      console.log(
+        `[debug][valheim-structured-match] world=${worldName} joinCode=${joinCode} players=${currentPlayerCount}`
+      );
+
+      return createEvent({
+        serverId: context.serverId,
+        eventType: 'PLAYER_LEAVE',
+        occurredAt,
+        message: `World "${worldName}" now has ${currentPlayerCount} player(s) online.`,
+        raw: {
+          valheimWorldName: worldName,
+          valheimJoinCode: joinCode,
+          valheimCurrentPlayerCount: currentPlayerCount,
+          valheimEventSource: 'journal'
+        }
+      });
+    }
+
     const joinedPlayerName = extractPlayerName(
       message,
-      /player joined(?::\s*|\s+server\s+)(.+)$/i
+      /player joined:\s*(.+)$/i
     );
     if (joinedPlayerName) {
 
@@ -79,7 +164,7 @@ export const valheimAdapter: GameLogAdapter = {
 
     const leftPlayerName = extractPlayerName(
       message,
-      /(?:player left:\s*|player connection lost server\s+)(.+)$/i
+      /player left:\s*(.+)$/i
     );
     if (leftPlayerName) {
 

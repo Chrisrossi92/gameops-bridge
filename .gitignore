@@ -8,3 +8,4 @@ apps/*/dist
 packages/*/node_modules
 packages/*/dist
 .DS_Store
+EOF
