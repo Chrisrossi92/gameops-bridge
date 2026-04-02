@@ -1,0 +1,8 @@
+[2026-04-01T20:00:00Z] Game server connected
+[2026-04-01T20:01:10Z] Player joined: Alice
+[2026-04-01T20:03:22Z] Player joined: Bob
+[2026-04-01T20:07:45Z] WARNING: Save operation took 12.5s
+[2026-04-01T20:10:05Z] Player left: Alice
+[2026-04-01T20:11:20Z] ERROR: Failed to write world data
+[2026-04-01T20:20:00Z] Player joined: Charlie
+[2026-04-02T12:55:00Z] Player joined: TEST456

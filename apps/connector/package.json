@@ -1,0 +1,22 @@
+{
+  "name": "@gameops/connector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo 'no lint yet'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@gameops/shared": "^0.1.0",
+    "dotenv": "^17.2.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

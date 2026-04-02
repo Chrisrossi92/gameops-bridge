@@ -1,0 +1,23 @@
+{
+  "guildDefaults": {
+    "1323324192627888339": "valheim-local-1"
+  },
+  "channelGroups": {
+    "1323324192627888339": {
+      "activity": "REPLACE_ACTIVITY_CHANNEL_ID",
+      "alerts": "REPLACE_ALERTS_CHANNEL_ID"
+    }
+  },
+  "eventRoutes": {
+    "valheim-local-1": {
+      "PLAYER_JOIN": "REPLACE_ACTIVITY_CHANNEL_ID",
+      "PLAYER_LEAVE": "REPLACE_ACTIVITY_CHANNEL_ID",
+      "SERVER_ONLINE": "REPLACE_ACTIVITY_CHANNEL_ID",
+      "HEALTH_WARN": "REPLACE_ALERTS_CHANNEL_ID"
+    }
+  },
+  "polling": {
+    "intervalMs": 5000,
+    "fetchLimit": 20
+  }
+}
