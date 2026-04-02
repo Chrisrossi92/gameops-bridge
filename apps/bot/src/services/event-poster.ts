@@ -9,6 +9,20 @@ interface ValheimJournalDetails {
   currentPlayerCount: number;
 }
 
+function getResolvedPlayerName(event: NormalizedEvent): string | null {
+  if (event.playerName && event.playerName.trim()) {
+    return event.playerName.trim();
+  }
+
+  const rawName = event.raw?.valheimResolvedPlayerName;
+
+  if (typeof rawName !== 'string' || !rawName.trim()) {
+    return null;
+  }
+
+  return rawName.trim();
+}
+
 function truncate(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
     return value;
@@ -54,13 +68,15 @@ function getEventPresentation(event: NormalizedEvent): {
     ? Math.max(0, Math.floor(rawDuration))
     : null;
   const valheimDetails = getValheimJournalDetails(event);
+  const resolvedPlayerName = getResolvedPlayerName(event);
 
   if (event.eventType === 'PLAYER_JOIN') {
     if (valheimDetails) {
+      const playerPrefix = resolvedPlayerName ? `**${resolvedPlayerName}** joined. ` : '';
       return {
         title: 'Player Joined',
         color: 0x2ecc71,
-        description: `Now **${valheimDetails.currentPlayerCount}** player(s) online.`,
+        description: `${playerPrefix}Now **${valheimDetails.currentPlayerCount}** player(s) online.`,
         extraFields: [
           { name: 'World', value: valheimDetails.worldName, inline: true },
           { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
@@ -78,10 +94,11 @@ function getEventPresentation(event: NormalizedEvent): {
   if (event.eventType === 'PLAYER_LEAVE') {
     if (valheimDetails) {
       const durationText = sessionDurationSeconds !== null ? ` Last session: ${formatDurationCompact(sessionDurationSeconds)}.` : '';
+      const playerPrefix = resolvedPlayerName ? `**${resolvedPlayerName}** left. ` : '';
       return {
         title: 'Player Left',
         color: 0x95a5a6,
-        description: `Now **${valheimDetails.currentPlayerCount}** player(s) online.${durationText}`,
+        description: `${playerPrefix}Now **${valheimDetails.currentPlayerCount}** player(s) online.${durationText}`,
         extraFields: [
           { name: 'World', value: valheimDetails.worldName, inline: true },
           { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
