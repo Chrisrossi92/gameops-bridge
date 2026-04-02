@@ -29,6 +29,8 @@ let processedLineCount = 0;
 
 const IDENTITY_BUFFER_MAX = 25;
 const IDENTITY_CORRELATION_WINDOW_MS = 20_000;
+const PENDING_JOIN_BUFFER_MAX = 30;
+const PENDING_JOIN_TTL_MS = 30_000;
 
 interface IdentityCandidate {
   playerName: string;
@@ -37,6 +39,13 @@ interface IdentityCandidate {
 }
 
 const recentIdentityCandidates: IdentityCandidate[] = [];
+
+interface PendingJoin {
+  event: NormalizedEvent;
+  observedAtMs: number;
+}
+
+const pendingJoins: PendingJoin[] = [];
 
 const ingestStats = {
   seenLines: 0,
@@ -64,25 +73,25 @@ function pushIdentityCandidate(candidate: IdentityCandidate): void {
   }
 }
 
-function captureIdentityCandidate(line: string): void {
+function extractIdentityCandidate(line: string): IdentityCandidate | null {
   const normalized = normalizeJournalPrefixes(line);
   const zdoidMatch = /got character zdoid from\s+([^:]+)\s*:/i.exec(normalized);
 
   if (!zdoidMatch) {
-    return;
+    return null;
   }
 
   const playerName = zdoidMatch[1]?.trim();
 
   if (!playerName) {
-    return;
+    return null;
   }
 
-  pushIdentityCandidate({
+  return {
     playerName,
     observedAtMs: Date.now(),
     source: 'got_character_zdoid'
-  });
+  };
 }
 
 function correlateJoinIdentity(event: NormalizedEvent): NormalizedEvent {
@@ -122,6 +131,82 @@ function correlateJoinIdentity(event: NormalizedEvent): NormalizedEvent {
   return event;
 }
 
+function enqueuePendingJoin(event: NormalizedEvent): void {
+  pendingJoins.push({
+    event,
+    observedAtMs: Date.now()
+  });
+
+  if (pendingJoins.length > PENDING_JOIN_BUFFER_MAX) {
+    const dropped = pendingJoins.shift();
+
+    if (dropped) {
+      console.log(
+        `[debug][pending-join-expired] server=${dropped.event.serverId} reason=buffer-overflow`
+      );
+    }
+  }
+
+  console.log(`[debug][pending-join] server=${event.serverId} queued_at=${new Date().toISOString()}`);
+}
+
+function expirePendingJoins(nowMs: number): NormalizedEvent[] {
+  const expired: NormalizedEvent[] = [];
+
+  while (pendingJoins.length > 0) {
+    const oldest = pendingJoins[0];
+
+    if (!oldest || nowMs - oldest.observedAtMs <= PENDING_JOIN_TTL_MS) {
+      break;
+    }
+
+    pendingJoins.shift();
+    expired.push(oldest.event);
+    console.log(
+      `[debug][pending-join-expired] server=${oldest.event.serverId} age_ms=${nowMs - oldest.observedAtMs}`
+    );
+  }
+
+  return expired;
+}
+
+function resolvePendingJoinWithIdentity(candidate: IdentityCandidate): NormalizedEvent | null {
+  for (let index = pendingJoins.length - 1; index >= 0; index -= 1) {
+    const pending = pendingJoins[index];
+
+    if (!pending) {
+      continue;
+    }
+
+    const ageMs = candidate.observedAtMs - pending.observedAtMs;
+
+    if (ageMs < 0 || ageMs > PENDING_JOIN_TTL_MS) {
+      continue;
+    }
+
+    pendingJoins.splice(index, 1);
+
+    const resolvedEvent: NormalizedEvent = {
+      ...pending.event,
+      playerName: candidate.playerName,
+      raw: {
+        ...(pending.event.raw ?? {}),
+        valheimResolvedPlayerName: candidate.playerName,
+        valheimIdentityConfidence: 'low',
+        valheimIdentitySource: candidate.source
+      }
+    };
+
+    console.log(
+      `[debug][pending-join-resolved] server=${resolvedEvent.serverId} player=${candidate.playerName} age_ms=${ageMs}`
+    );
+
+    return resolvedEvent;
+  }
+
+  return null;
+}
+
 function logIngestStats(reason: string): void {
   console.log(
     `[connector] ${reason} lines=${ingestStats.seenLines} parsed=${ingestStats.parsedEvents} parse_failures=${ingestStats.parseFailures}`
@@ -152,15 +237,27 @@ async function ingestEvents(events: NormalizedEvent[]): Promise<void> {
   console.log(`Ingested ${events.length} ${game} event(s) for server ${serverId}`);
 }
 
-function parseLineSafe(line: string): NormalizedEvent | null {
+function parseLineSafe(line: string): NormalizedEvent[] {
   const trimmed = line.trim();
+  const nowMs = Date.now();
+  const readyEvents = expirePendingJoins(nowMs);
 
   if (!trimmed) {
-    return null;
+    return readyEvents;
   }
 
   ingestStats.seenLines += 1;
-  captureIdentityCandidate(trimmed);
+  const identityCandidate = extractIdentityCandidate(trimmed);
+
+  if (identityCandidate) {
+    pushIdentityCandidate(identityCandidate);
+    const resolvedPendingJoin = resolvePendingJoinWithIdentity(identityCandidate);
+
+    if (resolvedPendingJoin) {
+      readyEvents.push(resolvedPendingJoin);
+    }
+  }
+
   const isJoinOrLeaveDebugLine =
     trimmed.includes('Player joined server') ||
     trimmed.includes('Player connection lost server');
@@ -181,11 +278,21 @@ function parseLineSafe(line: string): NormalizedEvent | null {
       }
     }
 
-    return correlatedEvent;
+    if (!correlatedEvent) {
+      return readyEvents;
+    }
+
+    if (correlatedEvent.eventType === 'PLAYER_JOIN' && !correlatedEvent.playerName) {
+      enqueuePendingJoin(correlatedEvent);
+      return readyEvents;
+    }
+
+    readyEvents.push(correlatedEvent);
+    return readyEvents;
   } catch (error) {
     ingestStats.parseFailures += 1;
     console.warn(`Parse failure for line: ${trimmed.slice(0, 220)}`, error);
-    return null;
+    return readyEvents;
   }
 }
 
@@ -213,9 +320,7 @@ async function runFileMode(): Promise<void> {
       return;
     }
 
-    const events = newLines
-      .map((line) => parseLineSafe(line))
-      .filter((event): event is NormalizedEvent => event !== null);
+    const events = newLines.flatMap((line) => parseLineSafe(line));
 
     await ingestEvents(events);
     logIngestStats('file poll');
@@ -237,13 +342,13 @@ async function runJournalMode(): Promise<void> {
 
   await startValheimJournalStream({
     onLine: async (line) => {
-      const event = parseLineSafe(line);
+      const events = parseLineSafe(line);
 
-      if (!event) {
+      if (events.length === 0) {
         return;
       }
 
-      await ingestEvents([event]);
+      await ingestEvents(events);
       logIngestStats('journal stream');
     }
   });
