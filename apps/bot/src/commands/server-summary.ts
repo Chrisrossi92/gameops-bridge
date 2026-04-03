@@ -35,7 +35,13 @@ function resolveKnownDisplayName(
 }
 
 function getOnlineDuration(startedAt: string): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  const startedAtMs = Date.parse(startedAt);
+
+  if (!Number.isFinite(startedAtMs)) {
+    return 'unknown';
+  }
+
+  const seconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
   return formatDurationCompact(seconds);
 }
 
@@ -154,6 +160,7 @@ export const serverSummaryCommand: BotCommand = {
       const aliasSuffix = knownName && normalizePlayerKey(knownName) !== normalizePlayerKey(session.playerName)
         ? ` (_${session.playerName}_)`
         : '';
+      // Duration is intentionally derived only from the active session startedAt timestamp.
       return `• ${displayName}${aliasSuffix} — ${getOnlineDuration(session.startedAt)}`;
     });
 
