@@ -103,6 +103,32 @@ function pickConfidence(a: IdentityConfidence, b: IdentityConfidence): IdentityC
   return rank[a] >= rank[b] ? a : b;
 }
 
+function deriveConfidenceFromEvidence(params: {
+  observationCount: number;
+  knownPlatformIds: string[];
+  knownPlayFabIds: string[];
+  knownCharacterIds: string[];
+  identitySources: string[];
+}): IdentityConfidence {
+  const platformCount = dedupe(params.knownPlatformIds).length;
+  const playFabCount = dedupe(params.knownPlayFabIds).length;
+  const characterCount = dedupe(params.knownCharacterIds).length;
+  const sourceCount = dedupe(params.identitySources).length;
+
+  const hasStrongId = platformCount > 0 || playFabCount > 0;
+  const hasAnyId = hasStrongId || characterCount > 0;
+
+  if (params.observationCount >= 12 && hasStrongId && sourceCount >= 2) {
+    return 'high';
+  }
+
+  if (params.observationCount >= 5 && hasAnyId) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
 export function upsertKnownPlayerObservation(input: UpsertKnownPlayerObservationInput): void {
   const parsedConfidence = identityConfidenceSchema.parse(input.confidence);
   const path = resolveStorePath();
@@ -119,7 +145,7 @@ export function upsertKnownPlayerObservation(input: UpsertKnownPlayerObservation
       return;
     }
 
-    store.players[existingIndex] = knownPlayerRecordSchema.parse({
+    const nextRecordBase = {
       ...existing,
       displayName: input.displayName,
       knownPlatformIds: mergeUnique(existing.knownPlatformIds, input.platformId),
@@ -127,15 +153,30 @@ export function upsertKnownPlayerObservation(input: UpsertKnownPlayerObservation
       knownCharacterIds: mergeUnique(existing.knownCharacterIds, input.characterId),
       identitySources: mergeUnique(existing.identitySources, input.source),
       observationCount: existing.observationCount + 1,
-      confidence: pickConfidence(existing.confidence, parsedConfidence),
       lastSeenAt: input.observedAt
+    };
+
+    const derivedConfidence = deriveConfidenceFromEvidence({
+      observationCount: nextRecordBase.observationCount,
+      knownPlatformIds: nextRecordBase.knownPlatformIds,
+      knownPlayFabIds: nextRecordBase.knownPlayFabIds,
+      knownCharacterIds: nextRecordBase.knownCharacterIds,
+      identitySources: nextRecordBase.identitySources
+    });
+
+    store.players[existingIndex] = knownPlayerRecordSchema.parse({
+      ...nextRecordBase,
+      confidence: pickConfidence(
+        pickConfidence(existing.confidence, parsedConfidence),
+        derivedConfidence
+      )
     });
 
     writeStore(path, store);
     return;
   }
 
-  store.players.push(knownPlayerRecordSchema.parse({
+  const initialRecord = {
     serverId: input.serverId,
     displayName: input.displayName,
     normalizedPlayerKey,
@@ -144,9 +185,20 @@ export function upsertKnownPlayerObservation(input: UpsertKnownPlayerObservation
     knownCharacterIds: input.characterId ? [input.characterId] : [],
     identitySources: [input.source],
     observationCount: 1,
-    confidence: parsedConfidence,
     firstSeenAt: input.observedAt,
     lastSeenAt: input.observedAt
+  };
+  const derivedInitialConfidence = deriveConfidenceFromEvidence({
+    observationCount: initialRecord.observationCount,
+    knownPlatformIds: initialRecord.knownPlatformIds,
+    knownPlayFabIds: initialRecord.knownPlayFabIds,
+    knownCharacterIds: initialRecord.knownCharacterIds,
+    identitySources: initialRecord.identitySources
+  });
+
+  store.players.push(knownPlayerRecordSchema.parse({
+    ...initialRecord,
+    confidence: pickConfidence(parsedConfidence, derivedInitialConfidence)
   }));
 
   writeStore(path, store);
