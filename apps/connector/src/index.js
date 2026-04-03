@@ -38,6 +38,12 @@ function normalizeJournalPrefixes(message) {
     normalized = normalized.replace(/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}:\s*/, '');
     return normalized.trim();
 }
+function isCharacterId(value) {
+    return /^\d+:\d+$/.test(value.trim());
+}
+function isPlatformId(value) {
+    return /^(steam|xbox|psn|eos)[_:-]/i.test(value.trim());
+}
 function pushIdentityCandidate(candidate) {
     recentIdentityCandidates.push(candidate);
     if (recentIdentityCandidates.length > IDENTITY_BUFFER_MAX) {
@@ -54,14 +60,17 @@ function extractIdentityCandidate(line) {
     if (!playerName) {
         return null;
     }
-    const platformId = zdoidMatch[2]?.trim();
+    const characterId = zdoidMatch[2]?.trim();
     const playFabIdMatch = /playfab(?:\s*id)?\s*[:=]\s*([a-z0-9_-]+)/i.exec(normalized);
     const playFabId = playFabIdMatch?.[1]?.trim();
+    const platformIdMatch = /\b((?:steam|xbox|psn|eos)[_:-][a-z0-9:_-]+)\b/i.exec(normalized);
+    const inferredPlatformId = platformIdMatch?.[1]?.trim();
     return {
         playerName,
         observedAtMs: Date.now(),
         source: 'got_character_zdoid',
-        ...(platformId ? { platformId } : {}),
+        ...(characterId && isCharacterId(characterId) ? { characterId } : {}),
+        ...(inferredPlatformId && isPlatformId(inferredPlatformId) ? { platformId: inferredPlatformId } : {}),
         ...(playFabId ? { playFabId } : {})
     };
 }
@@ -88,6 +97,7 @@ function correlateJoinIdentity(event) {
                 valheimResolvedPlayerName: candidate.playerName,
                 valheimIdentityConfidence: 'low',
                 valheimIdentitySource: candidate.source,
+                valheimIdentityCharacterId: candidate.characterId,
                 valheimIdentityPlatformId: candidate.platformId,
                 valheimIdentityPlayFabId: candidate.playFabId
             }
@@ -140,6 +150,7 @@ function resolvePendingJoinWithIdentity(candidate) {
                 valheimResolvedPlayerName: candidate.playerName,
                 valheimIdentityConfidence: 'low',
                 valheimIdentitySource: candidate.source,
+                valheimIdentityCharacterId: candidate.characterId,
                 valheimIdentityPlatformId: candidate.platformId,
                 valheimIdentityPlayFabId: candidate.playFabId
             }
@@ -178,21 +189,27 @@ function recordKnownPlayerObservation(event) {
     }
     const sourceValue = event.raw?.valheimIdentitySource;
     const confidenceValue = event.raw?.valheimIdentityConfidence;
+    const characterIdValue = event.raw?.valheimIdentityCharacterId;
     const platformIdValue = event.raw?.valheimIdentityPlatformId;
     const playFabIdValue = event.raw?.valheimIdentityPlayFabId;
     const source = typeof sourceValue === 'string' && sourceValue.trim() ? sourceValue : 'direct_join_line';
     const confidence = confidenceValue === 'high' || confidenceValue === 'medium' || confidenceValue === 'low'
         ? confidenceValue
         : 'low';
+    const characterId = typeof characterIdValue === 'string' && characterIdValue.trim() && isCharacterId(characterIdValue)
+        ? characterIdValue.trim()
+        : undefined;
     const platformId = typeof platformIdValue === 'string' && platformIdValue.trim() ? platformIdValue.trim() : undefined;
     const playFabId = typeof playFabIdValue === 'string' && playFabIdValue.trim() ? playFabIdValue.trim() : undefined;
+    const safePlatformId = platformId && !isCharacterId(platformId) ? platformId : undefined;
     const observation = {
         serverId: event.serverId,
         displayName: event.playerName,
         observedAt: event.occurredAt,
         source,
         confidence,
-        ...(platformId ? { platformId } : {}),
+        ...(characterId ? { characterId } : {}),
+        ...(safePlatformId ? { platformId: safePlatformId } : {}),
         ...(playFabId ? { playFabId } : {})
     };
     upsertKnownPlayerObservation(observation);

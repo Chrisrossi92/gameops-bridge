@@ -69,6 +69,7 @@ export const knownPlayerRecordSchema = z.object({
   normalizedPlayerKey: z.string().min(1),
   knownPlatformIds: z.array(z.string()).default([]),
   knownPlayFabIds: z.array(z.string()).default([]),
+  knownCharacterIds: z.array(z.string()).default([]),
   identitySources: z.array(z.string()).default([]),
   observationCount: z.number().int().min(1),
   confidence: identityConfidenceSchema,

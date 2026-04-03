@@ -7,6 +7,7 @@ interface UpsertKnownPlayerObservationInput {
     confidence: IdentityConfidence;
     platformId?: string;
     playFabId?: string;
+    characterId?: string;
 }
 export declare function upsertKnownPlayerObservation(input: UpsertKnownPlayerObservationInput): void;
 export declare function findKnownPlayer(serverId: string, displayName: string): KnownPlayerRecord | null;

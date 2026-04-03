@@ -5,6 +5,28 @@ function resolveStorePath() {
     const rawPath = process.env.KNOWN_PLAYER_STORE_PATH ?? '../known-players.json';
     return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
 }
+function isCharacterId(value) {
+    return /^\d+:\d+$/.test(value.trim());
+}
+function isPlatformId(value) {
+    return /^(steam|xbox|psn|eos)[_:-]/i.test(value.trim());
+}
+function dedupe(values) {
+    return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+function normalizeKnownPlayerRecord(record) {
+    const migratedCharacterIdsFromPlatform = record.knownPlatformIds.filter((id) => isCharacterId(id));
+    const cleanedPlatformIds = record.knownPlatformIds.filter((id) => !isCharacterId(id) && isPlatformId(id));
+    return knownPlayerRecordSchema.parse({
+        ...record,
+        knownPlatformIds: dedupe(cleanedPlatformIds),
+        knownPlayFabIds: dedupe(record.knownPlayFabIds),
+        knownCharacterIds: dedupe([
+            ...record.knownCharacterIds,
+            ...migratedCharacterIdsFromPlatform
+        ])
+    });
+}
 export function getKnownPlayersForServer(serverId, limit = 20) {
     const path = resolveStorePath();
     try {
@@ -14,7 +36,7 @@ export function getKnownPlayersForServer(serverId, limit = 20) {
         const parsedPlayers = rawPlayers
             .map((rawPlayer) => knownPlayerRecordSchema.safeParse(rawPlayer))
             .filter((result) => result.success)
-            .map((result) => result.data);
+            .map((result) => normalizeKnownPlayerRecord(result.data));
         return parsedPlayers
             .filter((player) => player.serverId === serverId)
             .sort((a, b) => {
