@@ -1,16 +1,21 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import {
+  identityObservationSchema,
   identityConfidenceSchema,
   knownPlayerRecordSchema,
+  type IdentityObservation,
   type IdentityConfidence,
   type KnownPlayerRecord
 } from '@gameops/shared';
 import { z } from 'zod';
 
 const fileStoreSchema = z.object({
-  players: z.array(knownPlayerRecordSchema).default([])
+  players: z.array(knownPlayerRecordSchema).default([]),
+  observations: z.array(identityObservationSchema).default([])
 });
+
+const MAX_OBSERVATIONS = 20_000;
 
 interface UpsertKnownPlayerObservationInput {
   serverId: string;
@@ -69,10 +74,11 @@ function loadStore(path: string): z.infer<typeof fileStoreSchema> {
     const validated = fileStoreSchema.parse(parsed);
 
     return {
-      players: validated.players.map((player) => normalizeKnownPlayerRecord(player))
+      players: validated.players.map((player) => normalizeKnownPlayerRecord(player)),
+      observations: validated.observations
     };
   } catch {
-    return { players: [] };
+    return { players: [], observations: [] };
   }
 }
 
@@ -129,11 +135,32 @@ function deriveConfidenceFromEvidence(params: {
   return 'low';
 }
 
+function toIdentityObservation(input: UpsertKnownPlayerObservationInput, normalizedPlayerKey: string): IdentityObservation {
+  return identityObservationSchema.parse({
+    serverId: input.serverId,
+    displayName: input.displayName,
+    normalizedPlayerKey,
+    observedAt: input.observedAt,
+    ...(input.playFabId ? { playFabId: input.playFabId } : {}),
+    ...(input.platformId ? { platformId: input.platformId } : {}),
+    ...(input.characterId ? { characterId: input.characterId } : {}),
+    source: input.source,
+    confidence: input.confidence
+  });
+}
+
 export function upsertKnownPlayerObservation(input: UpsertKnownPlayerObservationInput): void {
   const parsedConfidence = identityConfidenceSchema.parse(input.confidence);
   const path = resolveStorePath();
   const store = loadStore(path);
   const normalizedPlayerKey = normalizePlayerKey(input.displayName);
+  const observation = toIdentityObservation(input, normalizedPlayerKey);
+
+  store.observations.push(observation);
+
+  if (store.observations.length > MAX_OBSERVATIONS) {
+    store.observations.splice(0, store.observations.length - MAX_OBSERVATIONS);
+  }
 
   const existingIndex = store.players.findIndex((record) => (
     record.serverId === input.serverId && record.normalizedPlayerKey === normalizedPlayerKey

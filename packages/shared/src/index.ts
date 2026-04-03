@@ -93,6 +93,39 @@ export const knownPlayerProfileResponseSchema = z.object({
 });
 export type KnownPlayerProfileResponse = z.infer<typeof knownPlayerProfileResponseSchema>;
 
+export const identityObservationSchema = z.object({
+  serverId: z.string().min(1),
+  displayName: z.string().min(1),
+  normalizedPlayerKey: z.string().min(1),
+  observedAt: z.string().datetime(),
+  playFabId: z.string().optional(),
+  platformId: z.string().optional(),
+  characterId: z.string().optional(),
+  source: z.string().min(1),
+  confidence: identityConfidenceSchema
+});
+export type IdentityObservation = z.infer<typeof identityObservationSchema>;
+
+export const playerCharacterAuditAssessmentSchema = z.enum([
+  'insufficient_evidence',
+  'single_character_observed',
+  'possible_multiple_characters',
+  'multiple_characters_observed'
+]);
+export type PlayerCharacterAuditAssessment = z.infer<typeof playerCharacterAuditAssessmentSchema>;
+
+export const playerCharacterAuditResponseSchema = z.object({
+  serverId: z.string().min(1),
+  player: knownPlayerRecordSchema.nullable(),
+  distinctPlatformIds: z.array(z.string()),
+  distinctPlayFabIds: z.array(z.string()),
+  distinctCharacterIds: z.array(z.string()),
+  recentObservations: z.array(identityObservationSchema),
+  totalObservations: z.number().int().min(0),
+  assessment: playerCharacterAuditAssessmentSchema
+});
+export type PlayerCharacterAuditResponse = z.infer<typeof playerCharacterAuditResponseSchema>;
+
 export const serverStateSchema = z.enum([
   'online',
   'offline',

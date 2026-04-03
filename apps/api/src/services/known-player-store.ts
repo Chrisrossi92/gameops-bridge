@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { knownPlayerRecordSchema, type KnownPlayerRecord } from '@gameops/shared';
+import {
+  identityObservationSchema,
+  knownPlayerRecordSchema,
+  type IdentityObservation,
+  type KnownPlayerRecord
+} from '@gameops/shared';
 
 function resolveStorePath(): string {
   const rawPath = process.env.KNOWN_PLAYER_STORE_PATH ?? '../known-players.json';
@@ -83,4 +88,40 @@ export function getKnownPlayerForServer(serverId: string, playerKeyOrName: strin
   });
 
   return match ?? null;
+}
+
+export function getIdentityObservationsForPlayer(
+  serverId: string,
+  player: Pick<KnownPlayerRecord, 'normalizedPlayerKey' | 'displayName'>,
+  limit = 20
+): IdentityObservation[] {
+  const path = resolveStorePath();
+
+  try {
+    const content = readFileSync(path, 'utf8');
+    const parsedRoot = JSON.parse(content) as { observations?: unknown };
+    const rawObservations = Array.isArray(parsedRoot.observations) ? parsedRoot.observations : [];
+    const parsedObservations = rawObservations
+      .map((rawObservation) => identityObservationSchema.safeParse(rawObservation))
+      .filter((result): result is { success: true; data: IdentityObservation } => result.success)
+      .map((result) => result.data);
+
+    const playerLookup = normalizePlayerLookupKey(player.normalizedPlayerKey);
+    const displayLookup = normalizePlayerLookupKey(player.displayName);
+
+    return parsedObservations
+      .filter((observation) => {
+        if (observation.serverId !== serverId) {
+          return false;
+        }
+
+        const normalizedKey = normalizePlayerLookupKey(observation.normalizedPlayerKey);
+        const normalizedName = normalizePlayerLookupKey(observation.displayName);
+        return normalizedKey === playerLookup || normalizedName === displayLookup;
+      })
+      .sort((a, b) => b.observedAt.localeCompare(a.observedAt))
+      .slice(0, Math.max(1, limit));
+  } catch {
+    return [];
+  }
 }
