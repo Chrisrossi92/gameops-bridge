@@ -86,7 +86,10 @@ export type KnownPlayersResponse = z.infer<typeof knownPlayersResponseSchema>;
 
 export const knownPlayerProfileResponseSchema = z.object({
   serverId: z.string().min(1),
-  player: knownPlayerRecordSchema.nullable()
+  player: knownPlayerRecordSchema.nullable(),
+  isOnline: z.boolean(),
+  activeSession: sessionRecordSchema.nullable(),
+  recentSessions: z.array(sessionRecordSchema)
 });
 export type KnownPlayerProfileResponse = z.infer<typeof knownPlayerProfileResponseSchema>;
 

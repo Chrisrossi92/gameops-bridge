@@ -2,6 +2,7 @@ import { knownPlayerProfileResponseSchema } from '@gameops/shared';
 import { EmbedBuilder, SlashCommandBuilder } from 'discord.js';
 import { botConfig } from '../config.js';
 import { resolveServerIdForGuild } from '../services/server-resolution.js';
+import { formatDurationCompact } from '../services/time-format.js';
 import type { BotCommand } from './types.js';
 
 function formatList(values: string[]): string {
@@ -16,6 +17,15 @@ function formatTimestamp(value: string): string {
   }
 
   return date.toLocaleString();
+}
+
+function getOnlineDuration(startedAt: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  return formatDurationCompact(seconds);
+}
+
+function formatRecentSessionLine(endedAt: string, durationSeconds: number): string {
+  return `• ${formatTimestamp(endedAt)} (${formatDurationCompact(durationSeconds)})`;
 }
 
 export const playerProfileCommand: BotCommand = {
@@ -77,13 +87,14 @@ export const playerProfileCommand: BotCommand = {
       return;
     }
 
-    const player = parsed.data.player;
+    const { player, isOnline, activeSession, recentSessions } = parsed.data;
 
     const embed = new EmbedBuilder()
       .setColor(0x1f8b4c)
       .setTitle(`Player Profile: ${player.displayName}`)
       .setDescription(
         [
+          `Status: **${isOnline ? 'Online' : 'Offline'}**${activeSession ? ` (online ${getOnlineDuration(activeSession.startedAt)})` : ''}`,
           `Confidence: **${player.confidence}**`,
           `Observations: **${player.observationCount}**`,
           `First Seen: ${formatTimestamp(player.firstSeenAt)}`,
@@ -96,6 +107,19 @@ export const playerProfileCommand: BotCommand = {
         { name: 'Character IDs', value: formatList(player.knownCharacterIds), inline: true },
         { name: 'Identity Sources', value: formatList(player.identitySources), inline: false }
       )
+      .addFields({
+        name: 'Recent Sessions',
+        value: recentSessions.length > 0
+          ? recentSessions
+            .slice(0, 5)
+            .map((session) => formatRecentSessionLine(
+              session.endedAt ?? session.startedAt,
+              session.durationSeconds ?? 0
+            ))
+            .join('\n')
+          : 'None yet',
+        inline: false
+      })
       .setFooter({ text: `Server ${serverId} • Key ${player.normalizedPlayerKey}` });
 
     await interaction.reply({ embeds: [embed] });

@@ -5,7 +5,17 @@ import {
   type KnownPlayersResponse
 } from '@gameops/shared';
 import type { FastifyInstance } from 'fastify';
+import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from '../services/event-store.js';
 import { getKnownPlayerForServer, getKnownPlayersForServer } from '../services/known-player-store.js';
+
+function normalizePlayerKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isSamePlayer(sessionPlayerName: string, normalizedPlayerKey: string, displayName: string): boolean {
+  const normalizedSessionName = normalizePlayerKey(sessionPlayerName);
+  return normalizedSessionName === normalizedPlayerKey || normalizedSessionName === normalizePlayerKey(displayName);
+}
 
 export async function registerPlayerRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>('/servers/:serverId/players/known', async (request, reply): Promise<KnownPlayersResponse | { error: string }> => {
@@ -39,9 +49,32 @@ export async function registerPlayerRoutes(app: FastifyInstance): Promise<void> 
       return { error: 'Invalid playerKey' };
     }
 
+    const player = getKnownPlayerForServer(serverId, playerKey);
+
+    if (!player) {
+      return knownPlayerProfileResponseSchema.parse({
+        serverId,
+        player: null,
+        isOnline: false,
+        activeSession: null,
+        recentSessions: []
+      });
+    }
+
+    const activeSession = getActiveSessionsForServer(serverId).find((session) =>
+      isSamePlayer(session.playerName, player.normalizedPlayerKey, player.displayName)
+    ) ?? null;
+
+    const recentSessions = getRecentClosedSessionsForServer(serverId, 50)
+      .filter((session) => isSamePlayer(session.playerName, player.normalizedPlayerKey, player.displayName))
+      .slice(0, 5);
+
     return knownPlayerProfileResponseSchema.parse({
       serverId,
-      player: getKnownPlayerForServer(serverId, playerKey)
+      player,
+      isOnline: activeSession !== null,
+      activeSession,
+      recentSessions
     });
   });
 }
