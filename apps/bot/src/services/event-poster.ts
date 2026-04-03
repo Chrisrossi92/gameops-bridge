@@ -72,45 +72,45 @@ function getEventPresentation(event: NormalizedEvent): {
 
   if (event.eventType === 'PLAYER_JOIN') {
     if (valheimDetails) {
-      const playerPrefix = resolvedPlayerName ? `**${resolvedPlayerName}** joined. ` : '';
+      const playerLabel = resolvedPlayerName ? `**${resolvedPlayerName}**` : 'Player';
       return {
-        title: 'Player Joined',
+        title: 'Player Joined (+1)',
         color: 0x2ecc71,
-        description: `${playerPrefix}Now **${valheimDetails.currentPlayerCount}** player(s) online.`,
+        description: `${playerLabel} • online **${valheimDetails.currentPlayerCount}**`,
         extraFields: [
           { name: 'World', value: valheimDetails.worldName, inline: true },
-          { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
+          { name: 'Code', value: valheimDetails.joinCode, inline: true }
         ]
       };
     }
 
     return {
-      title: 'Player Joined',
+      title: 'Player Joined (+1)',
       color: 0x2ecc71,
-      description: event.playerName ? `**${event.playerName}** joined the server.` : 'A player joined the server.'
+      description: event.playerName ? `**${event.playerName}** joined` : 'A player joined'
     };
   }
 
   if (event.eventType === 'PLAYER_LEAVE') {
     if (valheimDetails) {
-      const durationText = sessionDurationSeconds !== null ? ` Last session: ${formatDurationCompact(sessionDurationSeconds)}.` : '';
-      const playerPrefix = resolvedPlayerName ? `**${resolvedPlayerName}** left. ` : '';
+      const durationText = sessionDurationSeconds !== null ? ` • session ${formatDurationCompact(sessionDurationSeconds)}` : '';
+      const playerLabel = resolvedPlayerName ? `**${resolvedPlayerName}**` : 'Player';
       return {
-        title: 'Player Left',
+        title: 'Player Left (-1)',
         color: 0x95a5a6,
-        description: `${playerPrefix}Now **${valheimDetails.currentPlayerCount}** player(s) online.${durationText}`,
+        description: `${playerLabel} • online **${valheimDetails.currentPlayerCount}**${durationText}`,
         extraFields: [
           { name: 'World', value: valheimDetails.worldName, inline: true },
-          { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
+          { name: 'Code', value: valheimDetails.joinCode, inline: true }
         ]
       };
     }
 
-    const durationText = sessionDurationSeconds !== null ? ` (session ${formatDurationCompact(sessionDurationSeconds)})` : '';
+    const durationText = sessionDurationSeconds !== null ? ` • session ${formatDurationCompact(sessionDurationSeconds)}` : '';
     return {
-      title: 'Player Left',
+      title: 'Player Left (-1)',
       color: 0x95a5a6,
-      description: event.playerName ? `**${event.playerName}** left the server${durationText}.` : `A player left the server${durationText}.`
+      description: event.playerName ? `**${event.playerName}** left${durationText}` : `A player left${durationText}`
     };
   }
 
@@ -145,12 +145,48 @@ function buildEventEmbed(event: NormalizedEvent): EmbedBuilder {
     .setTitle(presentation.title)
     .setDescription(presentation.description)
     .addFields(
-      { name: 'Server', value: event.serverId, inline: true },
       { name: 'When', value: formatTimestamp(event.occurredAt), inline: true }
-    );
+    )
+    .setFooter({ text: `Server ${event.serverId}` });
 
   if (presentation.extraFields && presentation.extraFields.length > 0) {
     embed.addFields(...presentation.extraFields);
+  }
+
+  return embed;
+}
+
+function buildBurstEmbed(serverId: string, eventType: 'PLAYER_JOIN' | 'PLAYER_LEAVE', events: NormalizedEvent[]): EmbedBuilder {
+  const deltaPrefix = eventType === 'PLAYER_JOIN' ? '+' : '-';
+  const title = eventType === 'PLAYER_JOIN' ? `Join Burst (${deltaPrefix}${events.length})` : `Leave Burst (${deltaPrefix}${events.length})`;
+  const color = eventType === 'PLAYER_JOIN' ? 0x27ae60 : 0x7f8c8d;
+  const latestEvent = events[events.length - 1];
+  const latestDetails = latestEvent ? getValheimJournalDetails(latestEvent) : null;
+  const latestWhen = latestEvent ? formatTimestamp(latestEvent.occurredAt) : 'Unknown';
+
+  const names = events
+    .map((event) => getResolvedPlayerName(event))
+    .filter((value): value is string => Boolean(value));
+  const uniqueNames = Array.from(new Set(names));
+  const namesLine = uniqueNames.length > 0
+    ? uniqueNames.slice(0, 6).map((name) => `\`${name}\``).join(', ')
+    : `${events.length} player event(s)`;
+  const overflow = uniqueNames.length > 6 ? `, +${uniqueNames.length - 6} more` : '';
+  const onlineLine = latestDetails ? `Online now **${latestDetails.currentPlayerCount}**` : '';
+
+  const descriptionParts = [namesLine + overflow, onlineLine].filter(Boolean);
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(title)
+    .setDescription(descriptionParts.join('\n'))
+    .addFields({ name: 'When', value: latestWhen, inline: true })
+    .setFooter({ text: `Server ${serverId}` });
+
+  if (latestDetails) {
+    embed.addFields(
+      { name: 'World', value: latestDetails.worldName, inline: true },
+      { name: 'Code', value: latestDetails.joinCode, inline: true }
+    );
   }
 
   return embed;
@@ -173,5 +209,34 @@ export async function postRoutedEvent(client: Client, event: NormalizedEvent): P
 
   await channel.send({ embeds: [buildEventEmbed(event)] });
   console.log(`[route] posted server=${event.serverId} type=${event.eventType} channel=${channelId}`);
+  return true;
+}
+
+export async function postRoutedBurstSummary(
+  client: Client,
+  serverId: string,
+  eventType: 'PLAYER_JOIN' | 'PLAYER_LEAVE',
+  events: NormalizedEvent[]
+): Promise<boolean> {
+  if (events.length === 0) {
+    return false;
+  }
+
+  const channelId = resolveEventChannelId(serverId, eventType);
+
+  if (!channelId) {
+    return false;
+  }
+
+  console.log(`[route] attempt burst server=${serverId} type=${eventType} count=${events.length} channel=${channelId}`);
+  const channel = await client.channels.fetch(channelId);
+
+  if (!channel || !channel.isTextBased() || !('send' in channel)) {
+    console.warn(`Skipping burst route: channel ${channelId} is unavailable or not text-based.`);
+    return false;
+  }
+
+  await channel.send({ embeds: [buildBurstEmbed(serverId, eventType, events)] });
+  console.log(`[route] posted burst server=${serverId} type=${eventType} count=${events.length} channel=${channelId}`);
   return true;
 }

@@ -2,9 +2,11 @@ import { recentEventsResponseSchema, type NormalizedEvent } from '@gameops/share
 import type { Client } from 'discord.js';
 import { botConfig } from '../config.js';
 import { getPollingConfig, getRoutedServerIds } from '../local-config.js';
-import { postRoutedEvent } from './event-poster.js';
+import { postRoutedBurstSummary, postRoutedEvent } from './event-poster.js';
 
 const MAX_FINGERPRINTS = 5000;
+const BURST_WINDOW_MS = 12_000;
+const BURST_MIN_EVENTS = 3;
 
 function createEventFingerprint(event: NormalizedEvent): string {
   return [
@@ -96,6 +98,7 @@ export function startEventPolling(client: Client): void {
       }
 
       let serverDedupeSkips = 0;
+      const unseenEvents: NormalizedEvent[] = [];
 
       for (const event of chronologicalEvents) {
         const fingerprint = createEventFingerprint(event);
@@ -107,11 +110,68 @@ export function startEventPolling(client: Client): void {
         }
 
         rememberFingerprint(fingerprint);
+        unseenEvents.push(event);
+      }
+
+      let index = 0;
+
+      while (index < unseenEvents.length) {
+        const current = unseenEvents[index];
+
+        if (!current) {
+          index += 1;
+          continue;
+        }
+
+        if (current.eventType !== 'PLAYER_JOIN' && current.eventType !== 'PLAYER_LEAVE') {
+          attemptedPosts += 1;
+          const posted = await postRoutedEvent(client, current);
+          if (posted) {
+            postedEvents += 1;
+          }
+          index += 1;
+          continue;
+        }
+
+        const burstEvents: NormalizedEvent[] = [current];
+        const currentMs = Date.parse(current.occurredAt);
+        let lookahead = index + 1;
+
+        while (lookahead < unseenEvents.length) {
+          const candidate = unseenEvents[lookahead];
+
+          if (!candidate || candidate.eventType !== current.eventType) {
+            break;
+          }
+
+          const candidateMs = Date.parse(candidate.occurredAt);
+          const ageMs = Math.abs(candidateMs - currentMs);
+
+          if (!Number.isFinite(candidateMs) || !Number.isFinite(currentMs) || ageMs > BURST_WINDOW_MS) {
+            break;
+          }
+
+          burstEvents.push(candidate);
+          lookahead += 1;
+        }
+
+        if (burstEvents.length >= BURST_MIN_EVENTS) {
+          attemptedPosts += 1;
+          const posted = await postRoutedBurstSummary(client, serverId, current.eventType, burstEvents);
+          if (posted) {
+            postedEvents += 1;
+          }
+          console.log(`[poll] compacted burst server=${serverId} type=${current.eventType} count=${burstEvents.length}`);
+          index += burstEvents.length;
+          continue;
+        }
+
         attemptedPosts += 1;
-        const posted = await postRoutedEvent(client, event);
+        const posted = await postRoutedEvent(client, current);
         if (posted) {
           postedEvents += 1;
         }
+        index += 1;
       }
 
       if (serverDedupeSkips > 0) {
