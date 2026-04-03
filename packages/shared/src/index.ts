@@ -84,6 +84,12 @@ export const knownPlayersResponseSchema = z.object({
 });
 export type KnownPlayersResponse = z.infer<typeof knownPlayersResponseSchema>;
 
+export const knownPlayerProfileResponseSchema = z.object({
+  serverId: z.string().min(1),
+  player: knownPlayerRecordSchema.nullable()
+});
+export type KnownPlayerProfileResponse = z.infer<typeof knownPlayerProfileResponseSchema>;
+
 export const serverStateSchema = z.enum([
   'online',
   'offline',

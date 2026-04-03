@@ -14,6 +14,12 @@ function isPlatformId(value) {
 function dedupe(values) {
     return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
+function normalizePlayerLookupKey(value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+}
 function normalizeKnownPlayerRecord(record) {
     const migratedCharacterIdsFromPlatform = record.knownPlatformIds.filter((id) => isCharacterId(id));
     const cleanedPlatformIds = record.knownPlatformIds.filter((id) => !isCharacterId(id) && isPlatformId(id));
@@ -50,5 +56,17 @@ export function getKnownPlayersForServer(serverId, limit = 20) {
     catch {
         return [];
     }
+}
+export function getKnownPlayerForServer(serverId, playerKeyOrName) {
+    const normalizedLookup = normalizePlayerLookupKey(playerKeyOrName);
+    if (!normalizedLookup) {
+        return null;
+    }
+    const players = getKnownPlayersForServer(serverId, 10_000);
+    const match = players.find((player) => {
+        return player.normalizedPlayerKey === normalizedLookup
+            || normalizePlayerLookupKey(player.displayName) === normalizedLookup;
+    });
+    return match ?? null;
 }
 //# sourceMappingURL=known-player-store.js.map

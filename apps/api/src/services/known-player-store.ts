@@ -19,6 +19,13 @@ function dedupe(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function normalizePlayerLookupKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
 function normalizeKnownPlayerRecord(record: KnownPlayerRecord): KnownPlayerRecord {
   const migratedCharacterIdsFromPlatform = record.knownPlatformIds.filter((id) => isCharacterId(id));
   const cleanedPlatformIds = record.knownPlatformIds.filter((id) => !isCharacterId(id) && isPlatformId(id));
@@ -59,4 +66,21 @@ export function getKnownPlayersForServer(serverId: string, limit = 20): KnownPla
   } catch {
     return [];
   }
+}
+
+export function getKnownPlayerForServer(serverId: string, playerKeyOrName: string): KnownPlayerRecord | null {
+  const normalizedLookup = normalizePlayerLookupKey(playerKeyOrName);
+
+  if (!normalizedLookup) {
+    return null;
+  }
+
+  const players = getKnownPlayersForServer(serverId, 10_000);
+
+  const match = players.find((player) => {
+    return player.normalizedPlayerKey === normalizedLookup
+      || normalizePlayerLookupKey(player.displayName) === normalizedLookup;
+  });
+
+  return match ?? null;
 }
