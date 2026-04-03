@@ -1,6 +1,16 @@
 import { EmbedBuilder } from 'discord.js';
 import { resolveEventChannelId } from '../local-config.js';
 import { formatDurationCompact } from './time-format.js';
+function getResolvedPlayerName(event) {
+    if (event.playerName && event.playerName.trim()) {
+        return event.playerName.trim();
+    }
+    const rawName = event.raw?.valheimResolvedPlayerName;
+    if (typeof rawName !== 'string' || !rawName.trim()) {
+        return null;
+    }
+    return rawName.trim();
+}
 function truncate(value, maxLength) {
     if (value.length <= maxLength) {
         return value;
@@ -12,12 +22,42 @@ function formatTimestamp(value) {
     const unix = Math.floor(date.getTime() / 1000);
     return `<t:${unix}:f> • <t:${unix}:R>`;
 }
+function getValheimJournalDetails(event) {
+    const worldName = event.raw?.valheimWorldName;
+    const joinCode = event.raw?.valheimJoinCode;
+    const currentPlayerCount = event.raw?.valheimCurrentPlayerCount;
+    if (typeof worldName !== 'string' || typeof joinCode !== 'string' || typeof currentPlayerCount !== 'number') {
+        return null;
+    }
+    if (!worldName.trim() || !joinCode.trim() || !Number.isFinite(currentPlayerCount)) {
+        return null;
+    }
+    return {
+        worldName: worldName.trim(),
+        joinCode: joinCode.trim(),
+        currentPlayerCount: Math.max(0, Math.floor(currentPlayerCount))
+    };
+}
 function getEventPresentation(event) {
     const rawDuration = event.raw?.sessionDurationSeconds;
     const sessionDurationSeconds = typeof rawDuration === 'number' && Number.isFinite(rawDuration)
         ? Math.max(0, Math.floor(rawDuration))
         : null;
+    const valheimDetails = getValheimJournalDetails(event);
+    const resolvedPlayerName = getResolvedPlayerName(event);
     if (event.eventType === 'PLAYER_JOIN') {
+        if (valheimDetails) {
+            const playerPrefix = resolvedPlayerName ? `**${resolvedPlayerName}** joined. ` : '';
+            return {
+                title: 'Player Joined',
+                color: 0x2ecc71,
+                description: `${playerPrefix}Now **${valheimDetails.currentPlayerCount}** player(s) online.`,
+                extraFields: [
+                    { name: 'World', value: valheimDetails.worldName, inline: true },
+                    { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
+                ]
+            };
+        }
         return {
             title: 'Player Joined',
             color: 0x2ecc71,
@@ -25,6 +65,19 @@ function getEventPresentation(event) {
         };
     }
     if (event.eventType === 'PLAYER_LEAVE') {
+        if (valheimDetails) {
+            const durationText = sessionDurationSeconds !== null ? ` Last session: ${formatDurationCompact(sessionDurationSeconds)}.` : '';
+            const playerPrefix = resolvedPlayerName ? `**${resolvedPlayerName}** left. ` : '';
+            return {
+                title: 'Player Left',
+                color: 0x95a5a6,
+                description: `${playerPrefix}Now **${valheimDetails.currentPlayerCount}** player(s) online.${durationText}`,
+                extraFields: [
+                    { name: 'World', value: valheimDetails.worldName, inline: true },
+                    { name: 'Join Code', value: valheimDetails.joinCode, inline: true }
+                ]
+            };
+        }
         const durationText = sessionDurationSeconds !== null ? ` (session ${formatDurationCompact(sessionDurationSeconds)})` : '';
         return {
             title: 'Player Left',
@@ -54,11 +107,15 @@ function getEventPresentation(event) {
 }
 function buildEventEmbed(event) {
     const presentation = getEventPresentation(event);
-    return new EmbedBuilder()
+    const embed = new EmbedBuilder()
         .setColor(presentation.color)
         .setTitle(presentation.title)
         .setDescription(presentation.description)
         .addFields({ name: 'Server', value: event.serverId, inline: true }, { name: 'When', value: formatTimestamp(event.occurredAt), inline: true });
+    if (presentation.extraFields && presentation.extraFields.length > 0) {
+        embed.addFields(...presentation.extraFields);
+    }
+    return embed;
 }
 export async function postRoutedEvent(client, event) {
     const channelId = resolveEventChannelId(event.serverId, event.eventType);

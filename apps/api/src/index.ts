@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { registerEventRoutes } from './routes/events.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerPlayerRoutes } from './routes/players.js';
 import { registerServerStatusRoute } from './routes/server-status.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 
@@ -17,6 +18,7 @@ await registerHealthRoute(app);
 await registerServerStatusRoute(app);
 await registerEventRoutes(app);
 await registerSessionRoutes(app);
+await registerPlayerRoutes(app);
 
 app.listen({ port, host: '0.0.0.0' })
   .then(() => {

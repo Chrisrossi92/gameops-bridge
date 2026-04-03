@@ -60,6 +60,29 @@ export const recentSessionsResponseSchema = z.object({
 });
 export type RecentSessionsResponse = z.infer<typeof recentSessionsResponseSchema>;
 
+export const identityConfidenceSchema = z.enum(['low', 'medium', 'high']);
+export type IdentityConfidence = z.infer<typeof identityConfidenceSchema>;
+
+export const knownPlayerRecordSchema = z.object({
+  serverId: z.string().min(1),
+  displayName: z.string().min(1),
+  normalizedPlayerKey: z.string().min(1),
+  knownPlatformIds: z.array(z.string()).default([]),
+  knownPlayFabIds: z.array(z.string()).default([]),
+  identitySources: z.array(z.string()).default([]),
+  observationCount: z.number().int().min(1),
+  confidence: identityConfidenceSchema,
+  firstSeenAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime()
+});
+export type KnownPlayerRecord = z.infer<typeof knownPlayerRecordSchema>;
+
+export const knownPlayersResponseSchema = z.object({
+  serverId: z.string().min(1),
+  players: z.array(knownPlayerRecordSchema)
+});
+export type KnownPlayersResponse = z.infer<typeof knownPlayersResponseSchema>;
+
 export const serverStateSchema = z.enum([
   'online',
   'offline',

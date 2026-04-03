@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 export function startValheimJournalStream(options) {
-    console.log('Starting valheim-journal stream: journalctl -u valheim -f -n 0');
-    const child = spawn('journalctl', ['-u', 'valheim', '-f', '-n', '0'], {
+    console.log('Starting valheim-journal stream: journalctl -u valheim -f -n 0 -o cat');
+    const child = spawn('journalctl', ['-u', 'valheim', '-f', '-n', '0', '-o', 'cat'], {
         stdio: ['ignore', 'pipe', 'pipe']
     });
     child.stderr.setEncoding('utf8');
