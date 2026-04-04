@@ -40,9 +40,7 @@ interface WarningSummaryEntry {
   signature: string;
 }
 
-const SERVER_OPTIONS = [
-  { id: 'valheim-local-1', label: 'Valheim Local 1' }
-];
+const SERVER_OPTIONS = [{ id: 'valheim-local-1', label: 'Valheim Local 1' }];
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
@@ -57,6 +55,7 @@ function App() {
   const [knownPlayerPreview, setKnownPlayerPreview] = useState<KnownPlayerEntry[]>([]);
   const [selectedPlayerLookupKey, setSelectedPlayerLookupKey] = useState<string | null>(null);
   const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<KnownPlayerProfileResponse | null>(null);
+  const [expandedLists, setExpandedLists] = useState<Record<string, boolean>>({});
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,9 +63,13 @@ function App() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
+    setExpandedLists({});
+  }, [selectedPlayerLookupKey]);
+
+  useEffect(() => {
     let isMounted = true;
 
-    async function loadDashboard(isInitialLoad: boolean) {
+    async function loadDashboard(isInitialLoad: boolean): Promise<void> {
       try {
         if (isInitialLoad && isMounted) {
           setLoading(true);
@@ -113,10 +116,10 @@ function App() {
 
         const online = sessionsParsed.data.sessions.map((session) => {
           const normalizedSessionName = normalizePlayerKey(session.playerName);
-          const knownMatch = knownPlayers.find((player) => {
-            return player.normalizedPlayerKey === normalizedSessionName
-              || normalizePlayerKey(player.displayName) === normalizedSessionName;
-          });
+          const knownMatch = knownPlayers.find((player) => (
+            player.normalizedPlayerKey === normalizedSessionName
+            || normalizePlayerKey(player.displayName) === normalizedSessionName
+          ));
 
           return {
             playerName: session.playerName,
@@ -129,6 +132,7 @@ function App() {
         const joinLeaveEvents = eventsParsed.data.events.filter((event) => (
           event.eventType === 'PLAYER_JOIN' || event.eventType === 'PLAYER_LEAVE'
         ));
+
         const warningEvents = eventsParsed.data.events
           .filter((event) => event.eventType === 'HEALTH_WARN')
           .slice(0, 20);
@@ -143,6 +147,7 @@ function App() {
         setRecentActivity(joinLeaveEvents.slice(0, 10));
         setLatestWarnings(warningEvents);
         setKnownPlayerCount(knownPlayersParsed.data.players.length);
+
         const sortedKnownPlayers = [...knownPlayersParsed.data.players].sort((a, b) => {
           const confidenceRankDiff = getConfidenceRank(b.confidence) - getConfidenceRank(a.confidence);
 
@@ -169,6 +174,7 @@ function App() {
         setLastUpdatedAt(new Date().toISOString());
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
+
         if (isMounted) {
           setError(message);
         }
@@ -225,6 +231,7 @@ function App() {
         }
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
+
         if (isMounted) {
           setProfileError(message);
           setSelectedPlayerProfile(null);
@@ -261,6 +268,8 @@ function App() {
 
   const selectedPlayer = selectedPlayerProfile?.player ?? null;
   const selectedRecentSessions = selectedPlayerProfile?.recentSessions ?? [];
+  const activeSession = selectedPlayerProfile?.activeSession ?? null;
+  const isOnline = selectedPlayerProfile?.isOnline ?? false;
   const warningSummaryEntries = useMemo(() => summarizeWarnings(latestWarnings), [latestWarnings]);
 
   return (
@@ -375,9 +384,7 @@ function App() {
           <div className="detail-header">
             <h2>Player Details</h2>
             {selectedPlayerLookupKey ? (
-              <button type="button" onClick={() => setSelectedPlayerLookupKey(null)}>
-                Clear
-              </button>
+              <button type="button" onClick={() => setSelectedPlayerLookupKey(null)}>Clear</button>
             ) : null}
           </div>
 
@@ -390,53 +397,132 @@ function App() {
 
           {selectedPlayer ? (
             <>
-              <p><strong>Name:</strong> {selectedPlayer.displayName}</p>
-              <p><strong>Confidence:</strong> {selectedPlayer.confidence}</p>
-              <p><strong>Observations:</strong> {selectedPlayer.observationCount}</p>
-              <p><strong>First Seen:</strong> {formatTimestamp(selectedPlayer.firstSeenAt)}</p>
-              <p><strong>Last Seen:</strong> {formatTimestamp(selectedPlayer.lastSeenAt)}</p>
+              <div className="moderation-summary">
+                <div className="summary-item">
+                  <span className="summary-label">Confidence</span>
+                  <span className={`confidence-badge confidence-${selectedPlayer.confidence}`}>{selectedPlayer.confidence}</span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Character Usage</span>
+                  <span className={`summary-pill ${selectedPlayer.knownCharacterIds.length > 1 ? 'warn' : 'ok'}`}>
+                    {selectedPlayer.knownCharacterIds.length > 1 ? 'Multiple character IDs observed' : 'Single/none observed'}
+                  </span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Current Status</span>
+                  <span className={`summary-pill ${isOnline ? 'live' : 'neutral'}`}>
+                    {isOnline ? `Online${activeSession ? ` • ${formatDuration(activeSession.startedAt)}` : ''}` : 'Offline'}
+                  </span>
+                </div>
+              </div>
 
-              <div className="detail-grid">
-                <div>
-                  <h3>Recent Sessions</h3>
+              <div className="detail-grid grouped">
+                <section className="detail-block">
+                  <h3>Identity</h3>
+                  <ul className="list compact">
+                    <li><span>Name</span><span>{selectedPlayer.displayName}</span></li>
+                    <li><span>Observations</span><span>{selectedPlayer.observationCount}</span></li>
+                    <li><span>First Seen</span><span>{formatTimestamp(selectedPlayer.firstSeenAt)}</span></li>
+                    <li><span>Last Seen</span><span>{formatTimestamp(selectedPlayer.lastSeenAt)}</span></li>
+                  </ul>
+                </section>
+
+                <section className="detail-block">
+                  <h3>Sessions</h3>
                   <ul className="list compact">
                     {selectedRecentSessions.length === 0 ? <li>None</li> : null}
-                    {selectedRecentSessions.slice(0, 5).map((session, index) => (
+                    {sliceForDisplay(selectedRecentSessions, expandedLists.sessions, 4).map((session, index) => (
                       <li key={`${session.startedAt}:${index}`}>
                         <span>{formatTimestamp(session.endedAt ?? session.startedAt)}</span>
                         <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
-                <div>
-                  <h3>Character IDs</h3>
+                  {selectedRecentSessions.length > 4 ? (
+                    <button
+                      type="button"
+                      className="inline-toggle"
+                      onClick={() => setExpandedLists((prev) => ({ ...prev, sessions: !prev.sessions }))}
+                    >
+                      {expandedLists.sessions ? 'Show less' : `Show all (${selectedRecentSessions.length})`}
+                    </button>
+                  ) : null}
+                </section>
+
+                <section className="detail-block">
+                  <h3>Character Usage</h3>
+                  <p className="subtle inline-count">Total IDs: {selectedPlayer.knownCharacterIds.length}</p>
                   <ul className="list compact">
                     {selectedPlayer.knownCharacterIds.length === 0 ? <li>None</li> : null}
-                    {selectedPlayer.knownCharacterIds.slice(0, 8).map((id) => <li key={id}>{id}</li>)}
+                    {sliceForDisplay(selectedPlayer.knownCharacterIds, expandedLists.characterIds, 6).map((id) => <li key={id}>{id}</li>)}
                   </ul>
-                </div>
-                <div>
-                  <h3>Platform IDs</h3>
-                  <ul className="list compact">
-                    {selectedPlayer.knownPlatformIds.length === 0 ? <li>None</li> : null}
-                    {selectedPlayer.knownPlatformIds.slice(0, 6).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
-                  </ul>
-                </div>
-                <div>
-                  <h3>PlayFab IDs</h3>
-                  <ul className="list compact">
-                    {selectedPlayer.knownPlayFabIds.length === 0 ? <li>None</li> : null}
-                    {selectedPlayer.knownPlayFabIds.slice(0, 6).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
-                  </ul>
-                </div>
-                <div>
-                  <h3>Identity Sources</h3>
-                  <ul className="list compact">
-                    {selectedPlayer.identitySources.length === 0 ? <li>None</li> : null}
-                    {selectedPlayer.identitySources.slice(0, 8).map((source) => <li key={source}>{source}</li>)}
-                  </ul>
-                </div>
+                  {selectedPlayer.knownCharacterIds.length > 6 ? (
+                    <button
+                      type="button"
+                      className="inline-toggle"
+                      onClick={() => setExpandedLists((prev) => ({ ...prev, characterIds: !prev.characterIds }))}
+                    >
+                      {expandedLists.characterIds ? 'Show less' : `Show all (${selectedPlayer.knownCharacterIds.length})`}
+                    </button>
+                  ) : null}
+                </section>
+
+                <section className="detail-block">
+                  <h3>IDs</h3>
+                  <p className="subtle inline-count">
+                    Platform {selectedPlayer.knownPlatformIds.length} • PlayFab {selectedPlayer.knownPlayFabIds.length} • Sources {selectedPlayer.identitySources.length}
+                  </p>
+                  <div className="id-columns">
+                    <div>
+                      <h4>Platform</h4>
+                      <ul className="list compact">
+                        {selectedPlayer.knownPlatformIds.length === 0 ? <li>None</li> : null}
+                        {sliceForDisplay(selectedPlayer.knownPlatformIds, expandedLists.platformIds, 4).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
+                      </ul>
+                      {selectedPlayer.knownPlatformIds.length > 4 ? (
+                        <button
+                          type="button"
+                          className="inline-toggle"
+                          onClick={() => setExpandedLists((prev) => ({ ...prev, platformIds: !prev.platformIds }))}
+                        >
+                          {expandedLists.platformIds ? 'Less' : `All (${selectedPlayer.knownPlatformIds.length})`}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div>
+                      <h4>PlayFab</h4>
+                      <ul className="list compact">
+                        {selectedPlayer.knownPlayFabIds.length === 0 ? <li>None</li> : null}
+                        {sliceForDisplay(selectedPlayer.knownPlayFabIds, expandedLists.playFabIds, 4).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
+                      </ul>
+                      {selectedPlayer.knownPlayFabIds.length > 4 ? (
+                        <button
+                          type="button"
+                          className="inline-toggle"
+                          onClick={() => setExpandedLists((prev) => ({ ...prev, playFabIds: !prev.playFabIds }))}
+                        >
+                          {expandedLists.playFabIds ? 'Less' : `All (${selectedPlayer.knownPlayFabIds.length})`}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div>
+                      <h4>Sources</h4>
+                      <ul className="list compact">
+                        {selectedPlayer.identitySources.length === 0 ? <li>None</li> : null}
+                        {sliceForDisplay(selectedPlayer.identitySources, expandedLists.sources, 5).map((source) => <li key={source}>{source}</li>)}
+                      </ul>
+                      {selectedPlayer.identitySources.length > 5 ? (
+                        <button
+                          type="button"
+                          className="inline-toggle"
+                          onClick={() => setExpandedLists((prev) => ({ ...prev, sources: !prev.sources }))}
+                        >
+                          {expandedLists.sources ? 'Less' : `All (${selectedPlayer.identitySources.length})`}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
               </div>
             </>
           ) : null}
@@ -444,6 +530,10 @@ function App() {
       </section>
     </main>
   );
+}
+
+function sliceForDisplay<T>(items: T[], expanded: boolean | undefined, limit: number): T[] {
+  return expanded ? items : items.slice(0, limit);
 }
 
 function normalizePlayerKey(value: string): string {
@@ -533,12 +623,12 @@ function summarizeWarnings(events: NormalizedEvent[]): WarningSummaryEntry[] {
     const previousMs = previous ? Date.parse(previous.latestAt) : Number.NaN;
 
     if (
-      previous &&
-      previous.category === category &&
-      previous.signature === signature &&
-      Number.isFinite(occurredAtMs) &&
-      Number.isFinite(previousMs) &&
-      Math.abs(previousMs - occurredAtMs) <= WARNING_GROUP_WINDOW_MS
+      previous
+      && previous.category === category
+      && previous.signature === signature
+      && Number.isFinite(occurredAtMs)
+      && Number.isFinite(previousMs)
+      && Math.abs(previousMs - occurredAtMs) <= WARNING_GROUP_WINDOW_MS
     ) {
       previous.count += 1;
       continue;
