@@ -356,7 +356,9 @@ function parseLineSafe(line: string): NormalizedEvent[] {
 
   const isJoinOrLeaveDebugLine =
     trimmed.includes('Player joined server') ||
-    trimmed.includes('Player connection lost server');
+    trimmed.includes('Player connection lost server') ||
+    trimmed.includes('ZPlayFabSocket::Dispose') ||
+    trimmed.includes('Keep socket for playfab/');
 
   if (isJoinOrLeaveDebugLine) {
     console.log(`[debug][journal-line] ${trimmed}`);
