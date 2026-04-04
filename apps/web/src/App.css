@@ -90,6 +90,58 @@
   font-size: 0.93rem;
 }
 
+.activity-list {
+  gap: 0.35rem;
+}
+
+.activity-row {
+  border-radius: 0.5rem;
+  padding: 0.28rem 0.42rem;
+  border: 1px solid #e5eaf2;
+  background: #fff;
+  align-items: center;
+}
+
+.activity-join {
+  border-left: 3px solid #22c55e;
+}
+
+.activity-leave {
+  border-left: 3px solid #ef4444;
+}
+
+.activity-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.activity-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.06rem 0.46rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.activity-badge-join {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.activity-badge-leave {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.activity-time {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .clickable-row {
   cursor: pointer;
   border-radius: 0.45rem;

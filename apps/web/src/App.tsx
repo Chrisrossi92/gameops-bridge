@@ -314,12 +314,17 @@ function App() {
 
         <article className="card">
           <h2>Recent Activity</h2>
-          <ul className="list">
+          <ul className="list activity-list">
             {recentActivity.length === 0 ? <li>No recent joins/leaves</li> : null}
             {recentActivity.map((event, index) => (
-              <li key={`${event.eventType}:${event.occurredAt}:${index}`}>
-                <span>
-                  {event.eventType === 'PLAYER_JOIN' ? '+ join' : '- leave'}
+              <li
+                key={`${event.eventType}:${event.occurredAt}:${index}`}
+                className={`activity-row ${event.eventType === 'PLAYER_JOIN' ? 'activity-join' : 'activity-leave'}`}
+              >
+                <span className="activity-main">
+                  <span className={`activity-badge ${event.eventType === 'PLAYER_JOIN' ? 'activity-badge-join' : 'activity-badge-leave'}`}>
+                    {event.eventType === 'PLAYER_JOIN' ? '+1 JOIN' : '-1 LEAVE'}
+                  </span>
                   {event.playerName ? ' ' : ''}
                   {event.playerName ? (
                     <button
@@ -331,7 +336,7 @@ function App() {
                     </button>
                   ) : null}
                 </span>
-                <span className="subtle">{formatClock(event.occurredAt)}</span>
+                <span className="subtle activity-time">{formatClock(event.occurredAt)}</span>
               </li>
             ))}
           </ul>
