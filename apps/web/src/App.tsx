@@ -27,6 +27,7 @@ interface KnownPlayerEntry {
   normalizedPlayerKey: string;
   confidence: string;
   lastSeenAt: string;
+  observationCount: number;
 }
 
 const SERVER_OPTIONS = [
@@ -95,7 +96,8 @@ function App() {
           displayName: player.displayName,
           normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
           confidence: player.confidence,
-          lastSeenAt: player.lastSeenAt
+          lastSeenAt: player.lastSeenAt,
+          observationCount: player.observationCount
         }));
 
         const online = sessionsParsed.data.sessions.map((session) => {
@@ -130,11 +132,28 @@ function App() {
         setRecentActivity(joinLeaveEvents.slice(0, 10));
         setLatestWarnings(warningEvents);
         setKnownPlayerCount(knownPlayersParsed.data.players.length);
-        setKnownPlayerPreview(knownPlayersParsed.data.players.slice(0, 8).map((player) => ({
+        const sortedKnownPlayers = [...knownPlayersParsed.data.players].sort((a, b) => {
+          const confidenceRankDiff = getConfidenceRank(b.confidence) - getConfidenceRank(a.confidence);
+
+          if (confidenceRankDiff !== 0) {
+            return confidenceRankDiff;
+          }
+
+          const recencyDiff = Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt);
+
+          if (Number.isFinite(recencyDiff) && recencyDiff !== 0) {
+            return recencyDiff;
+          }
+
+          return b.observationCount - a.observationCount;
+        });
+
+        setKnownPlayerPreview(sortedKnownPlayers.slice(0, 8).map((player) => ({
           displayName: player.displayName,
           normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
           confidence: player.confidence,
-          lastSeenAt: player.lastSeenAt
+          lastSeenAt: player.lastSeenAt,
+          observationCount: player.observationCount
         })));
         setLastUpdatedAt(new Date().toISOString());
       } catch (caughtError) {
@@ -280,7 +299,16 @@ function App() {
               <li key={`${event.eventType}:${event.occurredAt}:${index}`}>
                 <span>
                   {event.eventType === 'PLAYER_JOIN' ? '+ join' : '- leave'}
-                  {event.playerName ? ` ${event.playerName}` : ''}
+                  {event.playerName ? ' ' : ''}
+                  {event.playerName ? (
+                    <button
+                      type="button"
+                      className="inline-player-link"
+                      onClick={() => setSelectedPlayerLookupKey(normalizePlayerKey(event.playerName ?? ''))}
+                    >
+                      {event.playerName}
+                    </button>
+                  ) : null}
                 </span>
                 <span className="subtle">{formatClock(event.occurredAt)}</span>
               </li>
@@ -301,7 +329,10 @@ function App() {
                 onClick={() => setSelectedPlayerLookupKey(player.normalizedPlayerKey)}
               >
                 <span>{player.displayName}</span>
-                <span className="subtle">{player.confidence}</span>
+                <span className="known-meta">
+                  <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
+                  <span className="subtle">obs {player.observationCount}</span>
+                </span>
               </li>
             ))}
           </ul>
@@ -469,6 +500,18 @@ function formatDurationFromSeconds(totalSeconds: number): string {
   }
 
   return `${seconds}s`;
+}
+
+function getConfidenceRank(confidence: string): number {
+  if (confidence === 'high') {
+    return 3;
+  }
+
+  if (confidence === 'medium') {
+    return 2;
+  }
+
+  return 1;
 }
 
 export default App;
