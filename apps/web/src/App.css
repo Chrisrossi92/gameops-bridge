@@ -1,40 +1,93 @@
 .dashboard {
-  max-width: 900px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem 1rem 3rem;
+  padding: 1.5rem 1rem 2.5rem;
 }
 
-header h1 {
+.dashboard-header h1 {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: 1.7rem;
 }
 
-header p {
-  margin-top: 0.5rem;
+.dashboard-header p {
+  margin-top: 0.4rem;
+  margin-bottom: 0.9rem;
+  color: #64748b;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.toolbar label {
   color: #475569;
+  font-weight: 600;
+}
+
+.toolbar select {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  background: #fff;
+  color: #0f172a;
+}
+
+.meta {
+  color: #64748b;
+  font-size: 0.9rem;
 }
 
 .card-grid {
-  margin-top: 1.5rem;
+  margin-top: 1rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
 }
 
 .card {
-  border: 1px solid #dbe4ee;
-  border-radius: 0.5rem;
+  border: 1px solid #d8e1ec;
+  border-radius: 0.75rem;
   padding: 1rem;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  min-height: 260px;
 }
 
 .card h2 {
   margin-top: 0;
-  font-size: 1.1rem;
+  margin-bottom: 0.6rem;
+  font-size: 1.02rem;
 }
 
-.card p {
-  margin: 0.4rem 0;
+.kpi {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.subtle {
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.list {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+  font-size: 0.93rem;
 }
 
 .error {
