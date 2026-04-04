@@ -20,6 +20,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
+  margin-bottom: 0.65rem;
 }
 
 .toolbar label {
@@ -38,6 +39,43 @@
 .meta {
   color: #64748b;
   font-size: 0.9rem;
+}
+
+.status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  background: #f8fbff;
+  padding: 0.22rem 0.56rem;
+}
+
+.status-label {
+  color: #64748b;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.status-value {
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.status-good {
+  color: #166534;
+}
+
+.status-warn {
+  color: #92400e;
 }
 
 .card-grid {

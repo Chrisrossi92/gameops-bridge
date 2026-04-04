@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { knownPlayerRecordSchema } from '@gameops/shared';
+import { identityObservationSchema, knownPlayerRecordSchema } from '@gameops/shared';
 function resolveStorePath() {
     const rawPath = process.env.KNOWN_PLAYER_STORE_PATH ?? '../known-players.json';
     return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
@@ -68,5 +68,33 @@ export function getKnownPlayerForServer(serverId, playerKeyOrName) {
             || normalizePlayerLookupKey(player.displayName) === normalizedLookup;
     });
     return match ?? null;
+}
+export function getIdentityObservationsForPlayer(serverId, player, limit = 20) {
+    const path = resolveStorePath();
+    try {
+        const content = readFileSync(path, 'utf8');
+        const parsedRoot = JSON.parse(content);
+        const rawObservations = Array.isArray(parsedRoot.observations) ? parsedRoot.observations : [];
+        const parsedObservations = rawObservations
+            .map((rawObservation) => identityObservationSchema.safeParse(rawObservation))
+            .filter((result) => result.success)
+            .map((result) => result.data);
+        const playerLookup = normalizePlayerLookupKey(player.normalizedPlayerKey);
+        const displayLookup = normalizePlayerLookupKey(player.displayName);
+        return parsedObservations
+            .filter((observation) => {
+            if (observation.serverId !== serverId) {
+                return false;
+            }
+            const normalizedKey = normalizePlayerLookupKey(observation.normalizedPlayerKey);
+            const normalizedName = normalizePlayerLookupKey(observation.displayName);
+            return normalizedKey === playerLookup || normalizedName === displayLookup;
+        })
+            .sort((a, b) => b.observedAt.localeCompare(a.observedAt))
+            .slice(0, Math.max(1, limit));
+    }
+    catch {
+        return [];
+    }
 }
 //# sourceMappingURL=known-player-store.js.map

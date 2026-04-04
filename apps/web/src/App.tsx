@@ -266,6 +266,25 @@ function App() {
     return new Date(lastUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
   }, [lastUpdatedAt]);
 
+  const currentServerLabel = useMemo(
+    () => SERVER_OPTIONS.find((option) => option.id === serverId)?.label ?? serverId,
+    [serverId]
+  );
+
+  const latestWarningLabel = useMemo(() => {
+    if (latestWarnings.length === 0) {
+      return 'None';
+    }
+
+    const latestWarningAt = latestWarnings.reduce<string>((latest, event) => {
+      return Date.parse(event.occurredAt) > Date.parse(latest) ? event.occurredAt : latest;
+    }, latestWarnings[0]?.occurredAt ?? '');
+
+    return latestWarningAt ? formatClock(latestWarningAt) : 'None';
+  }, [latestWarnings]);
+
+  const apiStatusTone = health?.ok ? 'good' : 'warn';
+
   const selectedPlayer = selectedPlayerProfile?.player ?? null;
   const selectedRecentSessions = selectedPlayerProfile?.recentSessions ?? [];
   const activeSession = selectedPlayerProfile?.activeSession ?? null;
@@ -284,8 +303,32 @@ function App() {
               <option key={option.id} value={option.id}>{option.label}</option>
             ))}
           </select>
-          <span className="meta">API: {apiHealthLabel}</span>
-          <span className="meta">Updated: {lastUpdatedLabel}</span>
+        </div>
+        <div className="status-strip">
+          <div className="status-pill">
+            <span className="status-label">API</span>
+            <span className={`status-value status-${apiStatusTone}`}>{apiHealthLabel}</span>
+          </div>
+          <div className="status-pill">
+            <span className="status-label">Server</span>
+            <span className="status-value">{currentServerLabel}</span>
+          </div>
+          <div className="status-pill">
+            <span className="status-label">Online</span>
+            <span className="status-value">{onlineEntries.length}</span>
+          </div>
+          <div className="status-pill">
+            <span className="status-label">Known Players</span>
+            <span className="status-value">{knownPlayerCount}</span>
+          </div>
+          <div className="status-pill">
+            <span className="status-label">Latest Warning</span>
+            <span className="status-value">{latestWarningLabel}</span>
+          </div>
+          <div className="status-pill">
+            <span className="status-label">Updated</span>
+            <span className="status-value">{lastUpdatedLabel}</span>
+          </div>
         </div>
       </header>
 

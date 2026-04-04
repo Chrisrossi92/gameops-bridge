@@ -1,5 +1,29 @@
-import { knownPlayerProfileResponseSchema, knownPlayersResponseSchema } from '@gameops/shared';
-import { getKnownPlayerForServer, getKnownPlayersForServer } from '../services/known-player-store.js';
+import { knownPlayerProfileResponseSchema, knownPlayersResponseSchema, playerCharacterAuditResponseSchema } from '@gameops/shared';
+import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from '../services/event-store.js';
+import { getIdentityObservationsForPlayer, getKnownPlayerForServer, getKnownPlayersForServer } from '../services/known-player-store.js';
+function normalizePlayerKey(value) {
+    return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function isSamePlayer(sessionPlayerName, normalizedPlayerKey, displayName) {
+    const normalizedSessionName = normalizePlayerKey(sessionPlayerName);
+    return normalizedSessionName === normalizedPlayerKey || normalizedSessionName === normalizePlayerKey(displayName);
+}
+function uniqueSorted(values) {
+    return Array.from(new Set(values.map((value) => (value ?? '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+function getAuditAssessment(params) {
+    if (params.characterCount === 0 || params.totalObservations < 2) {
+        return 'insufficient_evidence';
+    }
+    if (params.characterCount === 1) {
+        return 'single_character_observed';
+    }
+    const hasStrongAccountId = params.platformCount > 0 || params.playFabCount > 0;
+    if (hasStrongAccountId && params.totalObservations >= 3) {
+        return 'multiple_characters_observed';
+    }
+    return 'possible_multiple_characters';
+}
 export async function registerPlayerRoutes(app) {
     app.get('/servers/:serverId/players/known', async (request, reply) => {
         const serverId = request.params.serverId.trim();
@@ -25,9 +49,70 @@ export async function registerPlayerRoutes(app) {
             reply.code(400);
             return { error: 'Invalid playerKey' };
         }
+        const player = getKnownPlayerForServer(serverId, playerKey);
+        if (!player) {
+            return knownPlayerProfileResponseSchema.parse({
+                serverId,
+                player: null,
+                isOnline: false,
+                activeSession: null,
+                recentSessions: []
+            });
+        }
+        const activeSession = getActiveSessionsForServer(serverId).find((session) => isSamePlayer(session.playerName, player.normalizedPlayerKey, player.displayName)) ?? null;
+        const recentSessions = getRecentClosedSessionsForServer(serverId, 50)
+            .filter((session) => isSamePlayer(session.playerName, player.normalizedPlayerKey, player.displayName))
+            .slice(0, 5);
         return knownPlayerProfileResponseSchema.parse({
             serverId,
-            player: getKnownPlayerForServer(serverId, playerKey)
+            player,
+            isOnline: activeSession !== null,
+            activeSession,
+            recentSessions
+        });
+    });
+    app.get('/servers/:serverId/players/known/:playerKey/audit', async (request, reply) => {
+        const serverId = request.params.serverId.trim();
+        const playerKey = decodeURIComponent(request.params.playerKey).trim();
+        if (!serverId) {
+            reply.code(400);
+            return { error: 'Invalid serverId' };
+        }
+        if (!playerKey) {
+            reply.code(400);
+            return { error: 'Invalid playerKey' };
+        }
+        const player = getKnownPlayerForServer(serverId, playerKey);
+        if (!player) {
+            return playerCharacterAuditResponseSchema.parse({
+                serverId,
+                player: null,
+                distinctPlatformIds: [],
+                distinctPlayFabIds: [],
+                distinctCharacterIds: [],
+                recentObservations: [],
+                totalObservations: 0,
+                assessment: 'insufficient_evidence'
+            });
+        }
+        const observations = getIdentityObservationsForPlayer(serverId, player, 25);
+        const distinctPlatformIds = uniqueSorted(observations.map((observation) => observation.platformId));
+        const distinctPlayFabIds = uniqueSorted(observations.map((observation) => observation.playFabId));
+        const distinctCharacterIds = uniqueSorted(observations.map((observation) => observation.characterId));
+        return playerCharacterAuditResponseSchema.parse({
+            serverId,
+            player,
+            distinctPlatformIds,
+            distinctPlayFabIds,
+            distinctCharacterIds,
+            recentObservations: observations,
+            totalObservations: observations.length,
+            assessment: getAuditAssessment({
+                totalObservations: observations.length,
+                platformCount: distinctPlatformIds.length,
+                playFabCount: distinctPlayFabIds.length,
+                characterCount: distinctCharacterIds.length
+            })
         });
     });
 }

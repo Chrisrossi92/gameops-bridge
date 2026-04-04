@@ -148,8 +148,24 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
 
   if (event.eventType === 'PLAYER_JOIN') {
     if (existingSession) {
-      console.log(`[session] duplicate join ignored server=${event.serverId} player=${event.playerName}`);
-      return event;
+      const replacedSession = closeSession(
+        event.serverId,
+        event.playerName,
+        existingSession,
+        event.occurredAt,
+        'replaced_by_new_join'
+      );
+
+      activeByPlayer.delete(event.playerName);
+      closedSessions.push(replacedSession);
+
+      if (closedSessions.length > MAX_STORED_CLOSED_SESSIONS) {
+        closedSessions.splice(0, closedSessions.length - MAX_STORED_CLOSED_SESSIONS);
+      }
+
+      console.log(
+        `[session] replaced-active-session server=${event.serverId} player=${event.playerName} old_startedAt=${existingSession.startedAt} new_join_at=${event.occurredAt}`
+      );
     }
 
     const opened = sessionRecordSchema.parse({
@@ -159,7 +175,16 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
     });
 
     activeByPlayer.set(event.playerName, opened);
-    return event;
+    return existingSession
+      ? {
+          ...event,
+          raw: {
+            ...(event.raw ?? {}),
+            sessionCloseReason: 'replaced_by_new_join',
+            replacedSessionStartedAt: existingSession.startedAt
+          }
+        }
+      : event;
   }
 
   if (!existingSession) {
