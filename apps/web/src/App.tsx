@@ -30,11 +30,22 @@ interface KnownPlayerEntry {
   observationCount: number;
 }
 
+type WarningCategory = 'network' | 'disconnect' | 'save_storage' | 'general';
+
+interface WarningSummaryEntry {
+  category: WarningCategory;
+  snippet: string;
+  latestAt: string;
+  count: number;
+  signature: string;
+}
+
 const SERVER_OPTIONS = [
   { id: 'valheim-local-1', label: 'Valheim Local 1' }
 ];
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
+const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
 
 function App() {
   const [serverId, setServerId] = useState<string>(SERVER_OPTIONS[0]?.id ?? 'valheim-local-1');
@@ -120,7 +131,7 @@ function App() {
         ));
         const warningEvents = eventsParsed.data.events
           .filter((event) => event.eventType === 'HEALTH_WARN')
-          .slice(0, 4);
+          .slice(0, 20);
 
         if (!isMounted) {
           return;
@@ -250,6 +261,7 @@ function App() {
 
   const selectedPlayer = selectedPlayerProfile?.player ?? null;
   const selectedRecentSessions = selectedPlayerProfile?.recentSessions ?? [];
+  const warningSummaryEntries = useMemo(() => summarizeWarnings(latestWarnings), [latestWarnings]);
 
   return (
     <main className="dashboard">
@@ -341,11 +353,17 @@ function App() {
         <article className="card">
           <h2>Latest Warnings</h2>
           <ul className="list">
-            {latestWarnings.length === 0 ? <li>No recent warnings</li> : null}
-            {latestWarnings.map((event, index) => (
-              <li key={`${event.occurredAt}:${index}`}>
-                <span>{truncate(event.message ?? 'Health warning', 90)}</span>
-                <span className="subtle">{formatClock(event.occurredAt)}</span>
+            {warningSummaryEntries.length === 0 ? <li>No recent warnings</li> : null}
+            {warningSummaryEntries.map((warning, index) => (
+              <li key={`${warning.signature}:${warning.latestAt}:${index}`}>
+                <span className="warning-main">
+                  <span className={`warning-badge warning-${warning.category}`}>
+                    {formatWarningCategoryLabel(warning.category)}
+                  </span>
+                  {warning.snippet}
+                  {warning.count > 1 ? ` ×${warning.count}` : ''}
+                </span>
+                <span className="subtle">{formatClock(warning.latestAt)}</span>
               </li>
             ))}
           </ul>
@@ -500,6 +518,86 @@ function formatDurationFromSeconds(totalSeconds: number): string {
   }
 
   return `${seconds}s`;
+}
+
+function summarizeWarnings(events: NormalizedEvent[]): WarningSummaryEntry[] {
+  const summaries: WarningSummaryEntry[] = [];
+
+  for (const event of events) {
+    const rawMessage = event.message ?? 'Health warning';
+    const category = categorizeWarning(rawMessage);
+    const snippet = summarizeWarningMessage(rawMessage);
+    const signature = normalizeWarningSignature(rawMessage);
+    const occurredAtMs = Date.parse(event.occurredAt);
+    const previous = summaries[summaries.length - 1];
+    const previousMs = previous ? Date.parse(previous.latestAt) : Number.NaN;
+
+    if (
+      previous &&
+      previous.category === category &&
+      previous.signature === signature &&
+      Number.isFinite(occurredAtMs) &&
+      Number.isFinite(previousMs) &&
+      Math.abs(previousMs - occurredAtMs) <= WARNING_GROUP_WINDOW_MS
+    ) {
+      previous.count += 1;
+      continue;
+    }
+
+    summaries.push({
+      category,
+      snippet,
+      latestAt: event.occurredAt,
+      count: 1,
+      signature
+    });
+  }
+
+  return summaries.slice(0, 6);
+}
+
+function categorizeWarning(message: string): WarningCategory {
+  const text = message.toLowerCase();
+
+  if (/(disconnect|connection lost|player connection lost|reconnect|zplayfabsocket::dispose)/.test(text)) {
+    return 'disconnect';
+  }
+
+  if (/(save|storage|disk|file|serialize|write|backup)/.test(text)) {
+    return 'save_storage';
+  }
+
+  if (/(network|socket|timeout|latency|packet|playfab)/.test(text)) {
+    return 'network';
+  }
+
+  return 'general';
+}
+
+function summarizeWarningMessage(message: string): string {
+  let compact = message.trim();
+  compact = compact.replace(/^\[[^\]]+\]\s*/g, '');
+  compact = compact.replace(/playfab\/[a-z0-9_-]+/gi, 'playfab/<id>');
+  compact = compact.replace(/\s+/g, ' ');
+  return truncate(compact, 84);
+}
+
+function normalizeWarningSignature(message: string): string {
+  return message
+    .toLowerCase()
+    .replace(/playfab\/[a-z0-9_-]+/g, 'playfab/<id>')
+    .replace(/\d+/g, '#')
+    .replace(/[^a-z0-9<> ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatWarningCategoryLabel(category: WarningCategory): string {
+  if (category === 'save_storage') {
+    return 'save';
+  }
+
+  return category;
 }
 
 function getConfidenceRank(confidence: string): number {

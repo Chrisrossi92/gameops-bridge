@@ -152,6 +152,42 @@
   color: #1e3a8a;
 }
 
+.warning-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.warning-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.08rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.warning-network {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.warning-disconnect {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.warning-save_storage {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.warning-general {
+  background: #e2e8f0;
+  color: #334155;
+}
+
 .detail-section {
   margin-top: 1rem;
 }
