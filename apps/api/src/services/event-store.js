@@ -1,9 +1,91 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { sessionRecordSchema } from '@gameops/shared';
 const MAX_STORED_EVENTS = 500;
 const MAX_STORED_CLOSED_SESSIONS = 500;
 const recentEvents = [];
 const activeSessionsByServer = new Map();
 const recentClosedSessionsByServer = new Map();
+let sessionStateInitialized = false;
+function resolveSessionStatePath() {
+    const rawPath = process.env.SESSION_STATE_STORE_PATH ?? '../session-state.json';
+    return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+}
+function parseSessionArray(rawValue) {
+    if (!Array.isArray(rawValue)) {
+        return [];
+    }
+    return rawValue
+        .map((value) => sessionRecordSchema.safeParse(value))
+        .filter((result) => result.success)
+        .map((result) => result.data);
+}
+function persistSessionState() {
+    const path = resolveSessionStatePath();
+    const payload = {
+        activeSessionsByServer: Object.fromEntries(Array.from(activeSessionsByServer.entries()).map(([serverId, sessionsByPlayer]) => ([serverId, Array.from(sessionsByPlayer.values())]))),
+        recentClosedSessionsByServer: Object.fromEntries(Array.from(recentClosedSessionsByServer.entries()).map(([serverId, sessions]) => ([serverId, sessions.slice(-MAX_STORED_CLOSED_SESSIONS)])))
+    };
+    try {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, JSON.stringify(payload, null, 2), 'utf8');
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown_error';
+        console.log(`[session] persist-failed path=${path} error=${message}`);
+    }
+}
+function initializeSessionStateIfNeeded() {
+    if (sessionStateInitialized) {
+        return;
+    }
+    sessionStateInitialized = true;
+    const path = resolveSessionStatePath();
+    try {
+        const raw = readFileSync(path, 'utf8');
+        const parsed = JSON.parse(raw);
+        const activeRoot = parsed.activeSessionsByServer;
+        const closedRoot = parsed.recentClosedSessionsByServer;
+        if (activeRoot && typeof activeRoot === 'object') {
+            for (const [serverId, rawSessions] of Object.entries(activeRoot)) {
+                const sessions = parseSessionArray(rawSessions);
+                if (sessions.length === 0) {
+                    continue;
+                }
+                const byPlayer = new Map();
+                for (const session of sessions) {
+                    const existing = byPlayer.get(session.playerName);
+                    if (!existing || session.startedAt > existing.startedAt) {
+                        byPlayer.set(session.playerName, session);
+                    }
+                }
+                if (byPlayer.size > 0) {
+                    activeSessionsByServer.set(serverId, byPlayer);
+                }
+            }
+        }
+        if (closedRoot && typeof closedRoot === 'object') {
+            for (const [serverId, rawSessions] of Object.entries(closedRoot)) {
+                const sessions = parseSessionArray(rawSessions).slice(-MAX_STORED_CLOSED_SESSIONS);
+                if (sessions.length > 0) {
+                    recentClosedSessionsByServer.set(serverId, sessions);
+                }
+            }
+        }
+        const loadedActive = Array.from(activeSessionsByServer.values())
+            .reduce((sum, sessions) => sum + sessions.size, 0);
+        const loadedClosed = Array.from(recentClosedSessionsByServer.values())
+            .reduce((sum, sessions) => sum + sessions.length, 0);
+        console.log(`[session] state-loaded path=${path} active=${loadedActive} closed=${loadedClosed} servers=${activeSessionsByServer.size}`);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown_error';
+        console.log(`[session] state-load-skipped path=${path} reason=${message}`);
+    }
+}
+export function initializeSessionStateStore() {
+    initializeSessionStateIfNeeded();
+}
 function getActiveSessionMap(serverId) {
     const existing = activeSessionsByServer.get(serverId);
     if (existing) {
@@ -143,10 +225,14 @@ function applySessionTracking(event) {
     };
 }
 export function addEvents(events) {
+    initializeSessionStateIfNeeded();
     const enrichedEvents = events.map((event) => applySessionTracking(event));
     recentEvents.push(...enrichedEvents);
     if (recentEvents.length > MAX_STORED_EVENTS) {
         recentEvents.splice(0, recentEvents.length - MAX_STORED_EVENTS);
+    }
+    if (events.some((event) => event.eventType === 'PLAYER_JOIN' || event.eventType === 'PLAYER_LEAVE')) {
+        persistSessionState();
     }
 }
 export function getRecentEventsForServer(serverId, limit = 10) {
@@ -156,6 +242,7 @@ export function getRecentEventsForServer(serverId, limit = 10) {
         .reverse();
 }
 export function getActiveSessionsForServer(serverId) {
+    initializeSessionStateIfNeeded();
     const activeByPlayer = activeSessionsByServer.get(serverId);
     if (!activeByPlayer) {
         return [];
@@ -163,6 +250,7 @@ export function getActiveSessionsForServer(serverId) {
     return Array.from(activeByPlayer.values()).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 export function getRecentClosedSessionsForServer(serverId, limit = 10) {
+    initializeSessionStateIfNeeded();
     const sessions = recentClosedSessionsByServer.get(serverId) ?? [];
     return sessions
         .slice(-Math.max(1, limit))

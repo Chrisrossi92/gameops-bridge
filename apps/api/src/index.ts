@@ -6,9 +6,11 @@ import { registerHealthRoute } from './routes/health.js';
 import { registerPlayerRoutes } from './routes/players.js';
 import { registerServerStatusRoute } from './routes/server-status.js';
 import { registerSessionRoutes } from './routes/sessions.js';
+import { initializeSessionStateStore } from './services/event-store.js';
 
 const app = Fastify({ logger: true });
 const port = Number(process.env.PORT ?? 3001);
+initializeSessionStateStore();
 
 await app.register(cors, {
   origin: true

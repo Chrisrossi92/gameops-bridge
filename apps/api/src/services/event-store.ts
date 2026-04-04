@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { type NormalizedEvent, sessionRecordSchema, type SessionRecord } from '@gameops/shared';
 
 const MAX_STORED_EVENTS = 500;
@@ -6,6 +8,118 @@ const MAX_STORED_CLOSED_SESSIONS = 500;
 const recentEvents: NormalizedEvent[] = [];
 const activeSessionsByServer = new Map<string, Map<string, SessionRecord>>();
 const recentClosedSessionsByServer = new Map<string, SessionRecord[]>();
+let sessionStateInitialized = false;
+
+interface PersistedSessionState {
+  activeSessionsByServer?: Record<string, unknown>;
+  recentClosedSessionsByServer?: Record<string, unknown>;
+}
+
+function resolveSessionStatePath(): string {
+  const rawPath = process.env.SESSION_STATE_STORE_PATH ?? '../session-state.json';
+  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+}
+
+function parseSessionArray(rawValue: unknown): SessionRecord[] {
+  if (!Array.isArray(rawValue)) {
+    return [];
+  }
+
+  return rawValue
+    .map((value) => sessionRecordSchema.safeParse(value))
+    .filter((result): result is { success: true; data: SessionRecord } => result.success)
+    .map((result) => result.data);
+}
+
+function persistSessionState(): void {
+  const path = resolveSessionStatePath();
+  const payload = {
+    activeSessionsByServer: Object.fromEntries(
+      Array.from(activeSessionsByServer.entries()).map(([serverId, sessionsByPlayer]) => (
+        [serverId, Array.from(sessionsByPlayer.values())]
+      ))
+    ),
+    recentClosedSessionsByServer: Object.fromEntries(
+      Array.from(recentClosedSessionsByServer.entries()).map(([serverId, sessions]) => (
+        [serverId, sessions.slice(-MAX_STORED_CLOSED_SESSIONS)]
+      ))
+    )
+  };
+
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown_error';
+    console.log(`[session] persist-failed path=${path} error=${message}`);
+  }
+}
+
+function initializeSessionStateIfNeeded(): void {
+  if (sessionStateInitialized) {
+    return;
+  }
+
+  sessionStateInitialized = true;
+  const path = resolveSessionStatePath();
+
+  try {
+    const raw = readFileSync(path, 'utf8');
+    const parsed = JSON.parse(raw) as PersistedSessionState;
+
+    const activeRoot = parsed.activeSessionsByServer;
+    const closedRoot = parsed.recentClosedSessionsByServer;
+
+    if (activeRoot && typeof activeRoot === 'object') {
+      for (const [serverId, rawSessions] of Object.entries(activeRoot)) {
+        const sessions = parseSessionArray(rawSessions);
+
+        if (sessions.length === 0) {
+          continue;
+        }
+
+        const byPlayer = new Map<string, SessionRecord>();
+        for (const session of sessions) {
+          const existing = byPlayer.get(session.playerName);
+
+          if (!existing || session.startedAt > existing.startedAt) {
+            byPlayer.set(session.playerName, session);
+          }
+        }
+
+        if (byPlayer.size > 0) {
+          activeSessionsByServer.set(serverId, byPlayer);
+        }
+      }
+    }
+
+    if (closedRoot && typeof closedRoot === 'object') {
+      for (const [serverId, rawSessions] of Object.entries(closedRoot)) {
+        const sessions = parseSessionArray(rawSessions).slice(-MAX_STORED_CLOSED_SESSIONS);
+
+        if (sessions.length > 0) {
+          recentClosedSessionsByServer.set(serverId, sessions);
+        }
+      }
+    }
+
+    const loadedActive = Array.from(activeSessionsByServer.values())
+      .reduce((sum, sessions) => sum + sessions.size, 0);
+    const loadedClosed = Array.from(recentClosedSessionsByServer.values())
+      .reduce((sum, sessions) => sum + sessions.length, 0);
+
+    console.log(
+      `[session] state-loaded path=${path} active=${loadedActive} closed=${loadedClosed} servers=${activeSessionsByServer.size}`
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown_error';
+    console.log(`[session] state-load-skipped path=${path} reason=${message}`);
+  }
+}
+
+export function initializeSessionStateStore(): void {
+  initializeSessionStateIfNeeded();
+}
 
 function getActiveSessionMap(serverId: string): Map<string, SessionRecord> {
   const existing = activeSessionsByServer.get(serverId);
@@ -218,11 +332,16 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
 }
 
 export function addEvents(events: NormalizedEvent[]): void {
+  initializeSessionStateIfNeeded();
   const enrichedEvents = events.map((event) => applySessionTracking(event));
   recentEvents.push(...enrichedEvents);
 
   if (recentEvents.length > MAX_STORED_EVENTS) {
     recentEvents.splice(0, recentEvents.length - MAX_STORED_EVENTS);
+  }
+
+  if (events.some((event) => event.eventType === 'PLAYER_JOIN' || event.eventType === 'PLAYER_LEAVE')) {
+    persistSessionState();
   }
 }
 
@@ -234,6 +353,7 @@ export function getRecentEventsForServer(serverId: string, limit = 10): Normaliz
 }
 
 export function getActiveSessionsForServer(serverId: string): SessionRecord[] {
+  initializeSessionStateIfNeeded();
   const activeByPlayer = activeSessionsByServer.get(serverId);
 
   if (!activeByPlayer) {
@@ -244,6 +364,7 @@ export function getActiveSessionsForServer(serverId: string): SessionRecord[] {
 }
 
 export function getRecentClosedSessionsForServer(serverId: string, limit = 10): SessionRecord[] {
+  initializeSessionStateIfNeeded();
   const sessions = recentClosedSessionsByServer.get(serverId) ?? [];
   return sessions
     .slice(-Math.max(1, limit))
