@@ -90,6 +90,63 @@
   font-size: 0.93rem;
 }
 
+.clickable-row {
+  cursor: pointer;
+  border-radius: 0.45rem;
+  padding: 0.15rem 0.35rem;
+  margin-left: -0.35rem;
+  margin-right: -0.35rem;
+}
+
+.clickable-row:hover {
+  background: #eef4ff;
+}
+
+.clickable-row.selected {
+  background: #e4edff;
+}
+
+.detail-section {
+  margin-top: 1rem;
+}
+
+.detail-card {
+  min-height: 220px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.detail-header button {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.3rem 0.6rem;
+  color: #334155;
+  cursor: pointer;
+}
+
+.detail-grid {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+}
+
+.detail-grid h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+}
+
+.list.compact {
+  margin-top: 0;
+  gap: 0.35rem;
+}
+
 .error {
   color: #b91c1c;
   margin-top: 1rem;

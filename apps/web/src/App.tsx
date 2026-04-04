@@ -1,7 +1,9 @@
 import {
   activeSessionsResponseSchema,
+  knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
   recentEventsResponseSchema,
+  type KnownPlayerProfileResponse,
   type NormalizedEvent
 } from '@gameops/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -17,6 +19,14 @@ interface OnlineEntry {
   playerName: string;
   displayName: string;
   startedAt: string;
+  lookupKey: string;
+}
+
+interface KnownPlayerEntry {
+  displayName: string;
+  normalizedPlayerKey: string;
+  confidence: string;
+  lastSeenAt: string;
 }
 
 const SERVER_OPTIONS = [
@@ -32,7 +42,11 @@ function App() {
   const [recentActivity, setRecentActivity] = useState<NormalizedEvent[]>([]);
   const [latestWarnings, setLatestWarnings] = useState<NormalizedEvent[]>([]);
   const [knownPlayerCount, setKnownPlayerCount] = useState(0);
-  const [knownPlayerPreview, setKnownPlayerPreview] = useState<Array<{ displayName: string; confidence: string; lastSeenAt: string }>>([]);
+  const [knownPlayerPreview, setKnownPlayerPreview] = useState<KnownPlayerEntry[]>([]);
+  const [selectedPlayerLookupKey, setSelectedPlayerLookupKey] = useState<string | null>(null);
+  const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<KnownPlayerProfileResponse | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -94,7 +108,8 @@ function App() {
           return {
             playerName: session.playerName,
             displayName: knownMatch?.displayName ?? session.playerName,
-            startedAt: session.startedAt
+            startedAt: session.startedAt,
+            lookupKey: knownMatch?.normalizedPlayerKey ?? normalizePlayerKey(session.playerName)
           };
         });
 
@@ -117,6 +132,7 @@ function App() {
         setKnownPlayerCount(knownPlayersParsed.data.players.length);
         setKnownPlayerPreview(knownPlayersParsed.data.players.slice(0, 8).map((player) => ({
           displayName: player.displayName,
+          normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
           confidence: player.confidence,
           lastSeenAt: player.lastSeenAt
         })));
@@ -144,6 +160,59 @@ function App() {
     };
   }, [serverId]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSelectedPlayerProfile(): Promise<void> {
+      if (!selectedPlayerLookupKey) {
+        setSelectedPlayerProfile(null);
+        setProfileError(null);
+        setProfileLoading(false);
+        return;
+      }
+
+      try {
+        setProfileLoading(true);
+        setProfileError(null);
+
+        const response = await fetch(
+          `${apiBaseUrl}/servers/${serverId}/players/known/${encodeURIComponent(selectedPlayerLookupKey)}`
+        );
+
+        if (!response.ok) {
+          throw new Error(`Player profile fetch failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = knownPlayerProfileResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('Player profile payload validation failed.');
+        }
+
+        if (isMounted) {
+          setSelectedPlayerProfile(parsed.data);
+        }
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
+        if (isMounted) {
+          setProfileError(message);
+          setSelectedPlayerProfile(null);
+        }
+      } finally {
+        if (isMounted) {
+          setProfileLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedPlayerProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [serverId, selectedPlayerLookupKey]);
+
   const apiHealthLabel = useMemo(() => {
     if (!health) {
       return 'Unknown';
@@ -159,6 +228,9 @@ function App() {
 
     return new Date(lastUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
   }, [lastUpdatedAt]);
+
+  const selectedPlayer = selectedPlayerProfile?.player ?? null;
+  const selectedRecentSessions = selectedPlayerProfile?.recentSessions ?? [];
 
   return (
     <main className="dashboard">
@@ -188,7 +260,11 @@ function App() {
           <ul className="list">
             {onlineEntries.length === 0 ? <li>None</li> : null}
             {onlineEntries.map((entry) => (
-              <li key={`${entry.playerName}:${entry.startedAt}`}>
+              <li
+                key={`${entry.playerName}:${entry.startedAt}`}
+                className={`clickable-row ${selectedPlayerLookupKey === entry.lookupKey ? 'selected' : ''}`}
+                onClick={() => setSelectedPlayerLookupKey(entry.lookupKey)}
+              >
                 <span>{entry.displayName}</span>
                 <span className="subtle">{formatDuration(entry.startedAt)}</span>
               </li>
@@ -219,7 +295,11 @@ function App() {
           <ul className="list">
             {knownPlayerPreview.length === 0 ? <li>None tracked yet</li> : null}
             {knownPlayerPreview.map((player) => (
-              <li key={`${player.displayName}:${player.lastSeenAt}`}>
+              <li
+                key={`${player.displayName}:${player.lastSeenAt}`}
+                className={`clickable-row ${selectedPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
+                onClick={() => setSelectedPlayerLookupKey(player.normalizedPlayerKey)}
+              >
                 <span>{player.displayName}</span>
                 <span className="subtle">{player.confidence}</span>
               </li>
@@ -238,6 +318,79 @@ function App() {
               </li>
             ))}
           </ul>
+        </article>
+      </section>
+
+      <section className="detail-section">
+        <article className="card detail-card">
+          <div className="detail-header">
+            <h2>Player Details</h2>
+            {selectedPlayerLookupKey ? (
+              <button type="button" onClick={() => setSelectedPlayerLookupKey(null)}>
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {!selectedPlayerLookupKey ? <p className="subtle">Select a player from Online Now or Known Players.</p> : null}
+          {profileLoading ? <p className="subtle">Loading player profile...</p> : null}
+          {profileError ? <p className="error">{profileError}</p> : null}
+          {selectedPlayerLookupKey && !profileLoading && !profileError && !selectedPlayer ? (
+            <p className="subtle">No known player profile found for this selection.</p>
+          ) : null}
+
+          {selectedPlayer ? (
+            <>
+              <p><strong>Name:</strong> {selectedPlayer.displayName}</p>
+              <p><strong>Confidence:</strong> {selectedPlayer.confidence}</p>
+              <p><strong>Observations:</strong> {selectedPlayer.observationCount}</p>
+              <p><strong>First Seen:</strong> {formatTimestamp(selectedPlayer.firstSeenAt)}</p>
+              <p><strong>Last Seen:</strong> {formatTimestamp(selectedPlayer.lastSeenAt)}</p>
+
+              <div className="detail-grid">
+                <div>
+                  <h3>Recent Sessions</h3>
+                  <ul className="list compact">
+                    {selectedRecentSessions.length === 0 ? <li>None</li> : null}
+                    {selectedRecentSessions.slice(0, 5).map((session, index) => (
+                      <li key={`${session.startedAt}:${index}`}>
+                        <span>{formatTimestamp(session.endedAt ?? session.startedAt)}</span>
+                        <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Character IDs</h3>
+                  <ul className="list compact">
+                    {selectedPlayer.knownCharacterIds.length === 0 ? <li>None</li> : null}
+                    {selectedPlayer.knownCharacterIds.slice(0, 8).map((id) => <li key={id}>{id}</li>)}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Platform IDs</h3>
+                  <ul className="list compact">
+                    {selectedPlayer.knownPlatformIds.length === 0 ? <li>None</li> : null}
+                    {selectedPlayer.knownPlatformIds.slice(0, 6).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
+                  </ul>
+                </div>
+                <div>
+                  <h3>PlayFab IDs</h3>
+                  <ul className="list compact">
+                    {selectedPlayer.knownPlayFabIds.length === 0 ? <li>None</li> : null}
+                    {selectedPlayer.knownPlayFabIds.slice(0, 6).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Identity Sources</h3>
+                  <ul className="list compact">
+                    {selectedPlayer.identitySources.length === 0 ? <li>None</li> : null}
+                    {selectedPlayer.identitySources.slice(0, 8).map((source) => <li key={source}>{source}</li>)}
+                  </ul>
+                </div>
+              </div>
+            </>
+          ) : null}
         </article>
       </section>
     </main>
@@ -289,6 +442,33 @@ function truncate(value: string, maxLength: number): string {
   }
 
   return `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function formatDurationFromSeconds(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  return `${seconds}s`;
 }
 
 export default App;
