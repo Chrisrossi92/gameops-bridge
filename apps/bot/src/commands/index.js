@@ -1,14 +1,18 @@
 import { pingCommand } from './ping.js';
+import { playerCharacterAuditCommand } from './player-character-audit.js';
 import { playerProfileCommand } from './player-profile.js';
 import { playerSessionsCommand } from './player-sessions.js';
 import { serverKnownPlayersCommand } from './server-known-players.js';
 import { serverRecentCommand } from './server-recent.js';
 import { serverOnlineCommand } from './server-online.js';
+import { serverSummaryCommand } from './server-summary.js';
 import { serverStatusCommand } from './server-status.js';
 export const commands = [
     pingCommand,
     serverOnlineCommand,
+    serverSummaryCommand,
     serverKnownPlayersCommand,
+    playerCharacterAuditCommand,
     playerProfileCommand,
     playerSessionsCommand,
     serverStatusCommand,

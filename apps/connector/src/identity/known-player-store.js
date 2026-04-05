@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { identityConfidenceSchema, knownPlayerRecordSchema } from '@gameops/shared';
+import { identityObservationSchema, identityConfidenceSchema, knownPlayerRecordSchema } from '@gameops/shared';
 import { z } from 'zod';
 const fileStoreSchema = z.object({
-    players: z.array(knownPlayerRecordSchema).default([])
+    players: z.array(knownPlayerRecordSchema).default([]),
+    observations: z.array(identityObservationSchema).default([])
 });
+const MAX_OBSERVATIONS = 20_000;
 function normalizePlayerKey(value) {
     return value
         .trim()
@@ -43,11 +45,12 @@ function loadStore(path) {
         const parsed = JSON.parse(content);
         const validated = fileStoreSchema.parse(parsed);
         return {
-            players: validated.players.map((player) => normalizeKnownPlayerRecord(player))
+            players: validated.players.map((player) => normalizeKnownPlayerRecord(player)),
+            observations: validated.observations
         };
     }
     catch {
-        return { players: [] };
+        return { players: [], observations: [] };
     }
 }
 function writeStore(path, store) {
@@ -71,18 +74,51 @@ function pickConfidence(a, b) {
     };
     return rank[a] >= rank[b] ? a : b;
 }
+function deriveConfidenceFromEvidence(params) {
+    const platformCount = dedupe(params.knownPlatformIds).length;
+    const playFabCount = dedupe(params.knownPlayFabIds).length;
+    const characterCount = dedupe(params.knownCharacterIds).length;
+    const sourceCount = dedupe(params.identitySources).length;
+    const hasStrongId = platformCount > 0 || playFabCount > 0;
+    const hasAnyId = hasStrongId || characterCount > 0;
+    if (params.observationCount >= 12 && hasStrongId && sourceCount >= 2) {
+        return 'high';
+    }
+    if (params.observationCount >= 5 && hasAnyId) {
+        return 'medium';
+    }
+    return 'low';
+}
+function toIdentityObservation(input, normalizedPlayerKey) {
+    return identityObservationSchema.parse({
+        serverId: input.serverId,
+        displayName: input.displayName,
+        normalizedPlayerKey,
+        observedAt: input.observedAt,
+        ...(input.playFabId ? { playFabId: input.playFabId } : {}),
+        ...(input.platformId ? { platformId: input.platformId } : {}),
+        ...(input.characterId ? { characterId: input.characterId } : {}),
+        source: input.source,
+        confidence: input.confidence
+    });
+}
 export function upsertKnownPlayerObservation(input) {
     const parsedConfidence = identityConfidenceSchema.parse(input.confidence);
     const path = resolveStorePath();
     const store = loadStore(path);
     const normalizedPlayerKey = normalizePlayerKey(input.displayName);
+    const observation = toIdentityObservation(input, normalizedPlayerKey);
+    store.observations.push(observation);
+    if (store.observations.length > MAX_OBSERVATIONS) {
+        store.observations.splice(0, store.observations.length - MAX_OBSERVATIONS);
+    }
     const existingIndex = store.players.findIndex((record) => (record.serverId === input.serverId && record.normalizedPlayerKey === normalizedPlayerKey));
     if (existingIndex >= 0) {
         const existing = store.players[existingIndex];
         if (!existing) {
             return;
         }
-        store.players[existingIndex] = knownPlayerRecordSchema.parse({
+        const nextRecordBase = {
             ...existing,
             displayName: input.displayName,
             knownPlatformIds: mergeUnique(existing.knownPlatformIds, input.platformId),
@@ -90,13 +126,23 @@ export function upsertKnownPlayerObservation(input) {
             knownCharacterIds: mergeUnique(existing.knownCharacterIds, input.characterId),
             identitySources: mergeUnique(existing.identitySources, input.source),
             observationCount: existing.observationCount + 1,
-            confidence: pickConfidence(existing.confidence, parsedConfidence),
             lastSeenAt: input.observedAt
+        };
+        const derivedConfidence = deriveConfidenceFromEvidence({
+            observationCount: nextRecordBase.observationCount,
+            knownPlatformIds: nextRecordBase.knownPlatformIds,
+            knownPlayFabIds: nextRecordBase.knownPlayFabIds,
+            knownCharacterIds: nextRecordBase.knownCharacterIds,
+            identitySources: nextRecordBase.identitySources
+        });
+        store.players[existingIndex] = knownPlayerRecordSchema.parse({
+            ...nextRecordBase,
+            confidence: pickConfidence(pickConfidence(existing.confidence, parsedConfidence), derivedConfidence)
         });
         writeStore(path, store);
         return;
     }
-    store.players.push(knownPlayerRecordSchema.parse({
+    const initialRecord = {
         serverId: input.serverId,
         displayName: input.displayName,
         normalizedPlayerKey,
@@ -105,9 +151,19 @@ export function upsertKnownPlayerObservation(input) {
         knownCharacterIds: input.characterId ? [input.characterId] : [],
         identitySources: [input.source],
         observationCount: 1,
-        confidence: parsedConfidence,
         firstSeenAt: input.observedAt,
         lastSeenAt: input.observedAt
+    };
+    const derivedInitialConfidence = deriveConfidenceFromEvidence({
+        observationCount: initialRecord.observationCount,
+        knownPlatformIds: initialRecord.knownPlatformIds,
+        knownPlayFabIds: initialRecord.knownPlayFabIds,
+        knownCharacterIds: initialRecord.knownCharacterIds,
+        identitySources: initialRecord.identitySources
+    });
+    store.players.push(knownPlayerRecordSchema.parse({
+        ...initialRecord,
+        confidence: pickConfidence(parsedConfidence, derivedInitialConfidence)
     }));
     writeStore(path, store);
 }

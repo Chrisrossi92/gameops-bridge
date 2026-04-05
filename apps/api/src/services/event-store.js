@@ -129,56 +129,58 @@ function closeSession(serverId, playerName, session, closedAt, reason) {
     console.log(`[session] closed server=${serverId} player=${playerName} reason=${reason} duration_s=${durationSeconds}`);
     return closedSession;
 }
-function reconcileAnonymousLeave(event, activeByPlayer, closedSessions) {
+function isDisconnectSignalEvent(event) {
+    return event.eventType === 'HEALTH_WARN' && event.raw?.valheimDisconnectSignal === true;
+}
+function reconcileByOccupancyCap(event, activeByPlayer, closedSessions, sourceReason) {
     const targetPlayerCount = getStructuredPlayerCount(event);
     if (targetPlayerCount === null) {
-        return event;
+        return { event, reconciledCount: 0, closedPlayers: [] };
     }
     const activeEntries = Array.from(activeByPlayer.entries());
     const activeCount = activeEntries.length;
     const sessionsToClose = activeCount - targetPlayerCount;
     if (sessionsToClose <= 0) {
-        return event;
+        return { event, reconciledCount: 0, closedPlayers: [] };
     }
-    // Conservative guard: only reconcile small deltas from structured journal leave lines.
-    if (sessionsToClose > 2) {
-        console.log(`[session] reconcile-skipped server=${event.serverId} reason=large_delta active=${activeCount} target=${targetPlayerCount}`);
-        return event;
-    }
-    const sortedNewestFirst = activeEntries.sort((a, b) => b[1].startedAt.localeCompare(a[1].startedAt));
+    const sortedOldestFirst = activeEntries.sort((a, b) => a[1].startedAt.localeCompare(b[1].startedAt));
     const closedPlayers = [];
-    for (const [playerName, session] of sortedNewestFirst.slice(0, sessionsToClose)) {
+    for (const [playerName, session] of sortedOldestFirst.slice(0, sessionsToClose)) {
         activeByPlayer.delete(playerName);
-        closedSessions.push(closeSession(event.serverId, playerName, session, event.occurredAt, 'occupancy_reconcile_structured_leave'));
+        closedSessions.push(closeSession(event.serverId, playerName, session, event.occurredAt, 'occupancy_reconciliation'));
         closedPlayers.push(playerName);
     }
     if (closedSessions.length > MAX_STORED_CLOSED_SESSIONS) {
         closedSessions.splice(0, closedSessions.length - MAX_STORED_CLOSED_SESSIONS);
     }
-    console.log(`[session] reconciled-close server=${event.serverId} source=structured_leave rule=${String(event.raw?.valheimDisconnectRule ?? 'unknown')} target=${targetPlayerCount} closed=${closedPlayers.join(',') || 'none'} line=${(event.message ?? '').slice(0, 120)}`);
-    return {
+    console.log(`[session] reconciled-close server=${event.serverId} trigger=${sourceReason} rule=${String(event.raw?.valheimDisconnectRule ?? 'unknown')} active_before=${activeCount} target=${targetPlayerCount} reconciled=${closedPlayers.length} closed=${closedPlayers.join(',') || 'none'} line=${(event.message ?? '').slice(0, 120)}`);
+    const enrichedEvent = {
         ...event,
         raw: {
             ...(event.raw ?? {}),
-            sessionCloseReason: 'occupancy_reconcile_structured_leave',
+            sessionCloseReason: 'occupancy_reconciliation',
+            sessionReconciledCount: closedPlayers.length,
             sessionClosedPlayers: closedPlayers
         }
     };
+    return {
+        event: enrichedEvent,
+        reconciledCount: closedPlayers.length,
+        closedPlayers
+    };
 }
 function applySessionTracking(event) {
-    if (event.eventType !== 'PLAYER_JOIN' && event.eventType !== 'PLAYER_LEAVE') {
+    const disconnectSignal = isDisconnectSignalEvent(event);
+    if (event.eventType !== 'PLAYER_JOIN' && event.eventType !== 'PLAYER_LEAVE' && !disconnectSignal) {
         return event;
     }
     const activeByPlayer = getActiveSessionMap(event.serverId);
     const closedSessions = getRecentClosedSessionList(event.serverId);
-    if (event.eventType === 'PLAYER_LEAVE' && !event.playerName) {
-        return reconcileAnonymousLeave(event, activeByPlayer, closedSessions);
-    }
-    if (!event.playerName) {
-        return event;
-    }
-    const existingSession = activeByPlayer.get(event.playerName);
     if (event.eventType === 'PLAYER_JOIN') {
+        if (!event.playerName) {
+            return event;
+        }
+        const existingSession = activeByPlayer.get(event.playerName);
         if (existingSession) {
             const replacedSession = closeSession(event.serverId, event.playerName, existingSession, event.occurredAt, 'replaced_by_new_join');
             activeByPlayer.delete(event.playerName);
@@ -205,24 +207,40 @@ function applySessionTracking(event) {
             }
             : event;
     }
-    if (!existingSession) {
-        console.log(`[session] orphan leave ignored server=${event.serverId} player=${event.playerName}`);
-        return event;
-    }
-    const durationSeconds = getDurationSeconds(existingSession.startedAt, event.occurredAt);
-    const closedSession = closeSession(event.serverId, event.playerName, existingSession, event.occurredAt, 'player_leave_event');
-    activeByPlayer.delete(event.playerName);
-    closedSessions.push(closedSession);
-    if (closedSessions.length > MAX_STORED_CLOSED_SESSIONS) {
-        closedSessions.splice(0, closedSessions.length - MAX_STORED_CLOSED_SESSIONS);
-    }
-    return {
-        ...event,
-        raw: {
-            ...(event.raw ?? {}),
-            sessionDurationSeconds: durationSeconds
+    let updatedEvent = event;
+    let directCloseCount = 0;
+    const triggerReason = event.eventType === 'PLAYER_LEAVE'
+        ? 'player_leave'
+        : 'disconnect_signal';
+    if (event.playerName) {
+        const existingSession = activeByPlayer.get(event.playerName);
+        if (!existingSession) {
+            console.log(`[session] orphan leave ignored server=${event.serverId} player=${event.playerName} trigger=${triggerReason}`);
         }
-    };
+        else {
+            const durationSeconds = getDurationSeconds(existingSession.startedAt, event.occurredAt);
+            const closedSession = closeSession(event.serverId, event.playerName, existingSession, event.occurredAt, triggerReason);
+            activeByPlayer.delete(event.playerName);
+            closedSessions.push(closedSession);
+            directCloseCount = 1;
+            if (closedSessions.length > MAX_STORED_CLOSED_SESSIONS) {
+                closedSessions.splice(0, closedSessions.length - MAX_STORED_CLOSED_SESSIONS);
+            }
+            updatedEvent = {
+                ...updatedEvent,
+                raw: {
+                    ...(updatedEvent.raw ?? {}),
+                    sessionCloseReason: triggerReason,
+                    sessionDurationSeconds: durationSeconds
+                }
+            };
+        }
+    }
+    const { event: reconciledEvent, reconciledCount } = reconcileByOccupancyCap(updatedEvent, activeByPlayer, closedSessions, triggerReason);
+    if (directCloseCount > 0 || reconciledCount > 0) {
+        console.log(`[session] close-summary server=${event.serverId} trigger=${triggerReason} direct=${directCloseCount} reconciled=${reconciledCount}`);
+    }
+    return reconciledEvent;
 }
 export function addEvents(events) {
     initializeSessionStateIfNeeded();
@@ -231,7 +249,9 @@ export function addEvents(events) {
     if (recentEvents.length > MAX_STORED_EVENTS) {
         recentEvents.splice(0, recentEvents.length - MAX_STORED_EVENTS);
     }
-    if (events.some((event) => event.eventType === 'PLAYER_JOIN' || event.eventType === 'PLAYER_LEAVE')) {
+    if (events.some((event) => event.eventType === 'PLAYER_JOIN'
+        || event.eventType === 'PLAYER_LEAVE'
+        || isDisconnectSignalEvent(event))) {
         persistSessionState();
     }
 }

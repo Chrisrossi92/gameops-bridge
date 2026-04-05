@@ -92,6 +92,186 @@ export declare const recentEventsResponseSchema: z.ZodObject<{
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type RecentEventsResponse = z.infer<typeof recentEventsResponseSchema>;
+export declare const sessionRecordSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    playerName: z.ZodString;
+    startedAt: z.ZodString;
+    endedAt: z.ZodOptional<z.ZodString>;
+    durationSeconds: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>;
+export type SessionRecord = z.infer<typeof sessionRecordSchema>;
+export declare const activeSessionsResponseSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    sessions: z.ZodArray<z.ZodObject<{
+        serverId: z.ZodString;
+        playerName: z.ZodString;
+        startedAt: z.ZodString;
+        endedAt: z.ZodOptional<z.ZodString>;
+        durationSeconds: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type ActiveSessionsResponse = z.infer<typeof activeSessionsResponseSchema>;
+export declare const recentSessionsResponseSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    sessions: z.ZodArray<z.ZodObject<{
+        serverId: z.ZodString;
+        playerName: z.ZodString;
+        startedAt: z.ZodString;
+        endedAt: z.ZodOptional<z.ZodString>;
+        durationSeconds: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type RecentSessionsResponse = z.infer<typeof recentSessionsResponseSchema>;
+export declare const identityConfidenceSchema: z.ZodEnum<{
+    low: "low";
+    medium: "medium";
+    high: "high";
+}>;
+export type IdentityConfidence = z.infer<typeof identityConfidenceSchema>;
+export declare const knownPlayerRecordSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    displayName: z.ZodString;
+    normalizedPlayerKey: z.ZodString;
+    knownPlatformIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    knownPlayFabIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    knownCharacterIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    identitySources: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    observationCount: z.ZodNumber;
+    confidence: z.ZodEnum<{
+        low: "low";
+        medium: "medium";
+        high: "high";
+    }>;
+    firstSeenAt: z.ZodString;
+    lastSeenAt: z.ZodString;
+}, z.core.$strip>;
+export type KnownPlayerRecord = z.infer<typeof knownPlayerRecordSchema>;
+export declare const knownPlayersResponseSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    players: z.ZodArray<z.ZodObject<{
+        serverId: z.ZodString;
+        displayName: z.ZodString;
+        normalizedPlayerKey: z.ZodString;
+        knownPlatformIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        knownPlayFabIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        knownCharacterIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        identitySources: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        observationCount: z.ZodNumber;
+        confidence: z.ZodEnum<{
+            low: "low";
+            medium: "medium";
+            high: "high";
+        }>;
+        firstSeenAt: z.ZodString;
+        lastSeenAt: z.ZodString;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type KnownPlayersResponse = z.infer<typeof knownPlayersResponseSchema>;
+export declare const knownPlayerProfileResponseSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    player: z.ZodNullable<z.ZodObject<{
+        serverId: z.ZodString;
+        displayName: z.ZodString;
+        normalizedPlayerKey: z.ZodString;
+        knownPlatformIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        knownPlayFabIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        knownCharacterIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        identitySources: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        observationCount: z.ZodNumber;
+        confidence: z.ZodEnum<{
+            low: "low";
+            medium: "medium";
+            high: "high";
+        }>;
+        firstSeenAt: z.ZodString;
+        lastSeenAt: z.ZodString;
+    }, z.core.$strip>>;
+    isOnline: z.ZodBoolean;
+    activeSession: z.ZodNullable<z.ZodObject<{
+        serverId: z.ZodString;
+        playerName: z.ZodString;
+        startedAt: z.ZodString;
+        endedAt: z.ZodOptional<z.ZodString>;
+        durationSeconds: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    recentSessions: z.ZodArray<z.ZodObject<{
+        serverId: z.ZodString;
+        playerName: z.ZodString;
+        startedAt: z.ZodString;
+        endedAt: z.ZodOptional<z.ZodString>;
+        durationSeconds: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type KnownPlayerProfileResponse = z.infer<typeof knownPlayerProfileResponseSchema>;
+export declare const identityObservationSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    displayName: z.ZodString;
+    normalizedPlayerKey: z.ZodString;
+    observedAt: z.ZodString;
+    playFabId: z.ZodOptional<z.ZodString>;
+    platformId: z.ZodOptional<z.ZodString>;
+    characterId: z.ZodOptional<z.ZodString>;
+    source: z.ZodString;
+    confidence: z.ZodEnum<{
+        low: "low";
+        medium: "medium";
+        high: "high";
+    }>;
+}, z.core.$strip>;
+export type IdentityObservation = z.infer<typeof identityObservationSchema>;
+export declare const playerCharacterAuditAssessmentSchema: z.ZodEnum<{
+    insufficient_evidence: "insufficient_evidence";
+    single_character_observed: "single_character_observed";
+    possible_multiple_characters: "possible_multiple_characters";
+    multiple_characters_observed: "multiple_characters_observed";
+}>;
+export type PlayerCharacterAuditAssessment = z.infer<typeof playerCharacterAuditAssessmentSchema>;
+export declare const playerCharacterAuditResponseSchema: z.ZodObject<{
+    serverId: z.ZodString;
+    player: z.ZodNullable<z.ZodObject<{
+        serverId: z.ZodString;
+        displayName: z.ZodString;
+        normalizedPlayerKey: z.ZodString;
+        knownPlatformIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        knownPlayFabIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        knownCharacterIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        identitySources: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        observationCount: z.ZodNumber;
+        confidence: z.ZodEnum<{
+            low: "low";
+            medium: "medium";
+            high: "high";
+        }>;
+        firstSeenAt: z.ZodString;
+        lastSeenAt: z.ZodString;
+    }, z.core.$strip>>;
+    distinctPlatformIds: z.ZodArray<z.ZodString>;
+    distinctPlayFabIds: z.ZodArray<z.ZodString>;
+    distinctCharacterIds: z.ZodArray<z.ZodString>;
+    recentObservations: z.ZodArray<z.ZodObject<{
+        serverId: z.ZodString;
+        displayName: z.ZodString;
+        normalizedPlayerKey: z.ZodString;
+        observedAt: z.ZodString;
+        playFabId: z.ZodOptional<z.ZodString>;
+        platformId: z.ZodOptional<z.ZodString>;
+        characterId: z.ZodOptional<z.ZodString>;
+        source: z.ZodString;
+        confidence: z.ZodEnum<{
+            low: "low";
+            medium: "medium";
+            high: "high";
+        }>;
+    }, z.core.$strip>>;
+    totalObservations: z.ZodNumber;
+    assessment: z.ZodEnum<{
+        insufficient_evidence: "insufficient_evidence";
+        single_character_observed: "single_character_observed";
+        possible_multiple_characters: "possible_multiple_characters";
+        multiple_characters_observed: "multiple_characters_observed";
+    }>;
+}, z.core.$strip>;
+export type PlayerCharacterAuditResponse = z.infer<typeof playerCharacterAuditResponseSchema>;
 export declare const serverStateSchema: z.ZodEnum<{
     online: "online";
     offline: "offline";

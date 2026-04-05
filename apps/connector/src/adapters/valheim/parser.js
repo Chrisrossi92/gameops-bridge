@@ -51,6 +51,21 @@ function extractPlayerName(message, pattern) {
     // Strip trailing metadata segments that often appear in journal lines.
     return captured.replace(/\s+\(.*\)$/, '').replace(/\s+\[.*\]$/, '');
 }
+function extractDisconnectPlayerName(message) {
+    const patterns = [
+        /player connection lost:\s*(.+)$/i,
+        /player disconnected:\s*(.+)$/i,
+        /disconnect(?:ed)? player:\s*(.+)$/i,
+        /zplayfabsocket::dispose.*for\s+player\s+(.+)$/i
+    ];
+    for (const pattern of patterns) {
+        const extracted = extractPlayerName(message, pattern);
+        if (extracted) {
+            return extracted;
+        }
+    }
+    return null;
+}
 export const valheimAdapter = {
     game: 'valheim',
     parseLine(line, context) {
@@ -107,7 +122,8 @@ export const valheimAdapter = {
                     valheimWorldName: worldName,
                     valheimJoinCode: joinCode,
                     valheimCurrentPlayerCount: currentPlayerCount,
-                    valheimEventSource: 'journal'
+                    valheimEventSource: 'journal',
+                    valheimDisconnectRule: 'structured_connection_lost'
                 }
             });
         }
@@ -129,6 +145,59 @@ export const valheimAdapter = {
                 playerName: leftPlayerName,
                 occurredAt,
                 message
+            });
+        }
+        const disconnectPlayerName = extractDisconnectPlayerName(message);
+        if (disconnectPlayerName) {
+            return createEvent({
+                serverId: context.serverId,
+                eventType: 'PLAYER_LEAVE',
+                playerName: disconnectPlayerName,
+                occurredAt,
+                message,
+                raw: {
+                    valheimDisconnectRule: 'named_disconnect_line',
+                    valheimEventSource: 'journal'
+                }
+            });
+        }
+        if (/keep socket for playfab\/.+try to reconnect before timeout/i.test(message)) {
+            return createEvent({
+                serverId: context.serverId,
+                eventType: 'HEALTH_WARN',
+                occurredAt,
+                message,
+                raw: {
+                    valheimDisconnectSignal: true,
+                    valheimDisconnectRule: 'playfab_reconnect_timeout_hint',
+                    valheimEventSource: 'journal'
+                }
+            });
+        }
+        if (/zplayfabsocket::dispose/i.test(message)) {
+            return createEvent({
+                serverId: context.serverId,
+                eventType: 'HEALTH_WARN',
+                occurredAt,
+                message,
+                raw: {
+                    valheimDisconnectSignal: true,
+                    valheimDisconnectRule: 'playfab_socket_dispose',
+                    valheimEventSource: 'journal'
+                }
+            });
+        }
+        if (/playfab.*(connection lost|disconnect|timeout|failed)/i.test(message)) {
+            return createEvent({
+                serverId: context.serverId,
+                eventType: 'HEALTH_WARN',
+                occurredAt,
+                message,
+                raw: {
+                    valheimDisconnectSignal: true,
+                    valheimDisconnectRule: 'playfab_network_error',
+                    valheimEventSource: 'journal'
+                }
             });
         }
         if (/(warning|error|exception)/i.test(message)) {

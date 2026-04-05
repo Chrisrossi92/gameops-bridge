@@ -1,4 +1,4 @@
-import { activeSessionsResponseSchema } from '@gameops/shared';
+import { activeSessionsResponseSchema, knownPlayersResponseSchema } from '@gameops/shared';
 import { EmbedBuilder, SlashCommandBuilder } from 'discord.js';
 import { botConfig } from '../config.js';
 import { formatDurationCompact } from '../services/time-format.js';
@@ -6,6 +6,20 @@ import { resolveServerIdForGuild } from '../services/server-resolution.js';
 function getOnlineDuration(startedAt) {
     const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
     return formatDurationCompact(seconds);
+}
+function normalizePlayerKey(value) {
+    return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function resolveKnownDisplayName(sessionPlayerName, knownPlayers) {
+    const normalizedSessionName = normalizePlayerKey(sessionPlayerName);
+    if (!normalizedSessionName) {
+        return null;
+    }
+    const match = knownPlayers.find((player) => {
+        return player.normalizedPlayerKey === normalizedSessionName
+            || normalizePlayerKey(player.displayName) === normalizedSessionName;
+    });
+    return match?.displayName ?? null;
 }
 export const serverOnlineCommand = {
     data: new SlashCommandBuilder()
@@ -47,14 +61,32 @@ export const serverOnlineCommand = {
             await interaction.reply(`No active players for server ${serverId}.`);
             return;
         }
-        const lines = parsed.data.sessions.slice(0, 15).map((session) => {
-            return `• **${session.playerName}** — online ${getOnlineDuration(session.startedAt)}`;
+        const knownPlayersResponse = await fetch(`${botConfig.apiBaseUrl}/servers/${serverId}/players/known?limit=100`);
+        let knownPlayers = [];
+        if (knownPlayersResponse.ok) {
+            const knownPayload = await knownPlayersResponse.json();
+            const knownParsed = knownPlayersResponseSchema.safeParse(knownPayload);
+            if (knownParsed.success) {
+                knownPlayers = knownParsed.data.players.map((player) => ({
+                    displayName: player.displayName,
+                    normalizedPlayerKey: player.normalizedPlayerKey
+                }));
+            }
+        }
+        const sessions = parsed.data.sessions;
+        const lines = sessions.slice(0, 20).map((session) => {
+            const knownDisplayName = resolveKnownDisplayName(session.playerName, knownPlayers);
+            const displayName = knownDisplayName ?? session.playerName;
+            const aliasSuffix = knownDisplayName && normalizePlayerKey(knownDisplayName) !== normalizePlayerKey(session.playerName)
+                ? ` (_${session.playerName}_)`
+                : '';
+            return `• **${displayName}**${aliasSuffix} — ${getOnlineDuration(session.startedAt)}`;
         });
         const embed = new EmbedBuilder()
             .setColor(0x2ecc71)
-            .setTitle(`Online Players: ${serverId}`)
-            .setDescription(lines.join('\n'))
-            .setFooter({ text: `${parsed.data.sessions.length} active player(s)` });
+            .setTitle(`Live Roster: ${serverId}`)
+            .setDescription([`Online now: **${sessions.length}**`, '', ...lines].join('\n'))
+            .setFooter({ text: `Showing ${Math.min(sessions.length, 20)} of ${sessions.length}` });
         await interaction.reply({ embeds: [embed] });
     }
 };
