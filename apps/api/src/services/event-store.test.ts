@@ -4,15 +4,16 @@ import test from 'node:test';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import type { NormalizedEvent, SessionRecord } from '@gameops/shared';
 
 type EventStoreModule = {
-  addEvents: (events: Array<Record<string, unknown>>) => void;
-  getActiveSessionsForServer: (serverId: string) => Array<Record<string, unknown>>;
-  getRecentClosedSessionsForServer: (serverId: string, limit?: number) => Array<Record<string, unknown>>;
-  getRecentEventsForServer: (serverId: string, limit?: number) => Array<Record<string, unknown>>;
+  addEvents: (events: NormalizedEvent[]) => void;
+  getActiveSessionsForServer: (serverId: string) => SessionRecord[];
+  getRecentClosedSessionsForServer: (serverId: string, limit?: number) => SessionRecord[];
+  getRecentEventsForServer: (serverId: string, limit?: number) => NormalizedEvent[];
 };
 
-function createEvent(overrides: Record<string, unknown>): Record<string, unknown> {
+function createEvent(overrides: Partial<NormalizedEvent>): NormalizedEvent {
   return {
     game: 'valheim',
     serverId: 'srv-1',
@@ -31,7 +32,7 @@ async function withFreshEventStore(run: (store: EventStoreModule) => Promise<voi
 
   try {
     const modulePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
-    const store = await import(`${modulePath}?t=${Date.now()}-${Math.random()}`) as unknown as EventStoreModule;
+    const store: EventStoreModule = await import(`${modulePath}?t=${Date.now()}-${Math.random()}`);
     await run(store);
   } finally {
     if (previousPath === undefined) {

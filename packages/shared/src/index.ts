@@ -15,6 +15,15 @@ export const eventTypeSchema = z.enum([
 ]);
 export type EventType = z.infer<typeof eventTypeSchema>;
 
+export const normalizedEventRawSchema = z.object({
+  sessionCloseReason: z.string().optional(),
+  sessionReconciledCount: z.number().int().min(0).optional(),
+  replacedSessionStartedAt: z.string().datetime().optional(),
+  valheimCurrentPlayerCount: z.number().int().min(0).optional(),
+  valheimDisconnectSignal: z.boolean().optional(),
+  valheimDisconnectRule: z.string().optional()
+}).catchall(z.unknown());
+
 export const normalizedEventSchema = z.object({
   id: z.string().optional(),
   game: gameKeySchema,
@@ -24,7 +33,7 @@ export const normalizedEventSchema = z.object({
   platformId: z.string().optional(),
   message: z.string().optional(),
   occurredAt: z.string().datetime(),
-  raw: z.record(z.string(), z.unknown()).optional()
+  raw: normalizedEventRawSchema.optional()
 });
 export type NormalizedEvent = z.infer<typeof normalizedEventSchema>;
 
