@@ -193,7 +193,11 @@ export const palworldLatestPlayerTelemetrySchema = z.object({
   lastSeenAt: z.string().datetime(),
   maxLevelSeen: z.number().int().min(0).optional(),
   totalSessions: z.number().int().min(0),
-  isOnline: z.boolean()
+  isOnline: z.boolean(),
+  avgPing: z.number().optional(),
+  maxPing: z.number().optional(),
+  pingStdDev: z.number().optional(),
+  currentSessionDurationSeconds: z.number().int().min(0).optional()
 });
 export type PalworldLatestPlayerTelemetry = z.infer<typeof palworldLatestPlayerTelemetrySchema>;
 
@@ -238,6 +242,9 @@ export const palworldMetricsSummarySchema = z.object({
   currentPlayerCount: z.number().int().min(0).optional(),
   serverFps: z.number().optional(),
   uptimeSeconds: z.number().min(0).optional(),
+  averageFps: z.number().optional(),
+  worstFrameTimeMs: z.number().optional(),
+  currentUptimeHours: z.number().min(0).optional(),
   raw: z.record(z.string(), z.unknown())
 });
 export type PalworldMetricsSummary = z.infer<typeof palworldMetricsSummarySchema>;
