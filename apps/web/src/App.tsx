@@ -1,8 +1,10 @@
 import {
   activeSessionsResponseSchema,
+  configuredServersResponseSchema,
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
   recentEventsResponseSchema,
+  type ConfiguredServersResponse,
   type KnownPlayerProfileResponse,
   type NormalizedEvent
 } from '@gameops/shared';
@@ -40,13 +42,21 @@ interface WarningSummaryEntry {
   signature: string;
 }
 
-const SERVER_OPTIONS = [{ id: 'valheim-local-1', label: 'Valheim Local 1' }];
+interface ServerOption {
+  id: string;
+  displayName: string;
+  game: ConfiguredServersResponse['servers'][number]['game'];
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
 
 function App() {
-  const [serverId, setServerId] = useState<string>(SERVER_OPTIONS[0]?.id ?? 'valheim-local-1');
+  const [serverOptions, setServerOptions] = useState<ServerOption[]>([]);
+  const [serverOptionsLoading, setServerOptionsLoading] = useState(true);
+  const [serverOptionsError, setServerOptionsError] = useState<string | null>(null);
+  const [serverId, setServerId] = useState<string>('');
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [onlineEntries, setOnlineEntries] = useState<OnlineEntry[]>([]);
   const [recentActivity, setRecentActivity] = useState<NormalizedEvent[]>([]);
@@ -69,7 +79,86 @@ function App() {
   useEffect(() => {
     let isMounted = true;
 
+    async function loadServerCatalog(): Promise<void> {
+      try {
+        setServerOptionsLoading(true);
+        const response = await fetch(`${apiBaseUrl}/servers/catalog`);
+
+        if (!response.ok) {
+          throw new Error(`Server catalog fetch failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = configuredServersResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('Server catalog payload validation failed.');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        const catalog = parsed.data.servers.map((server) => ({
+          id: server.id,
+          displayName: server.displayName,
+          game: server.game
+        }));
+
+        setServerOptions(catalog);
+        setServerOptionsError(null);
+        setServerId((currentServerId) => {
+          const hasCurrent = currentServerId && catalog.some((server) => server.id === currentServerId);
+
+          if (hasCurrent) {
+            return currentServerId;
+          }
+
+          return catalog[0]?.id ?? '';
+        });
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
+
+        if (!isMounted) {
+          return;
+        }
+
+        setServerOptions([]);
+        setServerOptionsError(message);
+        setServerId('');
+      } finally {
+        if (isMounted) {
+          setServerOptionsLoading(false);
+        }
+      }
+    }
+
+    void loadServerCatalog();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
     async function loadDashboard(isInitialLoad: boolean): Promise<void> {
+      if (!serverId) {
+        if (isMounted) {
+          setLoading(false);
+          setError(null);
+          setOnlineEntries([]);
+          setRecentActivity([]);
+          setLatestWarnings([]);
+          setKnownPlayerCount(0);
+          setKnownPlayerPreview([]);
+          setLastUpdatedAt(null);
+        }
+
+        return;
+      }
+
       try {
         if (isInitialLoad && isMounted) {
           setLoading(true);
@@ -200,7 +289,7 @@ function App() {
     let isMounted = true;
 
     async function loadSelectedPlayerProfile(): Promise<void> {
-      if (!selectedPlayerLookupKey) {
+      if (!serverId || !selectedPlayerLookupKey) {
         setSelectedPlayerProfile(null);
         setProfileError(null);
         setProfileLoading(false);
@@ -267,8 +356,11 @@ function App() {
   }, [lastUpdatedAt]);
 
   const currentServerLabel = useMemo(
-    () => SERVER_OPTIONS.find((option) => option.id === serverId)?.label ?? serverId,
-    [serverId]
+    () => {
+      const selected = serverOptions.find((option) => option.id === serverId);
+      return selected ? `${selected.displayName} (${selected.game})` : serverId;
+    },
+    [serverId, serverOptions]
   );
 
   const latestWarningLabel = useMemo(() => {
@@ -295,15 +387,25 @@ function App() {
     <main className="dashboard">
       <header className="dashboard-header">
         <h1>GameOps Bridge Dashboard</h1>
-        <p>Live Valheim operations snapshot</p>
+        <p>Live game operations snapshot</p>
         <div className="toolbar">
           <label htmlFor="server-select">Server</label>
-          <select id="server-select" value={serverId} onChange={(event) => setServerId(event.target.value)}>
-            {SERVER_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
+          <select
+            id="server-select"
+            value={serverId}
+            onChange={(event) => setServerId(event.target.value)}
+            disabled={serverOptionsLoading || serverOptions.length === 0}
+          >
+            {serverOptions.map((option) => (
+              <option key={option.id} value={option.id}>{option.displayName} ({option.game})</option>
             ))}
           </select>
         </div>
+        {serverOptionsLoading ? <p className="subtle">Loading configured servers...</p> : null}
+        {serverOptionsError ? <p className="error">Server catalog unavailable: {serverOptionsError}</p> : null}
+        {!serverOptionsLoading && !serverOptionsError && serverOptions.length === 0 ? (
+          <p className="subtle">No enabled servers found in config.</p>
+        ) : null}
         <div className="status-strip">
           <div className="status-pill">
             <span className="status-label">API</span>

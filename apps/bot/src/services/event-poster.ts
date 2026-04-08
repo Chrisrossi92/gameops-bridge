@@ -1,6 +1,6 @@
 import type { NormalizedEvent } from '@gameops/shared';
 import { EmbedBuilder, type Client } from 'discord.js';
-import { resolveEventChannelId } from '../local-config.js';
+import { getKnownServerMetadata, resolveEventChannelId } from '../local-config.js';
 import { formatDurationCompact } from './time-format.js';
 
 interface ValheimJournalDetails {
@@ -139,6 +139,10 @@ function getEventPresentation(event: NormalizedEvent): {
 
 function buildEventEmbed(event: NormalizedEvent): EmbedBuilder {
   const presentation = getEventPresentation(event);
+  const serverMetadata = getKnownServerMetadata(event.serverId);
+  const footerServerLabel = serverMetadata
+    ? `${serverMetadata.displayName} (${serverMetadata.game}) • ${event.serverId}`
+    : event.serverId;
 
   const embed = new EmbedBuilder()
     .setColor(presentation.color)
@@ -147,7 +151,7 @@ function buildEventEmbed(event: NormalizedEvent): EmbedBuilder {
     .addFields(
       { name: 'When', value: formatTimestamp(event.occurredAt), inline: true }
     )
-    .setFooter({ text: `Server ${event.serverId}` });
+    .setFooter({ text: `Server ${footerServerLabel}` });
 
   if (presentation.extraFields && presentation.extraFields.length > 0) {
     embed.addFields(...presentation.extraFields);
@@ -173,6 +177,10 @@ function buildBurstEmbed(serverId: string, eventType: 'PLAYER_JOIN' | 'PLAYER_LE
     : `${events.length} player event(s)`;
   const overflow = uniqueNames.length > 6 ? `, +${uniqueNames.length - 6} more` : '';
   const onlineLine = latestDetails ? `Online now **${latestDetails.currentPlayerCount}**` : '';
+  const serverMetadata = getKnownServerMetadata(serverId);
+  const footerServerLabel = serverMetadata
+    ? `${serverMetadata.displayName} (${serverMetadata.game}) • ${serverId}`
+    : serverId;
 
   const descriptionParts = [namesLine + overflow, onlineLine].filter(Boolean);
   const embed = new EmbedBuilder()
@@ -180,7 +188,7 @@ function buildBurstEmbed(serverId: string, eventType: 'PLAYER_JOIN' | 'PLAYER_LE
     .setTitle(title)
     .setDescription(descriptionParts.join('\n'))
     .addFields({ name: 'When', value: latestWhen, inline: true })
-    .setFooter({ text: `Server ${serverId}` });
+    .setFooter({ text: `Server ${footerServerLabel}` });
 
   if (latestDetails) {
     embed.addFields(

@@ -1,4 +1,4 @@
-import { resolveDefaultServerId } from '../local-config.js';
+import { getKnownServerIds, resolveDefaultServerId } from '../local-config.js';
 
 interface ResolveServerIdResult {
   serverId: string | null;
@@ -6,9 +6,17 @@ interface ResolveServerIdResult {
 }
 
 export function resolveServerIdForGuild(guildId: string | null, explicitServerId: string | null): ResolveServerIdResult {
+  const knownServerIds = getKnownServerIds();
   const normalizedExplicitServerId = explicitServerId?.trim();
 
   if (normalizedExplicitServerId) {
+    if (knownServerIds.length > 0 && !knownServerIds.includes(normalizedExplicitServerId)) {
+      return {
+        serverId: null,
+        errorMessage: `Unknown server-id "${normalizedExplicitServerId}". Known servers: ${knownServerIds.join(', ')}`
+      };
+    }
+
     return { serverId: normalizedExplicitServerId };
   }
 
@@ -24,7 +32,7 @@ export function resolveServerIdForGuild(guildId: string | null, explicitServerId
   if (!mappedServerId) {
     return {
       serverId: null,
-      errorMessage: `No default server is configured for this guild (${guildId}). Add one in apps/bot/config/bot.local.json.`
+      errorMessage: `No default server is configured for this guild (${guildId}). Set guildDefaults in apps/bot/config/bot.local.json or provide server-id.`
     };
   }
 

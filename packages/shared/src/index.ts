@@ -15,6 +15,15 @@ export const eventTypeSchema = z.enum([
 ]);
 export type EventType = z.infer<typeof eventTypeSchema>;
 
+export const hostingModeSchema = z.enum(['self_hosted', 'hybrid', 'hosted_limited']);
+export type HostingMode = z.infer<typeof hostingModeSchema>;
+
+export const valheimConnectorModeSchema = z.enum(['file', 'journal']);
+export type ValheimConnectorMode = z.infer<typeof valheimConnectorModeSchema>;
+
+export const palworldConnectorModeSchema = z.enum(['rest', 'rcon', 'query', 'file']);
+export type PalworldConnectorMode = z.infer<typeof palworldConnectorModeSchema>;
+
 export const normalizedEventRawSchema = z.object({
   sessionCloseReason: z.string().optional(),
   sessionReconciledCount: z.number().int().min(0).optional(),
@@ -155,3 +164,130 @@ export const serverStatusSchema = z.object({
   message: z.string().optional()
 });
 export type ServerStatus = z.infer<typeof serverStatusSchema>;
+
+export const configuredServerSummarySchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  game: gameKeySchema
+});
+export type ConfiguredServerSummary = z.infer<typeof configuredServerSummarySchema>;
+
+export const configuredServersResponseSchema = z.object({
+  servers: z.array(configuredServerSummarySchema)
+});
+export type ConfiguredServersResponse = z.infer<typeof configuredServersResponseSchema>;
+
+const workspaceConfigSchema = z.object({
+  workspaceId: z.string().min(1),
+  workspaceName: z.string().min(1),
+  ownerName: z.string().min(1),
+  hostingMode: hostingModeSchema,
+  timezone: z.string().min(1).default('UTC')
+});
+
+const apiConfigSchema = z.object({
+  baseUrl: z.string().url(),
+  port: z.number().int().min(1).max(65535).default(3001),
+  corsOrigin: z.string().optional()
+});
+
+const discordConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  applicationId: z.string().optional(),
+  guildId: z.string().optional(),
+  botTokenEnvVar: z.string().default('DISCORD_BOT_TOKEN')
+});
+
+const connectorCommonSchema = z.object({
+  pollIntervalMs: z.number().int().min(250).default(2000),
+  logPath: z.string().optional(),
+  journalServiceName: z.string().optional(),
+  restHost: z.string().optional(),
+  restPort: z.number().int().min(1).max(65535).optional(),
+  restUsername: z.string().optional(),
+  restPassword: z.string().optional(),
+  restPath: z.string().optional(),
+  rconHost: z.string().optional(),
+  rconPort: z.number().int().min(1).max(65535).optional(),
+  rconPassword: z.string().optional(),
+  queryPort: z.number().int().min(1).max(65535).optional(),
+  savePath: z.string().optional()
+});
+
+const valheimServerConfigSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  enabled: z.boolean().default(true),
+  game: z.literal('valheim'),
+  connector: z.discriminatedUnion('mode', [
+    connectorCommonSchema.extend({
+      mode: z.literal('file'),
+      logPath: z.string().min(1)
+    }),
+    connectorCommonSchema.extend({
+      mode: z.literal('journal'),
+      journalServiceName: z.string().min(1)
+    })
+  ])
+});
+
+const palworldServerConfigSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  enabled: z.boolean().default(true),
+  game: z.literal('palworld'),
+  connector: z.discriminatedUnion('mode', [
+    connectorCommonSchema.extend({
+      mode: z.literal('rest'),
+      restHost: z.string().min(1),
+      restPort: z.number().int().min(1).max(65535),
+      restUsername: z.string().min(1).default('admin'),
+      restPassword: z.string().min(1),
+      restPath: z.string().min(1).default('/v1/api')
+    }),
+    connectorCommonSchema.extend({
+      mode: z.literal('rcon'),
+      rconHost: z.string().min(1),
+      rconPort: z.number().int().min(1).max(65535),
+      rconPassword: z.string().min(1)
+    }),
+    connectorCommonSchema.extend({
+      mode: z.literal('query'),
+      rconHost: z.string().min(1),
+      queryPort: z.number().int().min(1).max(65535)
+    }),
+    connectorCommonSchema.extend({
+      mode: z.literal('file'),
+      logPath: z.string().min(1)
+    })
+  ])
+});
+
+const serverConfigSchema = z.discriminatedUnion('game', [
+  valheimServerConfigSchema,
+  palworldServerConfigSchema
+]);
+
+export const featureFlagsSchema = z.object({
+  dashboardEnabled: z.boolean().default(true),
+  botEnabled: z.boolean().default(true),
+  connectorEnabled: z.boolean().default(true),
+  identityResolutionEnabled: z.boolean().default(true),
+  sessionReconciliationEnabled: z.boolean().default(true)
+}).catchall(z.boolean());
+
+export const gameOpsConfigSchema = z.object({
+  version: z.literal(1),
+  workspace: workspaceConfigSchema,
+  api: apiConfigSchema,
+  discord: discordConfigSchema,
+  servers: z.array(serverConfigSchema).min(1),
+  featureFlags: featureFlagsSchema
+});
+
+export type WorkspaceConfig = z.infer<typeof workspaceConfigSchema>;
+export type ApiConfig = z.infer<typeof apiConfigSchema>;
+export type DiscordConfig = z.infer<typeof discordConfigSchema>;
+export type ServerConfig = z.infer<typeof serverConfigSchema>;
+export type FeatureFlagsConfig = z.infer<typeof featureFlagsSchema>;
+export type GameOpsConfig = z.infer<typeof gameOpsConfigSchema>;

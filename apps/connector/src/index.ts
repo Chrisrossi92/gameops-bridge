@@ -1,8 +1,25 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
-import { gameKeySchema, ingestEventsRequestSchema, type IdentityConfidence, type NormalizedEvent } from '@gameops/shared';
+import {
+  gameKeySchema,
+  gameOpsConfigSchema,
+  ingestEventsRequestSchema,
+  type GameOpsConfig,
+  type IdentityConfidence,
+  type NormalizedEvent
+} from '@gameops/shared';
 import { getAdapter } from './adapters/index.js';
+import {
+  buildHealthWarnEvent,
+  buildPlayerSnapshot,
+  buildServerOnlineEvent,
+  diffPlayerSnapshots,
+  fetchPlayers,
+  type PalworldPlayerIdentity
+} from './adapters/palworld/rest.js';
 import { startValheimJournalStream } from './adapters/valheim/journal.js';
 import { findKnownPlayer, upsertKnownPlayerObservation } from './identity/known-player-store.js';
 
@@ -16,14 +33,171 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-const connectorModeSchema = z.enum(['file', 'journal']);
+const runtimeConnectorModeSchema = z.enum(['file', 'journal', 'rest', 'rcon', 'query']);
+type ConnectorMode = z.infer<typeof runtimeConnectorModeSchema>;
 
-const game = gameKeySchema.parse(process.env.GAME_KEY ?? 'valheim');
-const mode = connectorModeSchema.parse(process.env.CONNECTOR_MODE ?? 'file');
-const serverId = getRequiredEnv('CONNECTOR_SERVER_ID');
-const apiBaseUrl = process.env.API_BASE_URL ?? 'http://localhost:3001';
-const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS ?? 2000);
-const logFile = process.env.VALHEIM_LOG_FILE;
+interface ConnectorRuntimeSettings {
+  serverId: string;
+  game: z.infer<typeof gameKeySchema>;
+  mode: ConnectorMode;
+  apiBaseUrl: string;
+  pollIntervalMs: number;
+  logFile?: string;
+  journalServiceName?: string;
+  restHost?: string;
+  restPort?: number;
+  restUsername?: string;
+  restPassword?: string;
+  restPath?: string;
+}
+
+function resolveConfigPath(): string {
+  const rawPath = process.env.GAMEOPS_CONFIG_PATH ?? './config/gameops.config.json';
+  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function selectConfiguredServer(config: GameOpsConfig): GameOpsConfig['servers'][number] {
+  const enabledServers = config.servers.filter((server) => server.enabled !== false);
+
+  if (enabledServers.length === 0) {
+    throw new Error('No enabled servers found in config/gameops.config.json');
+  }
+
+  const requestedServerId = process.env.CONNECTOR_SERVER_ID?.trim();
+
+  if (requestedServerId) {
+    const match = enabledServers.find((server) => server.id === requestedServerId);
+
+    if (!match) {
+      const known = enabledServers.map((server) => server.id).join(', ');
+      throw new Error(`CONNECTOR_SERVER_ID="${requestedServerId}" not found among enabled servers: ${known}`);
+    }
+
+    return match;
+  }
+
+  if (enabledServers.length === 1) {
+    return enabledServers[0]!;
+  }
+
+  const known = enabledServers.map((server) => server.id).join(', ');
+  throw new Error(`Multiple enabled servers found. Set CONNECTOR_SERVER_ID to one of: ${known}`);
+}
+
+function resolveFromSharedConfig(): ConnectorRuntimeSettings | null {
+  const configPath = resolveConfigPath();
+
+  try {
+    const raw = readFileSync(configPath, 'utf8');
+    const parsed = gameOpsConfigSchema.parse(JSON.parse(raw) as unknown);
+    const selected = selectConfiguredServer(parsed);
+
+    const mode = runtimeConnectorModeSchema.parse(selected.connector.mode);
+    const apiBaseUrl = process.env.API_BASE_URL ?? parsed.api.baseUrl;
+    const pollIntervalMs = parsePositiveInt(process.env.POLL_INTERVAL_MS, selected.connector.pollIntervalMs);
+    const envLogFile = process.env.VALHEIM_LOG_FILE?.trim();
+    const envJournalService = process.env.VALHEIM_JOURNAL_SERVICE?.trim();
+    const resolvedLogFile = envLogFile || selected.connector.logPath;
+    const resolvedJournalService = envJournalService || selected.connector.journalServiceName;
+
+    const settings: ConnectorRuntimeSettings = {
+      serverId: selected.id,
+      game: selected.game,
+      mode,
+      apiBaseUrl,
+      pollIntervalMs
+    };
+
+    if (resolvedLogFile) {
+      settings.logFile = resolvedLogFile;
+    }
+
+    if (resolvedJournalService) {
+      settings.journalServiceName = resolvedJournalService;
+    }
+
+    if (selected.game === 'palworld') {
+      const resolvedRestHost = process.env.PALWORLD_REST_HOST?.trim() || selected.connector.restHost;
+      const resolvedRestUsername = process.env.PALWORLD_REST_USERNAME?.trim() || selected.connector.restUsername;
+      const resolvedRestPassword = process.env.PALWORLD_REST_PASSWORD?.trim() || selected.connector.restPassword;
+      const resolvedRestPath = process.env.PALWORLD_REST_PATH?.trim() || selected.connector.restPath;
+
+      if (resolvedRestHost) {
+        settings.restHost = resolvedRestHost;
+      }
+
+      settings.restPort = parsePositiveInt(process.env.PALWORLD_REST_PORT, selected.connector.restPort ?? 8212);
+
+      if (resolvedRestUsername) {
+        settings.restUsername = resolvedRestUsername;
+      }
+
+      if (resolvedRestPassword) {
+        settings.restPassword = resolvedRestPassword;
+      }
+
+      if (resolvedRestPath) {
+        settings.restPath = resolvedRestPath;
+      }
+    }
+
+    return settings;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`[connector] shared-config-unavailable path=${configPath} reason=${message}`);
+    return null;
+  }
+}
+
+function resolveFromLegacyEnv(): ConnectorRuntimeSettings {
+  const game = gameKeySchema.parse(process.env.GAME_KEY ?? 'valheim');
+  const logFileFromEnv = game === 'palworld'
+    ? process.env.PALWORLD_LOG_FILE ?? process.env.VALHEIM_LOG_FILE
+    : process.env.VALHEIM_LOG_FILE;
+
+  return {
+    game,
+    mode: runtimeConnectorModeSchema.parse(process.env.CONNECTOR_MODE ?? 'file'),
+    serverId: getRequiredEnv('CONNECTOR_SERVER_ID'),
+    apiBaseUrl: process.env.API_BASE_URL ?? 'http://localhost:3001',
+    pollIntervalMs: parsePositiveInt(process.env.POLL_INTERVAL_MS, 2000),
+    ...(logFileFromEnv ? { logFile: logFileFromEnv } : {}),
+    ...(process.env.VALHEIM_JOURNAL_SERVICE ? { journalServiceName: process.env.VALHEIM_JOURNAL_SERVICE } : {}),
+    ...(process.env.PALWORLD_REST_HOST ? { restHost: process.env.PALWORLD_REST_HOST } : {}),
+    ...(process.env.PALWORLD_REST_PORT ? { restPort: parsePositiveInt(process.env.PALWORLD_REST_PORT, 8212) } : {}),
+    ...(process.env.PALWORLD_REST_USERNAME ? { restUsername: process.env.PALWORLD_REST_USERNAME } : {}),
+    ...(process.env.PALWORLD_REST_PASSWORD ? { restPassword: process.env.PALWORLD_REST_PASSWORD } : {}),
+    ...(process.env.PALWORLD_REST_PATH ? { restPath: process.env.PALWORLD_REST_PATH } : {})
+  };
+}
+
+function resolveRuntimeSettings(): ConnectorRuntimeSettings {
+  return resolveFromSharedConfig() ?? resolveFromLegacyEnv();
+}
+
+const runtime = resolveRuntimeSettings();
+const game = runtime.game;
+const mode = runtime.mode;
+const serverId = runtime.serverId;
+const apiBaseUrl = runtime.apiBaseUrl;
+const pollIntervalMs = runtime.pollIntervalMs;
+const logFile = runtime.logFile;
+const journalServiceName = runtime.journalServiceName;
+const restHost = runtime.restHost;
+const restPort = runtime.restPort;
+const restUsername = runtime.restUsername;
+const restPassword = runtime.restPassword;
+const restPath = runtime.restPath;
 
 const adapter = getAdapter(game);
 let processedLineCount = 0;
@@ -264,6 +438,10 @@ function enrichJoinFromKnownPlayers(event: NormalizedEvent): NormalizedEvent {
 }
 
 function recordKnownPlayerObservation(event: NormalizedEvent): void {
+  if (event.game !== 'valheim') {
+    return;
+  }
+
   if (event.eventType !== 'PLAYER_JOIN' || !event.playerName) {
     return;
   }
@@ -396,7 +574,7 @@ function parseLineSafe(line: string): NormalizedEvent[] {
 }
 
 async function runFileMode(): Promise<void> {
-  const requiredLogFile = logFile ?? getRequiredEnv('VALHEIM_LOG_FILE');
+  const requiredLogFile = logFile ?? getRequiredEnv(game === 'palworld' ? 'PALWORLD_LOG_FILE' : 'VALHEIM_LOG_FILE');
 
   console.log(`Starting ${game} connector for ${serverId} in file mode`);
   console.log(`Watching log file: ${requiredLogFile}`);
@@ -440,6 +618,7 @@ async function runJournalMode(): Promise<void> {
   console.log(`Starting ${game} connector for ${serverId} in journal mode`);
 
   await startValheimJournalStream({
+    ...(journalServiceName ? { serviceName: journalServiceName } : {}),
     onLine: async (line) => {
       const events = parseLineSafe(line);
 
@@ -453,8 +632,115 @@ async function runJournalMode(): Promise<void> {
   });
 }
 
-if (mode === 'journal') {
-  await runJournalMode();
-} else {
+async function runPalworldRestMode(): Promise<void> {
+  if (game !== 'palworld') {
+    throw new Error(`Mode "rest" is only supported for palworld. Selected game=${game}`);
+  }
+
+  if (!restHost || !restPort || !restUsername || !restPassword) {
+    throw new Error('Palworld REST mode requires restHost, restPort, restUsername, and restPassword.');
+  }
+
+  const requiredRestHost = restHost;
+  const requiredRestPort = restPort;
+  const requiredRestUsername = restUsername;
+  const requiredRestPassword = restPassword;
+
+  console.log(`Starting ${game} connector for ${serverId} in rest mode`);
+  console.log(`Polling Palworld REST API at http://${requiredRestHost}:${requiredRestPort}${restPath ?? '/v1/api'}/players`);
+
+  let previousSnapshot = new Map<string, PalworldPlayerIdentity>();
+  let hasCompletedFirstSuccessfulPoll = false;
+  let consecutiveFailureCount = 0;
+  let lastHealthWarnAtMs = 0;
+  let pollInFlight = false;
+
+  const HEALTH_WARN_FAILURE_THRESHOLD = 3;
+  const HEALTH_WARN_COOLDOWN_MS = 5 * 60 * 1000;
+
+  async function pollPlayersAndIngest(): Promise<void> {
+    if (pollInFlight) {
+      console.log(`[palworld-rest] poll skipped server=${serverId} reason=in-flight`);
+      return;
+    }
+
+    pollInFlight = true;
+
+    try {
+      const players = await fetchPlayers({
+        host: requiredRestHost,
+        port: requiredRestPort,
+        username: requiredRestUsername,
+        password: requiredRestPassword,
+        ...(restPath ? { path: restPath } : {})
+      });
+      const currentSnapshot = buildPlayerSnapshot(players);
+      const occurredAt = new Date().toISOString();
+      const events: NormalizedEvent[] = [];
+
+      if (!hasCompletedFirstSuccessfulPoll) {
+        hasCompletedFirstSuccessfulPoll = true;
+        events.push(buildServerOnlineEvent(serverId, occurredAt, currentSnapshot.size));
+      }
+
+      events.push(...diffPlayerSnapshots(previousSnapshot, currentSnapshot, serverId, occurredAt));
+      previousSnapshot = currentSnapshot;
+
+      if (consecutiveFailureCount > 0) {
+        console.log(`[palworld-rest] poll recovered server=${serverId} failures=${consecutiveFailureCount}`);
+      }
+
+      consecutiveFailureCount = 0;
+
+      if (events.length > 0) {
+        await ingestEvents(events);
+      }
+    } catch (error) {
+      consecutiveFailureCount += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[palworld-rest] poll failed server=${serverId} count=${consecutiveFailureCount} reason=${message}`);
+
+      const nowMs = Date.now();
+      const shouldEmitHealthWarn = consecutiveFailureCount >= HEALTH_WARN_FAILURE_THRESHOLD
+        && (nowMs - lastHealthWarnAtMs) >= HEALTH_WARN_COOLDOWN_MS;
+
+      if (!shouldEmitHealthWarn) {
+        return;
+      }
+
+      lastHealthWarnAtMs = nowMs;
+      await ingestEvents([
+        buildHealthWarnEvent(
+          serverId,
+          new Date(nowMs).toISOString(),
+          consecutiveFailureCount,
+          `Palworld REST /players poll failing (${consecutiveFailureCount} consecutive errors): ${message}`
+        )
+      ]);
+    } finally {
+      pollInFlight = false;
+    }
+  }
+
+  setInterval(() => {
+    void pollPlayersAndIngest();
+  }, pollIntervalMs);
+
+  await pollPlayersAndIngest();
+}
+
+if (mode === 'file') {
   await runFileMode();
+} else if (mode === 'journal') {
+  if (game !== 'valheim') {
+    throw new Error(`Mode "journal" is only supported for valheim. Selected game=${game}`);
+  }
+
+  await runJournalMode();
+} else if (mode === 'rest') {
+  await runPalworldRestMode();
+} else {
+  throw new Error(
+    `Connector mode "${mode}" for game "${game}" is not implemented yet.`
+  );
 }

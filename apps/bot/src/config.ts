@@ -1,3 +1,5 @@
+import { getSharedApiBaseUrl, getSharedDiscordRegistrationConfig } from './shared-config.js';
+
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
 
@@ -8,11 +10,13 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
+const sharedDiscord = getSharedDiscordRegistrationConfig();
+
 export const botConfig = {
   token: getRequiredEnv('DISCORD_BOT_TOKEN'),
-  clientId: process.env.DISCORD_CLIENT_ID,
-  guildId: process.env.DISCORD_GUILD_ID,
-  apiBaseUrl: process.env.API_BASE_URL ?? 'http://localhost:3001'
+  clientId: process.env.DISCORD_CLIENT_ID ?? sharedDiscord.clientId,
+  guildId: process.env.DISCORD_GUILD_ID ?? sharedDiscord.guildId,
+  apiBaseUrl: process.env.API_BASE_URL ?? getSharedApiBaseUrl() ?? 'http://localhost:3001'
 };
 
 export function getDiscordRegistrationConfig(): { clientId: string; guildId: string } {

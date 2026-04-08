@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import { registerEventRoutes } from './routes/events.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerPlayerRoutes } from './routes/players.js';
+import { registerServerCatalogRoutes } from './routes/servers.js';
 import { registerServerStatusRoute } from './routes/server-status.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { initializeSessionStateStore } from './services/event-store.js';
@@ -17,6 +18,7 @@ await app.register(cors, {
 });
 
 await registerHealthRoute(app);
+await registerServerCatalogRoutes(app);
 await registerServerStatusRoute(app);
 await registerEventRoutes(app);
 await registerSessionRoutes(app);

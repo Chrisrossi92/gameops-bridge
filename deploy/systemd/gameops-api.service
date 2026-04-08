@@ -1,0 +1,15 @@
+[Unit]
+Description=GameOps Bridge API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/Users/christopherrossi/Desktop/Projects/gameops-bridge
+Environment=NODE_ENV=production
+Environment=GAMEOPS_CONFIG_PATH=/tmp/gameops.bootstrap.sample.json
+ExecStart=/usr/bin/env npm --workspace apps/api run dev
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

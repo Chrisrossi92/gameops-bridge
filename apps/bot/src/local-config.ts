@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { eventTypeSchema } from '@gameops/shared';
 import { z } from 'zod';
+import { getConfiguredServerById, getConfiguredServers, type ConfiguredServerMetadata } from './shared-config.js';
 
 const routedEventTypeSchema = z.enum([
   'PLAYER_JOIN',
@@ -74,7 +75,30 @@ export function getLocalBotConfig(): LocalBotConfig {
 
 export function resolveDefaultServerId(guildId: string): string | null {
   const config = getLocalBotConfig();
-  return config.guildDefaults[guildId] ?? null;
+  const configuredServers = getConfiguredServers();
+  const guildDefault = config.guildDefaults[guildId];
+
+  if (guildDefault) {
+    if (configuredServers.length === 0) {
+      return guildDefault;
+    }
+
+    const existsInSharedConfig = configuredServers.some((server) => server.id === guildDefault);
+
+    if (existsInSharedConfig) {
+      return guildDefault;
+    }
+
+    console.warn(
+      `[bot] guild-default-server-missing guild=${guildId} server=${guildDefault} reason=not_in_shared_config`
+    );
+  }
+
+  if (configuredServers.length === 1) {
+    return configuredServers[0]?.id ?? null;
+  }
+
+  return null;
 }
 
 export function resolveEventChannelId(serverId: string, eventType: z.infer<typeof eventTypeSchema>): string | null {
@@ -95,6 +119,12 @@ export function resolveEventChannelId(serverId: string, eventType: z.infer<typeo
 }
 
 export function getRoutedServerIds(): string[] {
+  const configuredServers = getConfiguredServers();
+
+  if (configuredServers.length > 0) {
+    return configuredServers.map((server) => server.id);
+  }
+
   const config = getLocalBotConfig();
   return Object.keys(config.eventRoutes);
 }
@@ -105,4 +135,19 @@ export function getPollingConfig(): { intervalMs: number; fetchLimit: number } {
     intervalMs: config.polling.intervalMs,
     fetchLimit: config.polling.fetchLimit
   };
+}
+
+export function getKnownServerMetadata(serverId: string): ConfiguredServerMetadata | null {
+  return getConfiguredServerById(serverId);
+}
+
+export function getKnownServerIds(): string[] {
+  const configuredServers = getConfiguredServers();
+
+  if (configuredServers.length > 0) {
+    return configuredServers.map((server) => server.id);
+  }
+
+  const config = getLocalBotConfig();
+  return Object.keys(config.eventRoutes);
 }
