@@ -177,6 +177,77 @@ export const configuredServersResponseSchema = z.object({
 });
 export type ConfiguredServersResponse = z.infer<typeof configuredServersResponseSchema>;
 
+export const palworldLatestPlayerTelemetrySchema = z.object({
+  serverId: z.string().min(1),
+  lookupKey: z.string().min(1),
+  playerName: z.string().optional(),
+  accountName: z.string().optional(),
+  playerId: z.string().optional(),
+  userId: z.string().optional(),
+  level: z.number().int().optional(),
+  ping: z.number().optional(),
+  locationX: z.number().optional(),
+  locationY: z.number().optional(),
+  region: z.string().optional(),
+  firstSeenAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+  maxLevelSeen: z.number().int().min(0).optional(),
+  totalSessions: z.number().int().min(0),
+  isOnline: z.boolean()
+});
+export type PalworldLatestPlayerTelemetry = z.infer<typeof palworldLatestPlayerTelemetrySchema>;
+
+export const palworldLatestPlayersResponseSchema = z.object({
+  serverId: z.string().min(1),
+  players: z.array(palworldLatestPlayerTelemetrySchema)
+});
+export type PalworldLatestPlayersResponse = z.infer<typeof palworldLatestPlayersResponseSchema>;
+
+export const palworldPlayerTelemetryProfileResponseSchema = z.object({
+  serverId: z.string().min(1),
+  player: palworldLatestPlayerTelemetrySchema.nullable()
+});
+export type PalworldPlayerTelemetryProfileResponse = z.infer<typeof palworldPlayerTelemetryProfileResponseSchema>;
+
+export const palworldPlayerSnapshotSchema = z.object({
+  serverId: z.string().min(1),
+  observedAt: z.string().datetime(),
+  lookupKey: z.string().min(1),
+  playerName: z.string().optional(),
+  accountName: z.string().optional(),
+  playerId: z.string().optional(),
+  userId: z.string().optional(),
+  level: z.number().int().optional(),
+  ping: z.number().optional(),
+  locationX: z.number().optional(),
+  locationY: z.number().optional(),
+  region: z.string().optional(),
+  raw: z.unknown()
+});
+export type PalworldPlayerSnapshot = z.infer<typeof palworldPlayerSnapshotSchema>;
+
+export const palworldPlayerSnapshotsResponseSchema = z.object({
+  serverId: z.string().min(1),
+  snapshots: z.array(palworldPlayerSnapshotSchema)
+});
+export type PalworldPlayerSnapshotsResponse = z.infer<typeof palworldPlayerSnapshotsResponseSchema>;
+
+export const palworldMetricsSummarySchema = z.object({
+  serverId: z.string().min(1),
+  observedAt: z.string().datetime(),
+  currentPlayerCount: z.number().int().min(0).optional(),
+  serverFps: z.number().optional(),
+  uptimeSeconds: z.number().min(0).optional(),
+  raw: z.record(z.string(), z.unknown())
+});
+export type PalworldMetricsSummary = z.infer<typeof palworldMetricsSummarySchema>;
+
+export const palworldMetricsSummariesResponseSchema = z.object({
+  serverId: z.string().min(1),
+  metrics: z.array(palworldMetricsSummarySchema)
+});
+export type PalworldMetricsSummariesResponse = z.infer<typeof palworldMetricsSummariesResponseSchema>;
+
 const workspaceConfigSchema = z.object({
   workspaceId: z.string().min(1),
   workspaceName: z.string().min(1),
