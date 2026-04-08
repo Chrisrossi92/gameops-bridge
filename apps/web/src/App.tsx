@@ -3,10 +3,18 @@ import {
   configuredServersResponseSchema,
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
+  palworldLatestPlayersResponseSchema,
+  palworldMetricsSummariesResponseSchema,
+  palworldPlayerSnapshotsResponseSchema,
+  palworldPlayerTelemetryProfileResponseSchema,
   recentEventsResponseSchema,
+  serverStatusSchema,
   type ConfiguredServersResponse,
   type KnownPlayerProfileResponse,
-  type NormalizedEvent
+  type NormalizedEvent,
+  type PalworldLatestPlayerTelemetry,
+  type PalworldMetricsSummary,
+  type PalworldPlayerSnapshot
 } from '@gameops/shared';
 import { useEffect, useMemo, useState } from 'react';
 import './App.css';
@@ -17,13 +25,6 @@ interface HealthResponse {
   timestamp: string;
 }
 
-interface OnlineEntry {
-  playerName: string;
-  displayName: string;
-  startedAt: string;
-  lookupKey: string;
-}
-
 interface KnownPlayerEntry {
   displayName: string;
   normalizedPlayerKey: string;
@@ -32,7 +33,26 @@ interface KnownPlayerEntry {
   observationCount: number;
 }
 
+interface ServerOption {
+  id: string;
+  displayName: string;
+  game: ConfiguredServersResponse['servers'][number]['game'];
+}
+
+interface ServerSummary {
+  serverId: string;
+  displayName: string;
+  game: ServerOption['game'];
+  state: 'online' | 'offline' | 'starting' | 'stopping' | 'restarting' | 'degraded';
+  activePlayers: number;
+  knownPlayerCount: number;
+  recentEvents: NormalizedEvent[];
+  recentWarnings: NormalizedEvent[];
+  knownPlayers: KnownPlayerEntry[];
+}
+
 type WarningCategory = 'network' | 'disconnect' | 'save_storage' | 'general';
+type GameFilter = 'all' | ConfiguredServersResponse['servers'][number]['game'];
 
 interface WarningSummaryEntry {
   category: WarningCategory;
@@ -42,39 +62,41 @@ interface WarningSummaryEntry {
   signature: string;
 }
 
-interface ServerOption {
-  id: string;
-  displayName: string;
-  game: ConfiguredServersResponse['servers'][number]['game'];
-}
-
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
 
 function App() {
-  const [serverOptions, setServerOptions] = useState<ServerOption[]>([]);
-  const [serverOptionsLoading, setServerOptionsLoading] = useState(true);
-  const [serverOptionsError, setServerOptionsError] = useState<string | null>(null);
-  const [serverId, setServerId] = useState<string>('');
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [onlineEntries, setOnlineEntries] = useState<OnlineEntry[]>([]);
-  const [recentActivity, setRecentActivity] = useState<NormalizedEvent[]>([]);
-  const [latestWarnings, setLatestWarnings] = useState<NormalizedEvent[]>([]);
-  const [knownPlayerCount, setKnownPlayerCount] = useState(0);
-  const [knownPlayerPreview, setKnownPlayerPreview] = useState<KnownPlayerEntry[]>([]);
-  const [selectedPlayerLookupKey, setSelectedPlayerLookupKey] = useState<string | null>(null);
-  const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<KnownPlayerProfileResponse | null>(null);
-  const [expandedLists, setExpandedLists] = useState<Record<string, boolean>>({});
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [serverOptions, setServerOptions] = useState<ServerOption[]>([]);
+  const [fleetByServerId, setFleetByServerId] = useState<Record<string, ServerSummary>>({});
+  const [serverOptionsLoading, setServerOptionsLoading] = useState(true);
+  const [fleetLoading, setFleetLoading] = useState(false);
+  const [serverOptionsError, setServerOptionsError] = useState<string | null>(null);
+  const [fleetError, setFleetError] = useState<string | null>(null);
+  const [selectedGameFilter, setSelectedGameFilter] = useState<GameFilter>('all');
+  const [selectedServerId, setSelectedServerId] = useState<string>('');
+  const [selectedValheimPlayerLookupKey, setSelectedValheimPlayerLookupKey] = useState<string | null>(null);
+  const [selectedValheimPlayerProfile, setSelectedValheimPlayerProfile] = useState<KnownPlayerProfileResponse | null>(null);
+  const [selectedPalworldPlayerKey, setSelectedPalworldPlayerKey] = useState<string | null>(null);
+  const [selectedPalworldPlayer, setSelectedPalworldPlayer] = useState<PalworldLatestPlayerTelemetry | null>(null);
+  const [selectedPalworldHistory, setSelectedPalworldHistory] = useState<PalworldPlayerSnapshot[]>([]);
+  const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
+  const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    setExpandedLists({});
-  }, [selectedPlayerLookupKey]);
+    setSelectedValheimPlayerLookupKey(null);
+    setSelectedValheimPlayerProfile(null);
+    setSelectedPalworldPlayerKey(null);
+    setSelectedPalworldPlayer(null);
+    setSelectedPalworldHistory([]);
+    setPalworldLatestPlayers([]);
+    setPalworldMetrics([]);
+    setDetailError(null);
+  }, [selectedServerId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -107,15 +129,11 @@ function App() {
 
         setServerOptions(catalog);
         setServerOptionsError(null);
-        setServerId((currentServerId) => {
-          const hasCurrent = currentServerId && catalog.some((server) => server.id === currentServerId);
-
-          if (hasCurrent) {
-            return currentServerId;
-          }
-
-          return catalog[0]?.id ?? '';
-        });
+        setSelectedServerId((current) => (
+          current && catalog.some((server) => server.id === current)
+            ? current
+            : (catalog[0]?.id ?? '')
+        ));
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
@@ -125,7 +143,7 @@ function App() {
 
         setServerOptions([]);
         setServerOptionsError(message);
-        setServerId('');
+        setSelectedServerId('');
       } finally {
         if (isMounted) {
           setServerOptionsLoading(false);
@@ -141,167 +159,192 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (serverOptions.length === 0) {
+      setFleetByServerId({});
+      return;
+    }
+
     let isMounted = true;
 
-    async function loadDashboard(isInitialLoad: boolean): Promise<void> {
-      if (!serverId) {
-        if (isMounted) {
-          setLoading(false);
-          setError(null);
-          setOnlineEntries([]);
-          setRecentActivity([]);
-          setLatestWarnings([]);
-          setKnownPlayerCount(0);
-          setKnownPlayerPreview([]);
-          setLastUpdatedAt(null);
-        }
-
-        return;
-      }
-
+    async function loadFleet(isInitialLoad: boolean): Promise<void> {
       try {
         if (isInitialLoad && isMounted) {
-          setLoading(true);
+          setFleetLoading(true);
         }
 
-        const [healthResponse, sessionsResponse, knownPlayersResponse, eventsResponse] = await Promise.all([
-          fetch(`${apiBaseUrl}/health`),
-          fetch(`${apiBaseUrl}/servers/${serverId}/sessions/active`),
-          fetch(`${apiBaseUrl}/servers/${serverId}/players/known?limit=100`),
-          fetch(`${apiBaseUrl}/servers/${serverId}/events?limit=50`)
-        ]);
+        const healthPromise = fetch(`${apiBaseUrl}/health`);
+        const summaryPromises = serverOptions.map(async (server) => {
+          const [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse] = await Promise.all([
+            fetch(`${apiBaseUrl}/servers/${server.id}/status`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/sessions/active`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/players/known?limit=100`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/events?limit=50`)
+          ]);
+
+          if (!statusResponse.ok || !sessionsResponse.ok || !knownPlayersResponse.ok || !eventsResponse.ok) {
+            const statusCode = [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse]
+              .find((response) => !response.ok)?.status;
+            throw new Error(`Server ${server.id} summary fetch failed with status ${statusCode ?? 'unknown'}`);
+          }
+
+          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload] = await Promise.all([
+            statusResponse.json(),
+            sessionsResponse.json(),
+            knownPlayersResponse.json(),
+            eventsResponse.json()
+          ]);
+
+          const statusParsed = serverStatusSchema.safeParse(statusPayload);
+          const sessionsParsed = activeSessionsResponseSchema.safeParse(sessionsPayload);
+          const knownPlayersParsed = knownPlayersResponseSchema.safeParse(knownPlayersPayload);
+          const eventsParsed = recentEventsResponseSchema.safeParse(eventsPayload);
+
+          if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success) {
+            throw new Error(`Server ${server.id} payload validation failed.`);
+          }
+
+          return {
+            serverId: server.id,
+            displayName: server.displayName,
+            game: server.game,
+            state: statusParsed.data.state,
+            activePlayers: sessionsParsed.data.sessions.length,
+            knownPlayerCount: knownPlayersParsed.data.players.length,
+            recentEvents: eventsParsed.data.events.slice(0, 10),
+            recentWarnings: eventsParsed.data.events.filter((event) => event.eventType === 'HEALTH_WARN').slice(0, 12),
+            knownPlayers: knownPlayersParsed.data.players.map((player) => ({
+              displayName: player.displayName,
+              normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
+              confidence: player.confidence,
+              lastSeenAt: player.lastSeenAt,
+              observationCount: player.observationCount
+            }))
+          } satisfies ServerSummary;
+        });
+
+        const [healthResponse, summaries] = await Promise.all([healthPromise, Promise.all(summaryPromises)]);
 
         if (!healthResponse.ok) {
           throw new Error(`/health failed with status ${healthResponse.status}`);
         }
 
-        if (!sessionsResponse.ok || !knownPlayersResponse.ok || !eventsResponse.ok) {
-          const failingStatus = [sessionsResponse, knownPlayersResponse, eventsResponse].find((response) => !response.ok)?.status;
-          throw new Error(`Server summary fetch failed with status ${failingStatus ?? 'unknown'}`);
-        }
-
-        const healthPayload = (await healthResponse.json()) as HealthResponse;
-        const [sessionsPayload, knownPlayersPayload, eventsPayload] = await Promise.all([
-          sessionsResponse.json(),
-          knownPlayersResponse.json(),
-          eventsResponse.json()
-        ]);
-
-        const sessionsParsed = activeSessionsResponseSchema.safeParse(sessionsPayload);
-        const knownPlayersParsed = knownPlayersResponseSchema.safeParse(knownPlayersPayload);
-        const eventsParsed = recentEventsResponseSchema.safeParse(eventsPayload);
-
-        if (!sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success) {
-          throw new Error('Dashboard payload validation failed.');
-        }
-
-        const knownPlayers = knownPlayersParsed.data.players.map((player) => ({
-          displayName: player.displayName,
-          normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
-          confidence: player.confidence,
-          lastSeenAt: player.lastSeenAt,
-          observationCount: player.observationCount
-        }));
-
-        const online = sessionsParsed.data.sessions.map((session) => {
-          const normalizedSessionName = normalizePlayerKey(session.playerName);
-          const knownMatch = knownPlayers.find((player) => (
-            player.normalizedPlayerKey === normalizedSessionName
-            || normalizePlayerKey(player.displayName) === normalizedSessionName
-          ));
-
-          return {
-            playerName: session.playerName,
-            displayName: knownMatch?.displayName ?? session.playerName,
-            startedAt: session.startedAt,
-            lookupKey: knownMatch?.normalizedPlayerKey ?? normalizePlayerKey(session.playerName)
-          };
-        });
-
-        const joinLeaveEvents = eventsParsed.data.events.filter((event) => (
-          event.eventType === 'PLAYER_JOIN' || event.eventType === 'PLAYER_LEAVE'
-        ));
-
-        const warningEvents = eventsParsed.data.events
-          .filter((event) => event.eventType === 'HEALTH_WARN')
-          .slice(0, 20);
+        const nextHealth = (await healthResponse.json()) as HealthResponse;
 
         if (!isMounted) {
           return;
         }
 
-        setError(null);
-        setHealth(healthPayload);
-        setOnlineEntries(online);
-        setRecentActivity(joinLeaveEvents.slice(0, 10));
-        setLatestWarnings(warningEvents);
-        setKnownPlayerCount(knownPlayersParsed.data.players.length);
-
-        const sortedKnownPlayers = [...knownPlayersParsed.data.players].sort((a, b) => {
-          const confidenceRankDiff = getConfidenceRank(b.confidence) - getConfidenceRank(a.confidence);
-
-          if (confidenceRankDiff !== 0) {
-            return confidenceRankDiff;
-          }
-
-          const recencyDiff = Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt);
-
-          if (Number.isFinite(recencyDiff) && recencyDiff !== 0) {
-            return recencyDiff;
-          }
-
-          return b.observationCount - a.observationCount;
-        });
-
-        setKnownPlayerPreview(sortedKnownPlayers.slice(0, 8).map((player) => ({
-          displayName: player.displayName,
-          normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
-          confidence: player.confidence,
-          lastSeenAt: player.lastSeenAt,
-          observationCount: player.observationCount
-        })));
+        setHealth(nextHealth);
+        setFleetByServerId(Object.fromEntries(summaries.map((summary) => [summary.serverId, summary])));
+        setFleetError(null);
         setLastUpdatedAt(new Date().toISOString());
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
         if (isMounted) {
-          setError(message);
+          setFleetError(message);
         }
       } finally {
         if (isMounted && isInitialLoad) {
-          setLoading(false);
+          setFleetLoading(false);
         }
       }
     }
 
-    void loadDashboard(true);
+    void loadFleet(true);
     const interval = setInterval(() => {
-      void loadDashboard(false);
+      void loadFleet(false);
     }, REFRESH_INTERVAL_MS);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [serverId]);
+  }, [serverOptions]);
+
+  const selectedServer = useMemo(
+    () => serverOptions.find((server) => server.id === selectedServerId) ?? null,
+    [selectedServerId, serverOptions]
+  );
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadSelectedPlayerProfile(): Promise<void> {
-      if (!serverId || !selectedPlayerLookupKey) {
-        setSelectedPlayerProfile(null);
-        setProfileError(null);
-        setProfileLoading(false);
+    async function loadServerDetail(): Promise<void> {
+      if (!selectedServer || selectedServer.game !== 'palworld') {
+        setPalworldLatestPlayers([]);
+        setPalworldMetrics([]);
+        setDetailLoading(false);
+        setDetailError(null);
         return;
       }
 
       try {
-        setProfileLoading(true);
-        setProfileError(null);
+        setDetailLoading(true);
+        setDetailError(null);
 
+        const [latestPlayersResponse, metricsResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest?limit=40`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`)
+        ]);
+
+        if (!latestPlayersResponse.ok || !metricsResponse.ok) {
+          const statusCode = [latestPlayersResponse, metricsResponse].find((response) => !response.ok)?.status;
+          throw new Error(`Palworld detail fetch failed with status ${statusCode ?? 'unknown'}`);
+        }
+
+        const [latestPlayersPayload, metricsPayload] = await Promise.all([
+          latestPlayersResponse.json(),
+          metricsResponse.json()
+        ]);
+
+        const latestPlayersParsed = palworldLatestPlayersResponseSchema.safeParse(latestPlayersPayload);
+        const metricsParsed = palworldMetricsSummariesResponseSchema.safeParse(metricsPayload);
+
+        if (!latestPlayersParsed.success || !metricsParsed.success) {
+          throw new Error('Palworld detail payload validation failed.');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setPalworldLatestPlayers(latestPlayersParsed.data.players);
+        setPalworldMetrics(metricsParsed.data.metrics);
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
+
+        if (isMounted) {
+          setDetailError(message);
+          setPalworldLatestPlayers([]);
+          setPalworldMetrics([]);
+        }
+      } finally {
+        if (isMounted) {
+          setDetailLoading(false);
+        }
+      }
+    }
+
+    void loadServerDetail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedServer]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadValheimPlayerProfile(): Promise<void> {
+      if (!selectedServer || selectedServer.game !== 'valheim' || !selectedValheimPlayerLookupKey) {
+        setSelectedValheimPlayerProfile(null);
+        return;
+      }
+
+      try {
         const response = await fetch(
-          `${apiBaseUrl}/servers/${serverId}/players/known/${encodeURIComponent(selectedPlayerLookupKey)}`
+          `${apiBaseUrl}/servers/${selectedServer.id}/players/known/${encodeURIComponent(selectedValheimPlayerLookupKey)}`
         );
 
         if (!response.ok) {
@@ -316,116 +359,171 @@ function App() {
         }
 
         if (isMounted) {
-          setSelectedPlayerProfile(parsed.data);
+          setSelectedValheimPlayerProfile(parsed.data);
         }
-      } catch (caughtError) {
-        const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
-
+      } catch {
         if (isMounted) {
-          setProfileError(message);
-          setSelectedPlayerProfile(null);
-        }
-      } finally {
-        if (isMounted) {
-          setProfileLoading(false);
+          setSelectedValheimPlayerProfile(null);
         }
       }
     }
 
-    void loadSelectedPlayerProfile();
+    void loadValheimPlayerProfile();
 
     return () => {
       isMounted = false;
     };
-  }, [serverId, selectedPlayerLookupKey]);
+  }, [selectedServer, selectedValheimPlayerLookupKey]);
 
-  const apiHealthLabel = useMemo(() => {
-    if (!health) {
-      return 'Unknown';
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPalworldPlayerDetail(): Promise<void> {
+      if (!selectedServer || selectedServer.game !== 'palworld' || !selectedPalworldPlayerKey) {
+        setSelectedPalworldPlayer(null);
+        setSelectedPalworldHistory([]);
+        return;
+      }
+
+      try {
+        const [playerResponse, historyResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest/${encodeURIComponent(selectedPalworldPlayerKey)}`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest/${encodeURIComponent(selectedPalworldPlayerKey)}/history?limit=12`)
+        ]);
+
+        if (!playerResponse.ok || !historyResponse.ok) {
+          const statusCode = [playerResponse, historyResponse].find((response) => !response.ok)?.status;
+          throw new Error(`Palworld player detail fetch failed with status ${statusCode ?? 'unknown'}`);
+        }
+
+        const [playerPayload, historyPayload] = await Promise.all([
+          playerResponse.json(),
+          historyResponse.json()
+        ]);
+
+        const playerParsed = palworldPlayerTelemetryProfileResponseSchema.safeParse(playerPayload);
+        const historyParsed = palworldPlayerSnapshotsResponseSchema.safeParse(historyPayload);
+
+        if (!playerParsed.success || !historyParsed.success) {
+          throw new Error('Palworld player detail payload validation failed.');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setSelectedPalworldPlayer(playerParsed.data.player);
+        setSelectedPalworldHistory(historyParsed.data.snapshots);
+      } catch {
+        if (isMounted) {
+          setSelectedPalworldPlayer(null);
+          setSelectedPalworldHistory([]);
+        }
+      }
     }
 
-    return health.ok ? 'Online' : 'Degraded';
-  }, [health]);
+    void loadPalworldPlayerDetail();
 
-  const lastUpdatedLabel = useMemo(() => {
-    if (!lastUpdatedAt) {
-      return 'N/A';
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedServer, selectedPalworldPlayerKey]);
+
+  const filteredServers = useMemo(() => {
+    return serverOptions.filter((server) => (
+      selectedGameFilter === 'all' || server.game === selectedGameFilter
+    ));
+  }, [selectedGameFilter, serverOptions]);
+
+  useEffect(() => {
+    if (filteredServers.length === 0) {
+      setSelectedServerId('');
+      return;
     }
 
-    return new Date(lastUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
-  }, [lastUpdatedAt]);
+    if (!filteredServers.some((server) => server.id === selectedServerId)) {
+      setSelectedServerId(filteredServers[0]?.id ?? '');
+    }
+  }, [filteredServers, selectedServerId]);
 
-  const currentServerLabel = useMemo(
-    () => {
-      const selected = serverOptions.find((option) => option.id === serverId);
-      return selected ? `${selected.displayName} (${selected.game})` : serverId;
-    },
-    [serverId, serverOptions]
+  const selectedServerSummary = selectedServer ? fleetByServerId[selectedServer.id] ?? null : null;
+  const fleetCounts = useMemo(() => {
+    const visibleSummaries = filteredServers
+      .map((server) => fleetByServerId[server.id])
+      .filter((summary): summary is ServerSummary => Boolean(summary));
+
+    return {
+      servers: filteredServers.length,
+      online: visibleSummaries.filter((summary) => summary.state === 'online').length,
+      degraded: visibleSummaries.filter((summary) => summary.state === 'degraded').length,
+      activePlayers: visibleSummaries.reduce((sum, summary) => sum + summary.activePlayers, 0)
+    };
+  }, [filteredServers, fleetByServerId]);
+
+  const apiHealthLabel = health?.ok ? 'Online' : 'Unknown';
+  const lastUpdatedLabel = lastUpdatedAt ? formatTimestamp(lastUpdatedAt) : 'N/A';
+  const selectedWarningSummary = useMemo(
+    () => summarizeWarnings(selectedServerSummary?.recentWarnings ?? []),
+    [selectedServerSummary]
   );
-
-  const latestWarningLabel = useMemo(() => {
-    if (latestWarnings.length === 0) {
-      return 'None';
-    }
-
-    const latestWarningAt = latestWarnings.reduce<string>((latest, event) => {
-      return Date.parse(event.occurredAt) > Date.parse(latest) ? event.occurredAt : latest;
-    }, latestWarnings[0]?.occurredAt ?? '');
-
-    return latestWarningAt ? formatClock(latestWarningAt) : 'None';
-  }, [latestWarnings]);
-
-  const apiStatusTone = health?.ok ? 'good' : 'warn';
-
-  const selectedPlayer = selectedPlayerProfile?.player ?? null;
-  const selectedRecentSessions = selectedPlayerProfile?.recentSessions ?? [];
-  const activeSession = selectedPlayerProfile?.activeSession ?? null;
-  const isOnline = selectedPlayerProfile?.isOnline ?? false;
-  const warningSummaryEntries = useMemo(() => summarizeWarnings(latestWarnings), [latestWarnings]);
 
   return (
     <main className="dashboard">
       <header className="dashboard-header">
         <h1>GameOps Bridge Dashboard</h1>
-        <p>Live game operations snapshot</p>
-        <div className="toolbar">
-          <label htmlFor="server-select">Server</label>
-          <select
-            id="server-select"
-            value={serverId}
-            onChange={(event) => setServerId(event.target.value)}
-            disabled={serverOptionsLoading || serverOptions.length === 0}
-          >
-            {serverOptions.map((option) => (
-              <option key={option.id} value={option.id}>{option.displayName} ({option.game})</option>
-            ))}
-          </select>
+        <p>Fleet overview with shared server telemetry and game-specific detail panels.</p>
+
+        <div className="toolbar toolbar-wide">
+          <div className="toolbar-group">
+            <label htmlFor="game-filter">Game</label>
+            <select id="game-filter" value={selectedGameFilter} onChange={(event) => setSelectedGameFilter(event.target.value as GameFilter)}>
+              <option value="all">All Games</option>
+              <option value="valheim">Valheim</option>
+              <option value="palworld">Palworld</option>
+            </select>
+          </div>
+
+          <div className="toolbar-group">
+            <label htmlFor="server-select">Server Detail</label>
+            <select
+              id="server-select"
+              value={selectedServerId}
+              onChange={(event) => setSelectedServerId(event.target.value)}
+              disabled={serverOptionsLoading || filteredServers.length === 0}
+            >
+              {filteredServers.map((server) => (
+                <option key={server.id} value={server.id}>
+                  {server.displayName} ({server.game})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+
         {serverOptionsLoading ? <p className="subtle">Loading configured servers...</p> : null}
         {serverOptionsError ? <p className="error">Server catalog unavailable: {serverOptionsError}</p> : null}
-        {!serverOptionsLoading && !serverOptionsError && serverOptions.length === 0 ? (
-          <p className="subtle">No enabled servers found in config.</p>
-        ) : null}
+        {fleetError ? <p className="error">Fleet refresh failed: {fleetError}</p> : null}
+
         <div className="status-strip">
           <div className="status-pill">
             <span className="status-label">API</span>
-            <span className={`status-value status-${apiStatusTone}`}>{apiHealthLabel}</span>
+            <span className="status-value status-good">{apiHealthLabel}</span>
           </div>
           <div className="status-pill">
-            <span className="status-label">Server</span>
-            <span className="status-value">{currentServerLabel}</span>
+            <span className="status-label">Servers</span>
+            <span className="status-value">{fleetCounts.servers}</span>
           </div>
           <div className="status-pill">
             <span className="status-label">Online</span>
-            <span className="status-value">{onlineEntries.length}</span>
+            <span className="status-value">{fleetCounts.online}</span>
           </div>
           <div className="status-pill">
-            <span className="status-label">Known Players</span>
-            <span className="status-value">{knownPlayerCount}</span>
+            <span className="status-label">Degraded</span>
+            <span className="status-value">{fleetCounts.degraded}</span>
           </div>
           <div className="status-pill">
-            <span className="status-label">Latest Warning</span>
-            <span className="status-value">{latestWarningLabel}</span>
+            <span className="status-label">Active Players</span>
+            <span className="status-value">{fleetCounts.activePlayers}</span>
           </div>
           <div className="status-pill">
             <span className="status-label">Updated</span>
@@ -434,283 +532,296 @@ function App() {
         </div>
       </header>
 
-      {loading ? <p>Loading dashboard...</p> : null}
-      {error ? <p className="error">{error}</p> : null}
+      <section className="fleet-section">
+        <div className="section-heading">
+          <h2>Fleet Overview</h2>
+          <p className="subtle">All configured servers in one view, filterable by game.</p>
+        </div>
 
-      <section className="card-grid">
-        <article className="card">
-          <h2>Online Now</h2>
-          <p className="kpi">{onlineEntries.length}</p>
-          <p className="subtle">current players online</p>
-          <ul className="list">
-            {onlineEntries.length === 0 ? <li>None</li> : null}
-            {onlineEntries.map((entry) => (
-              <li
-                key={`${entry.playerName}:${entry.startedAt}`}
-                className={`clickable-row ${selectedPlayerLookupKey === entry.lookupKey ? 'selected' : ''}`}
-                onClick={() => setSelectedPlayerLookupKey(entry.lookupKey)}
-              >
-                <span>{entry.displayName}</span>
-                <span className="subtle">{formatDuration(entry.startedAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
+        {fleetLoading ? <p className="subtle">Loading fleet telemetry...</p> : null}
 
-        <article className="card">
-          <h2>Recent Activity</h2>
-          <ul className="list activity-list">
-            {recentActivity.length === 0 ? <li>No recent joins/leaves</li> : null}
-            {recentActivity.map((event, index) => (
-              <li
-                key={`${event.eventType}:${event.occurredAt}:${index}`}
-                className={`activity-row ${event.eventType === 'PLAYER_JOIN' ? 'activity-join' : 'activity-leave'}`}
+        <div className="fleet-grid">
+          {filteredServers.map((server) => {
+            const summary = fleetByServerId[server.id];
+            const warnings = summarizeWarnings(summary?.recentWarnings ?? []);
+
+            return (
+              <article
+                key={server.id}
+                className={`card fleet-card ${selectedServerId === server.id ? 'fleet-card-selected' : ''}`}
+                onClick={() => setSelectedServerId(server.id)}
               >
-                <span className="activity-main">
-                  <span className={`activity-badge ${event.eventType === 'PLAYER_JOIN' ? 'activity-badge-join' : 'activity-badge-leave'}`}>
-                    {event.eventType === 'PLAYER_JOIN' ? '+1 JOIN' : '-1 LEAVE'}
+                <div className="fleet-card-top">
+                  <div>
+                    <h3>{server.displayName}</h3>
+                    <p className="subtle">{server.game}</p>
+                  </div>
+                  <span className={`state-pill state-${summary?.state ?? 'offline'}`}>
+                    {summary?.state ?? 'loading'}
                   </span>
-                  {event.playerName ? ' ' : ''}
-                  {event.playerName ? (
-                    <button
-                      type="button"
-                      className="inline-player-link"
-                      onClick={() => setSelectedPlayerLookupKey(normalizePlayerKey(event.playerName ?? ''))}
-                    >
-                      {event.playerName}
-                    </button>
-                  ) : null}
-                </span>
-                <span className="subtle activity-time">{formatClock(event.occurredAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="card">
-          <h2>Known Players</h2>
-          <p className="kpi">{knownPlayerCount}</p>
-          <p className="subtle">tracked identities</p>
-          <ul className="list">
-            {knownPlayerPreview.length === 0 ? <li>None tracked yet</li> : null}
-            {knownPlayerPreview.map((player) => (
-              <li
-                key={`${player.displayName}:${player.lastSeenAt}`}
-                className={`clickable-row ${selectedPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
-                onClick={() => setSelectedPlayerLookupKey(player.normalizedPlayerKey)}
-              >
-                <span>{player.displayName}</span>
-                <span className="known-meta">
-                  <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
-                  <span className="subtle">obs {player.observationCount}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="card">
-          <h2>Latest Warnings</h2>
-          <ul className="list">
-            {warningSummaryEntries.length === 0 ? <li>No recent warnings</li> : null}
-            {warningSummaryEntries.map((warning, index) => (
-              <li key={`${warning.signature}:${warning.latestAt}:${index}`}>
-                <span className="warning-main">
-                  <span className={`warning-badge warning-${warning.category}`}>
-                    {formatWarningCategoryLabel(warning.category)}
-                  </span>
-                  {warning.snippet}
-                  {warning.count > 1 ? ` ×${warning.count}` : ''}
-                </span>
-                <span className="subtle">{formatClock(warning.latestAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
+                </div>
+                <div className="fleet-metrics">
+                  <div className="summary-item">
+                    <span className="summary-label">Active</span>
+                    <span className="kpi-small">{summary?.activePlayers ?? 0}</span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-label">Known</span>
+                    <span className="kpi-small">{summary?.knownPlayerCount ?? 0}</span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-label">Warnings</span>
+                    <span className="kpi-small">{summary?.recentWarnings.length ?? 0}</span>
+                  </div>
+                </div>
+                <ul className="list compact">
+                  {warnings.length === 0 ? <li>No recent warnings</li> : null}
+                  {warnings.slice(0, 2).map((warning) => (
+                    <li key={`${warning.signature}:${warning.latestAt}`}>
+                      <span className={`warning-badge warning-${warning.category}`}>{formatWarningCategoryLabel(warning.category)}</span>
+                      <span className="subtle">{warning.snippet}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
       <section className="detail-section">
-        <article className="card detail-card">
-          <div className="detail-header">
-            <h2>Player Details</h2>
-            {selectedPlayerLookupKey ? (
-              <button type="button" onClick={() => setSelectedPlayerLookupKey(null)}>Clear</button>
+        <div className="section-heading">
+          <h2>Server Detail</h2>
+          <p className="subtle">Shared telemetry first, then game-specific views.</p>
+        </div>
+
+        {!selectedServer || !selectedServerSummary ? (
+          <article className="card detail-card">
+            <p className="subtle">Select a server from the fleet overview to inspect details.</p>
+          </article>
+        ) : (
+          <>
+            <section className="card-grid">
+              <article className="card">
+                <h2>Server Summary</h2>
+                <ul className="list compact">
+                  <li><span>Server</span><span>{selectedServerSummary.displayName}</span></li>
+                  <li><span>Game</span><span>{selectedServerSummary.game}</span></li>
+                  <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span></li>
+                  <li><span>Active Players</span><span>{selectedServerSummary.activePlayers}</span></li>
+                  <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
+                </ul>
+              </article>
+
+              <article className="card">
+                <h2>Recent Events</h2>
+                <ul className="list activity-list">
+                  {selectedServerSummary.recentEvents.length === 0 ? <li>No recent events</li> : null}
+                  {selectedServerSummary.recentEvents.map((event, index) => (
+                    <li key={`${event.eventType}:${event.occurredAt}:${index}`} className="activity-row">
+                      <span className="activity-main">
+                        <span className={`activity-badge ${getEventBadgeClass(event.eventType)}`}>{event.eventType}</span>
+                        <span>{event.playerName ?? event.message ?? 'Event'}</span>
+                      </span>
+                      <span className="subtle activity-time">{formatClock(event.occurredAt)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+
+              <article className="card">
+                <h2>Recent Warnings</h2>
+                <ul className="list">
+                  {selectedWarningSummary.length === 0 ? <li>No recent warnings</li> : null}
+                  {selectedWarningSummary.map((warning, index) => (
+                    <li key={`${warning.signature}:${index}`}>
+                      <span className="warning-main">
+                        <span className={`warning-badge warning-${warning.category}`}>{formatWarningCategoryLabel(warning.category)}</span>
+                        {warning.snippet}
+                      </span>
+                      <span className="subtle">{formatClock(warning.latestAt)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            </section>
+
+            {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
+            {detailError ? <p className="error">{detailError}</p> : null}
+
+            {selectedServer.game === 'valheim' ? (
+              <section className="game-section">
+                <div className="section-heading">
+                  <h2>Valheim Panels</h2>
+                  <p className="subtle">Existing player and identity views stay grouped under Valheim.</p>
+                </div>
+
+                <section className="card-grid">
+                  <article className="card">
+                    <h2>Active Players</h2>
+                    <ul className="list">
+                      {selectedServerSummary.activePlayers === 0 ? <li>None online</li> : null}
+                      {selectedServerSummary.recentEvents
+                        .filter((event) => event.eventType === 'PLAYER_JOIN')
+                        .slice(0, 8)
+                        .map((event, index) => (
+                          <li key={`${event.playerName ?? 'unknown'}:${index}`}>
+                            <button
+                              type="button"
+                              className="inline-player-link"
+                              onClick={() => setSelectedValheimPlayerLookupKey(normalizePlayerKey(event.playerName ?? ''))}
+                            >
+                              {event.playerName ?? 'Unknown player'}
+                            </button>
+                            <span className="subtle">{formatClock(event.occurredAt)}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </article>
+
+                  <article className="card">
+                    <h2>Known Players</h2>
+                    <ul className="list">
+                      {selectedServerSummary.knownPlayers.length === 0 ? <li>None tracked yet</li> : null}
+                      {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
+                        <li
+                          key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
+                          className={`clickable-row ${selectedValheimPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
+                          onClick={() => setSelectedValheimPlayerLookupKey(player.normalizedPlayerKey)}
+                        >
+                          <span>{player.displayName}</span>
+                          <span className="known-meta">
+                            <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
+                            <span className="subtle">obs {player.observationCount}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+
+                  <article className="card">
+                    <h2>Player Detail</h2>
+                    {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a known player to inspect session and identity data.</p> : null}
+                    {selectedValheimPlayerProfile?.player ? (
+                      <div className="detail-grid">
+                        <div className="detail-block">
+                          <h3>Identity</h3>
+                          <ul className="list compact">
+                            <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
+                            <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
+                            <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
+                            <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
+                          </ul>
+                        </div>
+                        <div className="detail-block">
+                          <h3>Sessions</h3>
+                          <ul className="list compact">
+                            <li>
+                              <span>Status</span>
+                              <span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span>
+                            </li>
+                            {selectedValheimPlayerProfile.recentSessions.slice(0, 4).map((session, index) => (
+                              <li key={`${session.startedAt}:${index}`}>
+                                <span>{formatTimestamp(session.startedAt)}</span>
+                                <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                </section>
+              </section>
             ) : null}
-          </div>
 
-          {!selectedPlayerLookupKey ? <p className="subtle">Select a player from Online Now or Known Players.</p> : null}
-          {profileLoading ? <p className="subtle">Loading player profile...</p> : null}
-          {profileError ? <p className="error">{profileError}</p> : null}
-          {selectedPlayerLookupKey && !profileLoading && !profileError && !selectedPlayer ? (
-            <p className="subtle">No known player profile found for this selection.</p>
-          ) : null}
-
-          {selectedPlayer ? (
-            <>
-              <div className="moderation-summary">
-                <div className="summary-item">
-                  <span className="summary-label">Confidence</span>
-                  <span className={`confidence-badge confidence-${selectedPlayer.confidence}`}>{selectedPlayer.confidence}</span>
+            {selectedServer.game === 'palworld' ? (
+              <section className="game-section">
+                <div className="section-heading">
+                  <h2>Palworld Panels</h2>
+                  <p className="subtle">Latest players, per-player detail/history, and recent metrics.</p>
                 </div>
-                <div className="summary-item">
-                  <span className="summary-label">Character Usage</span>
-                  <span className={`summary-pill ${selectedPlayer.knownCharacterIds.length > 1 ? 'warn' : 'ok'}`}>
-                    {selectedPlayer.knownCharacterIds.length > 1 ? 'Multiple character IDs observed' : 'Single/none observed'}
-                  </span>
-                </div>
-                <div className="summary-item">
-                  <span className="summary-label">Current Status</span>
-                  <span className={`summary-pill ${isOnline ? 'live' : 'neutral'}`}>
-                    {isOnline ? `Online${activeSession ? ` • ${formatDuration(activeSession.startedAt)}` : ''}` : 'Offline'}
-                  </span>
-                </div>
-              </div>
 
-              <div className="detail-grid grouped">
-                <section className="detail-block">
-                  <h3>Identity</h3>
-                  <ul className="list compact">
-                    <li><span>Name</span><span>{selectedPlayer.displayName}</span></li>
-                    <li><span>Observations</span><span>{selectedPlayer.observationCount}</span></li>
-                    <li><span>First Seen</span><span>{formatTimestamp(selectedPlayer.firstSeenAt)}</span></li>
-                    <li><span>Last Seen</span><span>{formatTimestamp(selectedPlayer.lastSeenAt)}</span></li>
-                  </ul>
-                </section>
-
-                <section className="detail-block">
-                  <h3>Sessions</h3>
-                  <ul className="list compact">
-                    {selectedRecentSessions.length === 0 ? <li>None</li> : null}
-                    {sliceForDisplay(selectedRecentSessions, expandedLists.sessions, 4).map((session, index) => (
-                      <li key={`${session.startedAt}:${index}`}>
-                        <span>{formatTimestamp(session.endedAt ?? session.startedAt)}</span>
-                        <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {selectedRecentSessions.length > 4 ? (
-                    <button
-                      type="button"
-                      className="inline-toggle"
-                      onClick={() => setExpandedLists((prev) => ({ ...prev, sessions: !prev.sessions }))}
-                    >
-                      {expandedLists.sessions ? 'Show less' : `Show all (${selectedRecentSessions.length})`}
-                    </button>
-                  ) : null}
-                </section>
-
-                <section className="detail-block">
-                  <h3>Character Usage</h3>
-                  <p className="subtle inline-count">Total IDs: {selectedPlayer.knownCharacterIds.length}</p>
-                  <ul className="list compact">
-                    {selectedPlayer.knownCharacterIds.length === 0 ? <li>None</li> : null}
-                    {sliceForDisplay(selectedPlayer.knownCharacterIds, expandedLists.characterIds, 6).map((id) => <li key={id}>{id}</li>)}
-                  </ul>
-                  {selectedPlayer.knownCharacterIds.length > 6 ? (
-                    <button
-                      type="button"
-                      className="inline-toggle"
-                      onClick={() => setExpandedLists((prev) => ({ ...prev, characterIds: !prev.characterIds }))}
-                    >
-                      {expandedLists.characterIds ? 'Show less' : `Show all (${selectedPlayer.knownCharacterIds.length})`}
-                    </button>
-                  ) : null}
-                </section>
-
-                <section className="detail-block">
-                  <h3>IDs</h3>
-                  <p className="subtle inline-count">
-                    Platform {selectedPlayer.knownPlatformIds.length} • PlayFab {selectedPlayer.knownPlayFabIds.length} • Sources {selectedPlayer.identitySources.length}
-                  </p>
-                  <div className="id-columns">
-                    <div>
-                      <h4>Platform</h4>
-                      <ul className="list compact">
-                        {selectedPlayer.knownPlatformIds.length === 0 ? <li>None</li> : null}
-                        {sliceForDisplay(selectedPlayer.knownPlatformIds, expandedLists.platformIds, 4).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
-                      </ul>
-                      {selectedPlayer.knownPlatformIds.length > 4 ? (
-                        <button
-                          type="button"
-                          className="inline-toggle"
-                          onClick={() => setExpandedLists((prev) => ({ ...prev, platformIds: !prev.platformIds }))}
+                <section className="card-grid">
+                  <article className="card">
+                    <h2>Latest Players</h2>
+                    <ul className="list">
+                      {palworldLatestPlayers.length === 0 ? <li>No player telemetry yet</li> : null}
+                      {palworldLatestPlayers.map((player) => (
+                        <li
+                          key={`${player.lookupKey}:${player.lastSeenAt}`}
+                          className={`clickable-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
+                          onClick={() => setSelectedPalworldPlayerKey(player.lookupKey)}
                         >
-                          {expandedLists.platformIds ? 'Less' : `All (${selectedPlayer.knownPlatformIds.length})`}
-                        </button>
-                      ) : null}
-                    </div>
-                    <div>
-                      <h4>PlayFab</h4>
-                      <ul className="list compact">
-                        {selectedPlayer.knownPlayFabIds.length === 0 ? <li>None</li> : null}
-                        {sliceForDisplay(selectedPlayer.knownPlayFabIds, expandedLists.playFabIds, 4).map((id) => <li key={id}>{truncate(id, 44)}</li>)}
-                      </ul>
-                      {selectedPlayer.knownPlayFabIds.length > 4 ? (
-                        <button
-                          type="button"
-                          className="inline-toggle"
-                          onClick={() => setExpandedLists((prev) => ({ ...prev, playFabIds: !prev.playFabIds }))}
-                        >
-                          {expandedLists.playFabIds ? 'Less' : `All (${selectedPlayer.knownPlayFabIds.length})`}
-                        </button>
-                      ) : null}
-                    </div>
-                    <div>
-                      <h4>Sources</h4>
-                      <ul className="list compact">
-                        {selectedPlayer.identitySources.length === 0 ? <li>None</li> : null}
-                        {sliceForDisplay(selectedPlayer.identitySources, expandedLists.sources, 5).map((source) => <li key={source}>{source}</li>)}
-                      </ul>
-                      {selectedPlayer.identitySources.length > 5 ? (
-                        <button
-                          type="button"
-                          className="inline-toggle"
-                          onClick={() => setExpandedLists((prev) => ({ ...prev, sources: !prev.sources }))}
-                        >
-                          {expandedLists.sources ? 'Less' : `All (${selectedPlayer.identitySources.length})`}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
+                          <span>{player.playerName ?? player.accountName ?? player.lookupKey}</span>
+                          <span className="subtle">{player.isOnline ? 'online' : formatClock(player.lastSeenAt)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+
+                  <article className="card">
+                    <h2>Player Detail / History</h2>
+                    {!selectedPalworldPlayer ? <p className="subtle">Select a Palworld player to inspect current state and recent snapshots.</p> : null}
+                    {selectedPalworldPlayer ? (
+                      <>
+                        <div className="detail-grid">
+                          <div className="detail-block">
+                            <h3>Current State</h3>
+                            <ul className="list compact">
+                              <li><span>Name</span><span>{selectedPalworldPlayer.playerName ?? 'Unknown'}</span></li>
+                              <li><span>Account</span><span>{selectedPalworldPlayer.accountName ?? 'Unknown'}</span></li>
+                              <li><span>Level</span><span>{selectedPalworldPlayer.level ?? 'N/A'}</span></li>
+                              <li><span>Region</span><span>{selectedPalworldPlayer.region ?? 'Unknown'}</span></li>
+                              <li><span>Ping</span><span>{selectedPalworldPlayer.ping ?? 'N/A'}</span></li>
+                              <li><span>Status</span><span>{selectedPalworldPlayer.isOnline ? 'Online' : 'Offline'}</span></li>
+                            </ul>
+                          </div>
+                          <div className="detail-block">
+                            <h3>History</h3>
+                            <ul className="list compact">
+                              {selectedPalworldHistory.length === 0 ? <li>No snapshots</li> : null}
+                              {selectedPalworldHistory.map((snapshot) => (
+                                <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
+                                  <span>{formatTimestamp(snapshot.observedAt)}</span>
+                                  <span className="subtle">
+                                    lvl {snapshot.level ?? 'N/A'} • ping {snapshot.ping ?? 'N/A'}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+                  </article>
+
+                  <article className="card">
+                    <h2>Recent Metrics</h2>
+                    <ul className="list">
+                      {palworldMetrics.length === 0 ? <li>No metrics snapshots</li> : null}
+                      {palworldMetrics.map((metric) => (
+                        <li key={metric.observedAt}>
+                          <span>{formatTimestamp(metric.observedAt)}</span>
+                          <span className="subtle">
+                            fps {metric.serverFps ?? 'N/A'} • players {metric.currentPlayerCount ?? 'N/A'} • uptime {metric.currentUptimeHours ?? 'N/A'}h
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
                 </section>
-              </div>
-            </>
-          ) : null}
-        </article>
+              </section>
+            ) : null}
+          </>
+        )}
       </section>
     </main>
   );
 }
 
-function sliceForDisplay<T>(items: T[], expanded: boolean | undefined, limit: number): T[] {
-  return expanded ? items : items.slice(0, limit);
-}
-
 function normalizePlayerKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function formatDuration(startedAt: string): string {
-  const startedAtMs = Date.parse(startedAt);
-
-  if (!Number.isFinite(startedAtMs)) {
-    return 'unknown';
-  }
-
-  const seconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes}m ${remainingSeconds}s`;
-  }
-
-  return `${remainingSeconds}s`;
 }
 
 function formatClock(value: string): string {
@@ -721,16 +832,6 @@ function formatClock(value: string): string {
   }
 
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
-function truncate(value: string, maxLength: number): string {
-  const compact = value.trim();
-
-  if (compact.length <= maxLength) {
-    return compact;
-  }
-
-  return `${compact.slice(0, maxLength - 3)}...`;
 }
 
 function formatTimestamp(value: string): string {
@@ -815,41 +916,32 @@ function categorizeWarning(message: string): WarningCategory {
 }
 
 function summarizeWarningMessage(message: string): string {
-  let compact = message.trim();
-  compact = compact.replace(/^\[[^\]]+\]\s*/g, '');
-  compact = compact.replace(/playfab\/[a-z0-9_-]+/gi, 'playfab/<id>');
-  compact = compact.replace(/\s+/g, ' ');
-  return truncate(compact, 84);
+  return message.trim().replace(/\s+/g, ' ').slice(0, 84);
 }
 
 function normalizeWarningSignature(message: string): string {
   return message
     .toLowerCase()
-    .replace(/playfab\/[a-z0-9_-]+/g, 'playfab/<id>')
     .replace(/\d+/g, '#')
-    .replace(/[^a-z0-9<> ]/g, ' ')
+    .replace(/[^a-z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function formatWarningCategoryLabel(category: WarningCategory): string {
-  if (category === 'save_storage') {
-    return 'save';
-  }
-
-  return category;
+  return category === 'save_storage' ? 'save' : category;
 }
 
-function getConfidenceRank(confidence: string): number {
-  if (confidence === 'high') {
-    return 3;
+function getEventBadgeClass(eventType: string): string {
+  if (eventType === 'PLAYER_JOIN') {
+    return 'activity-badge-join';
   }
 
-  if (confidence === 'medium') {
-    return 2;
+  if (eventType === 'PLAYER_LEAVE') {
+    return 'activity-badge-leave';
   }
 
-  return 1;
+  return 'activity-badge-neutral';
 }
 
 export default App;
