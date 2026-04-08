@@ -4,7 +4,12 @@ import {
   buildHealthWarnEvent,
   buildPlayerSnapshot,
   buildServerOnlineEvent,
+  deriveRegionName,
   diffPlayerSnapshots,
+  getPlayerAccountName,
+  getPlayerName,
+  getPlayerPlayerId,
+  getPlayerUserId,
   parsePlayersResponse
 } from './rest.js';
 
@@ -23,6 +28,24 @@ test('parses Palworld REST /players payload', () => {
   assert.equal(players.length, 1);
   assert.equal(players[0]?.name, 'RossiKid11');
   assert.equal(players[0]?.userId, 'steam_123');
+});
+
+test('supports snake_case Palworld REST /players payload fields', () => {
+  const players = parsePlayersResponse({
+    players: [
+      {
+        player_name: 'Cdawg',
+        account_name: 'cdawg-account',
+        player_id: 'PLAYER-2',
+        user_id: 'steam_456'
+      }
+    ]
+  });
+
+  assert.equal(getPlayerName(players[0]!), 'Cdawg');
+  assert.equal(getPlayerAccountName(players[0]!), 'cdawg-account');
+  assert.equal(getPlayerPlayerId(players[0]!), 'PLAYER-2');
+  assert.equal(getPlayerUserId(players[0]!), 'steam_456');
 });
 
 test('diffs player snapshots into join and leave events', () => {
@@ -70,4 +93,13 @@ test('creates palworld server online and health warn events', () => {
   assert.equal(online.raw?.palworldCurrentPlayerCount, 1);
   assert.equal(warn.eventType, 'HEALTH_WARN');
   assert.equal(warn.raw?.palworldFailureCount, 3);
+});
+
+test('derives placeholder regions from player coordinates', () => {
+  assert.equal(deriveRegionName(0, 0), 'central-plains');
+  assert.equal(deriveRegionName(250, 300), 'northeast-frontier');
+  assert.equal(deriveRegionName(-250, 300), 'northwest-frontier');
+  assert.equal(deriveRegionName(-250, -300), 'southwest-frontier');
+  assert.equal(deriveRegionName(250, -300), 'southeast-frontier');
+  assert.equal(deriveRegionName(null, 10), null);
 });

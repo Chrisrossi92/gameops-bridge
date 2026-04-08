@@ -11,9 +11,13 @@ export interface PalworldRestConfig {
 
 const palworldPlayerSchema = z.object({
   name: z.string().optional(),
+  player_name: z.string().optional(),
   accountName: z.string().optional(),
+  account_name: z.string().optional(),
   playerId: z.string().optional(),
+  player_id: z.string().optional(),
   userId: z.string().optional(),
+  user_id: z.string().optional(),
   ip: z.string().optional(),
   ping: z.number().optional(),
   location_x: z.number().optional(),
@@ -27,6 +31,8 @@ const palworldPlayersResponseSchema = z.object({
 });
 
 export type PalworldRestPlayer = z.infer<typeof palworldPlayerSchema>;
+export type PalworldMetricsResponse = Record<string, unknown>;
+export type PalworldSettingsResponse = Record<string, unknown>;
 
 export interface PalworldPlayerIdentity {
   lookupKey: string;
@@ -36,25 +42,101 @@ export interface PalworldPlayerIdentity {
   accountName?: string;
 }
 
-function normalizePlayerName(value: string | undefined): string | null {
+function normalizeString(value: string | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
 }
 
+function normalizeNumber(value: number | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeInteger(value: number | undefined): number | null {
+  return Number.isInteger(value) ? value : null;
+}
+
+function normalizePlayerName(value: string | undefined): string | null {
+  return normalizeString(value);
+}
+
+export function getPlayerName(player: PalworldRestPlayer): string | null {
+  return normalizePlayerName(player.name) ?? normalizePlayerName(player.player_name);
+}
+
+export function getPlayerAccountName(player: PalworldRestPlayer): string | null {
+  return normalizeString(player.accountName) ?? normalizeString(player.account_name);
+}
+
+export function getPlayerPlayerId(player: PalworldRestPlayer): string | null {
+  return normalizeString(player.playerId) ?? normalizeString(player.player_id);
+}
+
+export function getPlayerUserId(player: PalworldRestPlayer): string | null {
+  return normalizeString(player.userId) ?? normalizeString(player.user_id);
+}
+
+export function getPlayerIp(player: PalworldRestPlayer): string | null {
+  return normalizeString(player.ip);
+}
+
+export function getPlayerPing(player: PalworldRestPlayer): number | null {
+  return normalizeNumber(player.ping);
+}
+
+export function getPlayerLevel(player: PalworldRestPlayer): number | null {
+  return normalizeInteger(player.level);
+}
+
+export function getPlayerBuildingCount(player: PalworldRestPlayer): number | null {
+  return normalizeInteger(player.building_count);
+}
+
+export function getPlayerLocationX(player: PalworldRestPlayer): number | null {
+  return normalizeNumber(player.location_x);
+}
+
+export function getPlayerLocationY(player: PalworldRestPlayer): number | null {
+  return normalizeNumber(player.location_y);
+}
+
+export function deriveRegionName(locationX: number | null, locationY: number | null): string | null {
+  if (locationX === null || locationY === null) {
+    return null;
+  }
+
+  if (Math.abs(locationX) <= 100 && Math.abs(locationY) <= 100) {
+    return 'central-plains';
+  }
+
+  if (locationX >= 0 && locationY >= 0) {
+    return 'northeast-frontier';
+  }
+
+  if (locationX < 0 && locationY >= 0) {
+    return 'northwest-frontier';
+  }
+
+  if (locationX < 0 && locationY < 0) {
+    return 'southwest-frontier';
+  }
+
+  return 'southeast-frontier';
+}
+
 function buildLookupKey(player: PalworldRestPlayer): string | null {
-  const playerId = player.playerId?.trim();
+  const playerId = getPlayerPlayerId(player);
 
   if (playerId) {
     return `player:${playerId}`;
   }
 
-  const userId = player.userId?.trim();
+  const userId = getPlayerUserId(player);
 
   if (userId) {
     return `user:${userId}`;
   }
 
-  const name = normalizePlayerName(player.name) ?? normalizePlayerName(player.accountName);
+  const name = getPlayerName(player) ?? getPlayerAccountName(player);
 
   if (name) {
     return `name:${name.toLowerCase()}`;
@@ -65,7 +147,7 @@ function buildLookupKey(player: PalworldRestPlayer): string | null {
 
 function toPlayerIdentity(player: PalworldRestPlayer): PalworldPlayerIdentity | null {
   const lookupKey = buildLookupKey(player);
-  const playerName = normalizePlayerName(player.name) ?? normalizePlayerName(player.accountName);
+  const playerName = getPlayerName(player) ?? getPlayerAccountName(player);
 
   if (!lookupKey || !playerName) {
     return null;
@@ -74,9 +156,9 @@ function toPlayerIdentity(player: PalworldRestPlayer): PalworldPlayerIdentity | 
   return {
     lookupKey,
     playerName,
-    ...(player.playerId?.trim() ? { playerId: player.playerId.trim() } : {}),
-    ...(player.userId?.trim() ? { userId: player.userId.trim() } : {}),
-    ...(player.accountName?.trim() ? { accountName: player.accountName.trim() } : {})
+    ...(getPlayerPlayerId(player) ? { playerId: getPlayerPlayerId(player) ?? undefined } : {}),
+    ...(getPlayerUserId(player) ? { userId: getPlayerUserId(player) ?? undefined } : {}),
+    ...(getPlayerAccountName(player) ? { accountName: getPlayerAccountName(player) ?? undefined } : {})
   };
 }
 
@@ -202,13 +284,23 @@ function normalizePath(path: string | undefined): string {
   return prefixed.replace(/\/+$/, '');
 }
 
-function buildCandidateUrls(config: PalworldRestConfig): string[] {
+function stripKnownEndpointSuffix(path: string): string {
+  return path.replace(/\/(players|metrics|settings)$/i, '');
+}
+
+function buildCandidateUrls(config: PalworldRestConfig, endpoint: 'players' | 'metrics' | 'settings'): string[] {
   const normalizedPath = normalizePath(config.path);
   const baseUrl = `http://${config.host}:${config.port}`;
-  const preferred = `${baseUrl}${normalizedPath}/players`;
-  const fallback = `${baseUrl}/players`;
+  const basePath = stripKnownEndpointSuffix(normalizedPath);
+  const directPath = normalizedPath.toLowerCase().endsWith(`/${endpoint}`)
+    ? normalizedPath
+    : `${basePath}/${endpoint}`;
+  const fallback = `/${endpoint}`;
 
-  return preferred === fallback ? [preferred] : [preferred, fallback];
+  return Array.from(new Set([
+    `${baseUrl}${directPath}`,
+    `${baseUrl}${fallback}`
+  ]));
 }
 
 async function fetchJson(url: string, authHeader: string): Promise<Response> {
@@ -220,9 +312,12 @@ async function fetchJson(url: string, authHeader: string): Promise<Response> {
   });
 }
 
-export async function fetchPlayers(config: PalworldRestConfig): Promise<PalworldRestPlayer[]> {
+async function fetchEndpointJson(
+  config: PalworldRestConfig,
+  endpoint: 'players' | 'metrics' | 'settings'
+): Promise<unknown> {
   const authHeader = `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`;
-  const candidateUrls = buildCandidateUrls(config);
+  const candidateUrls = buildCandidateUrls(config, endpoint);
   let lastError: Error | null = null;
 
   for (const url of candidateUrls) {
@@ -242,11 +337,27 @@ export async function fetchPlayers(config: PalworldRestConfig): Promise<Palworld
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Palworld REST /players failed (${response.status}) at ${url}: ${body.slice(0, 200)}`);
+      throw new Error(`Palworld REST /${endpoint} failed (${response.status}) at ${url}: ${body.slice(0, 200)}`);
     }
 
-    return parsePlayersResponse(await response.json());
+    return await response.json();
   }
 
-  throw lastError ?? new Error('Palworld REST /players request failed');
+  throw lastError ?? new Error(`Palworld REST /${endpoint} request failed`);
+}
+
+function parseRecordResponse(payload: unknown): Record<string, unknown> {
+  return z.record(z.string(), z.unknown()).parse(payload);
+}
+
+export async function fetchPlayers(config: PalworldRestConfig): Promise<PalworldRestPlayer[]> {
+  return parsePlayersResponse(await fetchEndpointJson(config, 'players'));
+}
+
+export async function fetchMetrics(config: PalworldRestConfig): Promise<PalworldMetricsResponse> {
+  return parseRecordResponse(await fetchEndpointJson(config, 'metrics'));
+}
+
+export async function fetchSettings(config: PalworldRestConfig): Promise<PalworldSettingsResponse> {
+  return parseRecordResponse(await fetchEndpointJson(config, 'settings'));
 }

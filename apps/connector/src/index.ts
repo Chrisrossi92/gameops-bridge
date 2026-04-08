@@ -17,9 +17,12 @@ import {
   buildPlayerSnapshot,
   buildServerOnlineEvent,
   diffPlayerSnapshots,
+  fetchMetrics,
   fetchPlayers,
+  fetchSettings,
   type PalworldPlayerIdentity
 } from './adapters/palworld/rest.js';
+import { persistPalworldTelemetry } from './adapters/palworld/telemetry-store.js';
 import { startValheimJournalStream } from './adapters/valheim/journal.js';
 import { findKnownPlayer, upsertKnownPlayerObservation } from './identity/known-player-store.js';
 
@@ -667,16 +670,33 @@ async function runPalworldRestMode(): Promise<void> {
     pollInFlight = true;
 
     try {
-      const players = await fetchPlayers({
+      const restConfig = {
         host: requiredRestHost,
         port: requiredRestPort,
         username: requiredRestUsername,
         password: requiredRestPassword,
         ...(restPath ? { path: restPath } : {})
-      });
+      };
+      const [players, metrics, settings] = await Promise.all([
+        fetchPlayers(restConfig),
+        fetchMetrics(restConfig),
+        fetchSettings(restConfig)
+      ]);
       const currentSnapshot = buildPlayerSnapshot(players);
       const occurredAt = new Date().toISOString();
       const events: NormalizedEvent[] = [];
+      const previousLookupKeys = new Set(previousSnapshot.keys());
+      const currentLookupKeys = new Set(currentSnapshot.keys());
+
+      persistPalworldTelemetry({
+        serverId,
+        observedAt: occurredAt,
+        players,
+        previousPlayerLookupKeys: previousLookupKeys,
+        currentPlayerLookupKeys: currentLookupKeys,
+        metrics,
+        settings
+      });
 
       if (!hasCompletedFirstSuccessfulPoll) {
         hasCompletedFirstSuccessfulPoll = true;
