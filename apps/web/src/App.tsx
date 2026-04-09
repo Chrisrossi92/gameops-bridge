@@ -7,7 +7,7 @@ import {
   palworldLatestPlayersResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
-  palworldPlayerTelemetryProfileResponseSchema,
+  palworldUnifiedPlayerProfileSchema,
   recentEventsResponseSchema,
   serverStatusSchema,
   type ConfiguredServersResponse,
@@ -17,7 +17,8 @@ import {
   type PalworldIdentityLinkFailure,
   type PalworldLatestPlayerTelemetry,
   type PalworldMetricsSummary,
-  type PalworldPlayerSnapshot
+  type PalworldPlayerSnapshot,
+  type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import { useEffect, useMemo, useState } from 'react';
 import './App.css';
@@ -86,7 +87,7 @@ function App() {
   const [selectedValheimPlayerLookupKey, setSelectedValheimPlayerLookupKey] = useState<string | null>(null);
   const [selectedValheimPlayerProfile, setSelectedValheimPlayerProfile] = useState<KnownPlayerProfileResponse | null>(null);
   const [selectedPalworldPlayerKey, setSelectedPalworldPlayerKey] = useState<string | null>(null);
-  const [selectedPalworldPlayer, setSelectedPalworldPlayer] = useState<PalworldLatestPlayerTelemetry | null>(null);
+  const [selectedPalworldPlayerProfile, setSelectedPalworldPlayerProfile] = useState<PalworldUnifiedPlayerProfile | null>(null);
   const [selectedPalworldHistory, setSelectedPalworldHistory] = useState<PalworldPlayerSnapshot[]>([]);
   const [palworldPlayerDetailLoading, setPalworldPlayerDetailLoading] = useState(false);
   const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
@@ -103,7 +104,7 @@ function App() {
     setSelectedValheimPlayerLookupKey(null);
     setSelectedValheimPlayerProfile(null);
     setSelectedPalworldPlayerKey(null);
-    setSelectedPalworldPlayer(null);
+    setSelectedPalworldPlayerProfile(null);
     setSelectedPalworldHistory([]);
     setPalworldPlayerDetailLoading(false);
     setPalworldLatestPlayers([]);
@@ -462,15 +463,17 @@ function App() {
 
     async function loadPalworldPlayerDetail(): Promise<void> {
       if (!selectedServer || selectedServer.game !== 'palworld' || !selectedPalworldPlayerKey) {
-        setSelectedPalworldPlayer(null);
+        setSelectedPalworldPlayerProfile(null);
         setSelectedPalworldHistory([]);
         return;
       }
 
       try {
         setPalworldPlayerDetailLoading(true);
+        const selectedPlayer = palworldLatestPlayers.find((player) => player.lookupKey === selectedPalworldPlayerKey) ?? null;
+        const profileLookupId = selectedPlayer?.playerId ?? selectedPalworldPlayerKey;
         const [playerResponse, historyResponse] = await Promise.all([
-          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest/${encodeURIComponent(selectedPalworldPlayerKey)}`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/player-profile/${encodeURIComponent(profileLookupId)}`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest/${encodeURIComponent(selectedPalworldPlayerKey)}/history?limit=12`)
         ]);
 
@@ -484,7 +487,7 @@ function App() {
           historyResponse.json()
         ]);
 
-        const playerParsed = palworldPlayerTelemetryProfileResponseSchema.safeParse(playerPayload);
+        const playerParsed = palworldUnifiedPlayerProfileSchema.safeParse(playerPayload);
         const historyParsed = palworldPlayerSnapshotsResponseSchema.safeParse(historyPayload);
 
         if (!playerParsed.success || !historyParsed.success) {
@@ -495,11 +498,11 @@ function App() {
           return;
         }
 
-        setSelectedPalworldPlayer(playerParsed.data.player);
+        setSelectedPalworldPlayerProfile(playerParsed.data);
         setSelectedPalworldHistory(historyParsed.data.snapshots);
       } catch {
         if (isMounted) {
-          setSelectedPalworldPlayer(null);
+          setSelectedPalworldPlayerProfile(null);
           setSelectedPalworldHistory([]);
         }
       } finally {
@@ -514,7 +517,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [selectedServer, selectedPalworldPlayerKey]);
+  }, [palworldLatestPlayers, selectedServer, selectedPalworldPlayerKey]);
 
   useEffect(() => {
     let isMounted = true;
@@ -942,27 +945,35 @@ function App() {
                   </article>
 
                   <article className="card">
-                    <h2>Player Detail / History</h2>
-                    {!selectedPalworldPlayer && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect current state and recent snapshots.</p> : null}
+                    <h2>Player Profile / History</h2>
+                    {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect the unified live/save identity profile and recent snapshots.</p> : null}
                     {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
-                    {selectedPalworldPlayer ? (
+                    {selectedPalworldPlayerProfile ? (
                       <>
                         <div className="detail-grid">
                           <div className="detail-block">
-                            <h3>Current State</h3>
+                            <h3>Unified Profile</h3>
                             <ul className="list compact">
-                              <li><span>Name</span><span>{selectedPalworldPlayer.playerName ?? 'Unknown'}</span></li>
-                              <li><span>Account</span><span>{selectedPalworldPlayer.accountName ?? 'Unknown'}</span></li>
-                              <li><span>Player ID</span><span>{selectedPalworldPlayer.playerId ?? 'N/A'}</span></li>
-                              <li><span>User ID</span><span>{selectedPalworldPlayer.userId ?? 'N/A'}</span></li>
-                              <li><span>Level</span><span>{selectedPalworldPlayer.level ?? 'N/A'}</span></li>
-                              <li><span>Region</span><span>{selectedPalworldPlayer.region ?? 'Unknown'}</span></li>
-                              <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayer.ping)}</span></li>
-                              <li><span>Avg Ping</span><span>{formatMetric(selectedPalworldPlayer.avgPing)}</span></li>
-                              <li><span>Max Ping</span><span>{formatMetric(selectedPalworldPlayer.maxPing)}</span></li>
-                              <li><span>Ping Std Dev</span><span>{formatMetric(selectedPalworldPlayer.pingStdDev)}</span></li>
-                              <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayer.currentSessionDurationSeconds)}</span></li>
-                              <li><span>Status</span><span>{selectedPalworldPlayer.isOnline ? 'Online' : 'Offline'}</span></li>
+                              <li><span>Name</span><span>{selectedPalworldPlayerProfile.playerName ?? 'Unknown'}</span></li>
+                              <li><span>Account</span><span>{selectedPalworldPlayerProfile.accountName ?? 'Unknown'}</span></li>
+                              <li><span>Player ID</span><span>{selectedPalworldPlayerProfile.playerId}</span></li>
+                              <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
+                              <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
+                              <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
+                              <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping)}</span></li>
+                              <li><span>Avg Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.avgPing)}</span></li>
+                              <li><span>Max Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.maxPing)}</span></li>
+                              <li><span>Ping Std Dev</span><span>{formatMetric(selectedPalworldPlayerProfile.pingStdDev)}</span></li>
+                              <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds)}</span></li>
+                              <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                              <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
+                              <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
+                              <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>
+                              <li><span>Review Notes</span><span>{selectedPalworldPlayerProfile.review.notes || 'None'}</span></li>
+                              <li><span>Save File</span><span>{selectedPalworldPlayerProfile.saveArtifact.present ? (selectedPalworldPlayerProfile.saveArtifact.savePlayerFileName ?? 'present') : 'Not found'}</span></li>
+                              <li><span>Save Path</span><span>{selectedPalworldPlayerProfile.saveArtifact.path ?? 'N/A'}</span></li>
+                              <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
+                              <li><span>Save MTime</span><span>{selectedPalworldPlayerProfile.saveArtifact.modifiedAt ? formatTimestamp(selectedPalworldPlayerProfile.saveArtifact.modifiedAt) : 'N/A'}</span></li>
                             </ul>
                           </div>
                           <div className="detail-block">

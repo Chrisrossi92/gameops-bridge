@@ -3,10 +3,12 @@ import {
   palworldPlayerSnapshotsResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerTelemetryProfileResponseSchema,
+  palworldUnifiedPlayerProfileSchema,
   type PalworldLatestPlayersResponse,
   type PalworldPlayerSnapshotsResponse,
   type PalworldMetricsSummariesResponse,
-  type PalworldPlayerTelemetryProfileResponse
+  type PalworldPlayerTelemetryProfileResponse,
+  type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import type { FastifyInstance } from 'fastify';
 import {
@@ -16,6 +18,7 @@ import {
   getRecentPalworldPlayerSnapshotsForServer,
   getRecentPalworldMetricsForServer
 } from '../services/palworld-telemetry-store.js';
+import { getPalworldUnifiedPlayerProfile } from '../services/palworld-player-profile.js';
 
 export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>(
@@ -58,6 +61,33 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
         serverId,
         player: getLatestPalworldPlayerForServer(serverId, playerKey)
       });
+    }
+  );
+
+  app.get<{ Params: { serverId: string; playerId: string } }>(
+    '/servers/:serverId/palworld/player-profile/:playerId',
+    async (request, reply): Promise<PalworldUnifiedPlayerProfile | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+      const playerId = decodeURIComponent(request.params.playerId).trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      if (!playerId) {
+        reply.code(400);
+        return { error: 'Invalid playerId' };
+      }
+
+      const profile = getPalworldUnifiedPlayerProfile(serverId, playerId);
+
+      if (!profile) {
+        reply.code(404);
+        return { error: 'Player profile not found' };
+      }
+
+      return palworldUnifiedPlayerProfileSchema.parse(profile);
     }
   );
 

@@ -37,7 +37,7 @@ export async function registerPalworldIdentityApprovalRoutes(app: FastifyInstanc
         return palworldApprovedIdentitySchema.parse(approvePalworldIdentity({
           savePlayerKey: parsed.data.savePlayerKey,
           reviewedBy: parsed.data.reviewedBy,
-          notes: parsed.data.notes
+          ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {})
         }));
       } catch (error) {
         reply.code(404);
@@ -60,7 +60,7 @@ export async function registerPalworldIdentityApprovalRoutes(app: FastifyInstanc
         return palworldRejectedIdentitySchema.parse(rejectPalworldIdentity({
           savePlayerKey: parsed.data.savePlayerKey,
           reviewedBy: parsed.data.reviewedBy,
-          notes: parsed.data.notes
+          ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {})
         }));
       } catch (error) {
         reply.code(404);

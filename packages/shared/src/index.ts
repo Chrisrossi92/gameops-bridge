@@ -339,6 +339,58 @@ export const palworldIdentityApprovalActionSchema = z.object({
 });
 export type PalworldIdentityApprovalAction = z.infer<typeof palworldIdentityApprovalActionSchema>;
 
+export const palworldIdentityReviewStateSchema = z.enum(['approved', 'rejected', 'unresolved']);
+export type PalworldIdentityReviewState = z.infer<typeof palworldIdentityReviewStateSchema>;
+
+export const palworldPlayerSaveArtifactSchema = z.object({
+  present: z.boolean(),
+  path: z.string().nullable(),
+  modifiedAt: z.string().datetime().nullable(),
+  sizeBytes: z.number().int().min(0).nullable(),
+  parseStatus: z.string().nullable(),
+  savePlayerSaveId: z.string().nullable(),
+  savePlayerFileName: z.string().nullable()
+});
+export type PalworldPlayerSaveArtifact = z.infer<typeof palworldPlayerSaveArtifactSchema>;
+
+export const palworldPlayerReviewMetadataSchema = z.object({
+  state: palworldIdentityReviewStateSchema,
+  savePlayerSaveId: z.string().nullable(),
+  savePlayerFileName: z.string().nullable(),
+  telemetryLookupKey: z.string().nullable(),
+  reviewedAt: z.string().datetime().nullable(),
+  reviewedBy: z.string().nullable(),
+  notes: z.string().default('')
+});
+export type PalworldPlayerReviewMetadata = z.infer<typeof palworldPlayerReviewMetadataSchema>;
+
+export const palworldUnifiedPlayerProfileSchema = z.object({
+  serverId: z.string().min(1),
+  playerId: z.string().min(1),
+  lookupKey: z.string().nullable(),
+  playerName: z.string().nullable(),
+  accountName: z.string().nullable(),
+  userId: z.string().nullable(),
+  level: z.number().int().nullable(),
+  ping: z.number().nullable(),
+  locationX: z.number().nullable(),
+  locationY: z.number().nullable(),
+  region: z.string().nullable(),
+  firstSeenAt: z.string().datetime().nullable(),
+  lastSeenAt: z.string().datetime().nullable(),
+  maxLevelSeen: z.number().int().min(0).nullable(),
+  totalSessions: z.number().int().min(0).nullable(),
+  isOnline: z.boolean(),
+  avgPing: z.number().nullable(),
+  maxPing: z.number().nullable(),
+  pingStdDev: z.number().nullable(),
+  currentSessionDurationSeconds: z.number().int().min(0).nullable(),
+  identityState: palworldIdentityReviewStateSchema,
+  review: palworldPlayerReviewMetadataSchema,
+  saveArtifact: palworldPlayerSaveArtifactSchema
+});
+export type PalworldUnifiedPlayerProfile = z.infer<typeof palworldUnifiedPlayerProfileSchema>;
+
 const workspaceConfigSchema = z.object({
   workspaceId: z.string().min(1),
   workspaceName: z.string().min(1),
