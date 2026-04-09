@@ -2,12 +2,14 @@ import {
   palworldLatestPlayersResponseSchema,
   palworldMilestoneFeedResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
+  palworldTransitionMilestoneEventsResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerTelemetryProfileResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   type PalworldLatestPlayersResponse,
   type PalworldMilestoneFeedResponse,
   type PalworldPlayerSnapshotsResponse,
+  type PalworldTransitionMilestoneEventsResponse,
   type PalworldMetricsSummariesResponse,
   type PalworldPlayerTelemetryProfileResponse,
   type PalworldUnifiedPlayerProfile
@@ -21,6 +23,10 @@ import {
   getRecentPalworldMetricsForServer
 } from '../services/palworld-telemetry-store.js';
 import { getPalworldMilestoneFeedForServer, getPalworldUnifiedPlayerProfile } from '../services/palworld-player-profile.js';
+import {
+  evaluatePalworldMilestoneTransitionsForServer,
+  getRecentPalworldMilestoneTransitionEventsForServer
+} from '../services/palworld-milestone-transition-store.js';
 
 export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>(
@@ -109,6 +115,28 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       return palworldMilestoneFeedResponseSchema.parse({
         serverId,
         milestones: getPalworldMilestoneFeedForServer(serverId, limit)
+      });
+    }
+  );
+
+  app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>(
+    '/servers/:serverId/palworld/milestones/transitions/recent',
+    async (request, reply): Promise<PalworldTransitionMilestoneEventsResponse | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      const parsedLimit = Number(request.query.limit);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 50;
+
+      evaluatePalworldMilestoneTransitionsForServer(serverId);
+
+      return palworldTransitionMilestoneEventsResponseSchema.parse({
+        serverId,
+        events: getRecentPalworldMilestoneTransitionEventsForServer(serverId, limit)
       });
     }
   );

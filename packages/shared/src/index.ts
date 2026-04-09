@@ -411,6 +411,37 @@ export const palworldMilestoneFeedResponseSchema = z.object({
 });
 export type PalworldMilestoneFeedResponse = z.infer<typeof palworldMilestoneFeedResponseSchema>;
 
+export const palworldTransitionMilestoneEventTypeSchema = z.enum([
+  'PALWORLD_LEVEL_TIER_ENTERED',
+  'PALWORLD_SESSION_TIER_ENTERED',
+  'PALWORLD_IDENTITY_APPROVED'
+]);
+export type PalworldTransitionMilestoneEventType = z.infer<typeof palworldTransitionMilestoneEventTypeSchema>;
+
+export const palworldTransitionMilestoneEventSchema = z.object({
+  serverId: z.string().min(1),
+  playerId: z.string().min(1),
+  playerName: z.string().nullable(),
+  accountName: z.string().nullable(),
+  eventType: palworldTransitionMilestoneEventTypeSchema,
+  occurredAt: z.string().datetime(),
+  identityState: palworldIdentityReviewStateSchema,
+  level: z.number().int().nullable(),
+  levelTier: palworldLevelTierSchema.nullable(),
+  sessionTier: palworldSessionTierSchema.nullable(),
+  activeSessionKey: z.string().nullable(),
+  fromValue: z.string().nullable(),
+  toValue: z.string().nullable(),
+  reason: z.string().min(1)
+});
+export type PalworldTransitionMilestoneEvent = z.infer<typeof palworldTransitionMilestoneEventSchema>;
+
+export const palworldTransitionMilestoneEventsResponseSchema = z.object({
+  serverId: z.string().min(1),
+  events: z.array(palworldTransitionMilestoneEventSchema)
+});
+export type PalworldTransitionMilestoneEventsResponse = z.infer<typeof palworldTransitionMilestoneEventsResponseSchema>;
+
 export const palworldUnifiedPlayerProfileSchema = z.object({
   serverId: z.string().min(1),
   playerId: z.string().min(1),

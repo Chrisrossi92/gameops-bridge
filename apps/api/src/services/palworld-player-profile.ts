@@ -365,13 +365,15 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
   });
 }
 
-export function getPalworldMilestoneFeedForServer(serverId: string, limit = 50): PalworldMilestoneFeedEntry[] {
-  const onlinePlayers = getLatestPalworldPlayersForServer(serverId, 10_000)
-    .filter((player) => player.isOnline);
-
-  return onlinePlayers
+export function getPalworldUnifiedProfilesForServer(serverId: string, limit = 10_000): PalworldUnifiedPlayerProfile[] {
+  return getLatestPalworldPlayersForServer(serverId, limit)
     .map((player) => getPalworldUnifiedPlayerProfile(serverId, player.playerId ?? player.lookupKey))
-    .filter((profile): profile is PalworldUnifiedPlayerProfile => Boolean(profile))
+    .filter((profile): profile is PalworldUnifiedPlayerProfile => Boolean(profile));
+}
+
+export function getPalworldMilestoneFeedForServer(serverId: string, limit = 50): PalworldMilestoneFeedEntry[] {
+  return getPalworldUnifiedProfilesForServer(serverId, 10_000)
+    .filter((profile) => profile.isOnline)
     .flatMap((profile) => profile.milestoneSignals.map((signal) => ({
       serverId: profile.serverId,
       playerId: profile.playerId,
