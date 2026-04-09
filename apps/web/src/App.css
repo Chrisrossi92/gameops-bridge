@@ -248,6 +248,36 @@
   gap: 0.55rem;
 }
 
+.review-list {
+  gap: 0.55rem;
+}
+
+.review-row {
+  border: 1px solid #e5eaf2;
+  background: #fff;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.55rem;
+}
+
+.review-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.review-id {
+  font-weight: 600;
+  color: #0f172a;
+  word-break: break-word;
+}
+
 .telemetry-heading {
   display: flex;
   align-items: center;

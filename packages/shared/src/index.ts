@@ -255,6 +255,45 @@ export const palworldMetricsSummariesResponseSchema = z.object({
 });
 export type PalworldMetricsSummariesResponse = z.infer<typeof palworldMetricsSummariesResponseSchema>;
 
+export const palworldIdentityLinkCandidateSchema = z.object({
+  serverId: z.string().min(1),
+  savePlayerFileName: z.string().min(1),
+  savePlayerSaveId: z.string().min(1),
+  telemetryLookupKey: z.string().nullable(),
+  candidate: z.object({
+    playerId: z.string().nullable(),
+    userId: z.string().nullable(),
+    accountName: z.string().nullable(),
+    playerName: z.string().nullable()
+  }),
+  confidence: identityConfidenceSchema,
+  score: z.number(),
+  matchedOn: z.array(z.string()),
+  notes: z.array(z.string())
+});
+export type PalworldIdentityLinkCandidate = z.infer<typeof palworldIdentityLinkCandidateSchema>;
+
+export const palworldIdentityLinkFailureSchema = z.object({
+  savePlayerFileName: z.string().min(1),
+  savePlayerSaveId: z.string().min(1),
+  status: z.enum(['skipped', 'no_match', 'input_error']),
+  message: z.string().min(1)
+});
+export type PalworldIdentityLinkFailure = z.infer<typeof palworldIdentityLinkFailureSchema>;
+
+export const palworldIdentityLinksResponseSchema = z.object({
+  generatedAt: z.string().datetime().optional(),
+  candidates: z.array(palworldIdentityLinkCandidateSchema),
+  failures: z.array(palworldIdentityLinkFailureSchema)
+});
+export type PalworldIdentityLinksResponse = z.infer<typeof palworldIdentityLinksResponseSchema>;
+
+export const palworldIdentityLinkReviewResponseSchema = z.object({
+  candidate: palworldIdentityLinkCandidateSchema.nullable(),
+  failures: z.array(palworldIdentityLinkFailureSchema)
+});
+export type PalworldIdentityLinkReviewResponse = z.infer<typeof palworldIdentityLinkReviewResponseSchema>;
+
 const workspaceConfigSchema = z.object({
   workspaceId: z.string().min(1),
   workspaceName: z.string().min(1),

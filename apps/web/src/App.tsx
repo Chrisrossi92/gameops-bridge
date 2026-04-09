@@ -3,6 +3,7 @@ import {
   configuredServersResponseSchema,
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
+  palworldIdentityLinksResponseSchema,
   palworldLatestPlayersResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
@@ -12,6 +13,8 @@ import {
   type ConfiguredServersResponse,
   type KnownPlayerProfileResponse,
   type NormalizedEvent,
+  type PalworldIdentityLinkCandidate,
+  type PalworldIdentityLinkFailure,
   type PalworldLatestPlayerTelemetry,
   type PalworldMetricsSummary,
   type PalworldPlayerSnapshot
@@ -88,6 +91,10 @@ function App() {
   const [palworldPlayerDetailLoading, setPalworldPlayerDetailLoading] = useState(false);
   const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
+  const [palworldIdentityCandidates, setPalworldIdentityCandidates] = useState<PalworldIdentityLinkCandidate[]>([]);
+  const [palworldIdentityFailures, setPalworldIdentityFailures] = useState<PalworldIdentityLinkFailure[]>([]);
+  const [palworldIdentityLoading, setPalworldIdentityLoading] = useState(false);
+  const [palworldIdentityError, setPalworldIdentityError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -101,6 +108,10 @@ function App() {
     setPalworldPlayerDetailLoading(false);
     setPalworldLatestPlayers([]);
     setPalworldMetrics([]);
+    setPalworldIdentityCandidates([]);
+    setPalworldIdentityFailures([]);
+    setPalworldIdentityLoading(false);
+    setPalworldIdentityError(null);
     setDetailError(null);
   }, [selectedServerId]);
 
@@ -504,6 +515,65 @@ function App() {
       isMounted = false;
     };
   }, [selectedServer, selectedPalworldPlayerKey]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPalworldIdentityLinks(): Promise<void> {
+      if (!selectedServer || selectedServer.game !== 'palworld') {
+        setPalworldIdentityCandidates([]);
+        setPalworldIdentityFailures([]);
+        setPalworldIdentityLoading(false);
+        setPalworldIdentityError(null);
+        return;
+      }
+
+      try {
+        setPalworldIdentityLoading(true);
+        setPalworldIdentityError(null);
+
+        const response = await fetch(`${apiBaseUrl}/palworld/identity-links?limit=200`);
+
+        if (!response.ok) {
+          throw new Error(`Identity links fetch failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = palworldIdentityLinksResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('Identity links payload validation failed.');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setPalworldIdentityCandidates(
+          parsed.data.candidates.filter((candidate) => candidate.serverId === selectedServer.id)
+        );
+        setPalworldIdentityFailures(parsed.data.failures);
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
+
+        if (isMounted) {
+          setPalworldIdentityError(message);
+          setPalworldIdentityCandidates([]);
+          setPalworldIdentityFailures([]);
+        }
+      } finally {
+        if (isMounted) {
+          setPalworldIdentityLoading(false);
+        }
+      }
+    }
+
+    void loadPalworldIdentityLinks();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedServer]);
 
   const filteredServers = useMemo(() => {
     return serverOptions.filter((server) => (
@@ -929,6 +999,56 @@ function App() {
                           <span className="subtle">
                             fps {metric.serverFps ?? 'N/A'} • players {metric.currentPlayerCount ?? 'N/A'} • uptime {metric.currentUptimeHours ?? 'N/A'}h
                           </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+
+                  <article className="card">
+                    <h2>Identity Review Candidates</h2>
+                    {palworldIdentityLoading ? <p className="subtle">Loading identity link candidates...</p> : null}
+                    {palworldIdentityError ? <p className="error">{palworldIdentityError}</p> : null}
+                    <ul className="list review-list">
+                      {!palworldIdentityLoading && palworldIdentityCandidates.length === 0 ? <li>No candidate links found.</li> : null}
+                      {palworldIdentityCandidates.map((candidate) => (
+                        <li key={`${candidate.savePlayerFileName}:${candidate.telemetryLookupKey ?? 'none'}`} className="review-row">
+                          <div className="review-main">
+                            <div className="review-header">
+                              <span className="review-id">{candidate.savePlayerSaveId}</span>
+                              <span className={`confidence-badge confidence-${candidate.confidence}`}>{candidate.confidence}</span>
+                            </div>
+                            <div className="subtle">
+                              save file {candidate.savePlayerFileName}
+                            </div>
+                            <div>
+                              <strong>live:</strong> {candidate.candidate.playerName ?? candidate.candidate.accountName ?? candidate.telemetryLookupKey ?? 'unknown'}
+                            </div>
+                            <div className="subtle">
+                              score {candidate.score} • matched {candidate.matchedOn.join(', ') || 'none'}
+                            </div>
+                            <div className="subtle">
+                              {candidate.notes.join(' • ') || 'no additional notes'}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+
+                  <article className="card">
+                    <h2>Identity Review Failures</h2>
+                    <ul className="list review-list">
+                      {!palworldIdentityLoading && palworldIdentityFailures.length === 0 ? <li>No unmatched save players recorded.</li> : null}
+                      {palworldIdentityFailures.map((failure) => (
+                        <li key={`${failure.savePlayerFileName}:${failure.status}`} className="review-row">
+                          <div className="review-main">
+                            <div className="review-header">
+                              <span className="review-id">{failure.savePlayerSaveId}</span>
+                              <span className="warning-badge warning-general">{failure.status}</span>
+                            </div>
+                            <div className="subtle">save file {failure.savePlayerFileName}</div>
+                            <div className="subtle">{failure.message}</div>
+                          </div>
                         </li>
                       ))}
                     </ul>
