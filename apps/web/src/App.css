@@ -285,6 +285,13 @@
   gap: 0.65rem;
 }
 
+.telemetry-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
 .telemetry-player-name {
   font-weight: 600;
   color: #0f172a;
@@ -306,7 +313,8 @@
 
 .activity-badge,
 .warning-badge,
-.confidence-badge {
+.confidence-badge,
+.identity-badge {
   display: inline-block;
   border-radius: 999px;
   padding: 0.08rem 0.45rem;
@@ -365,6 +373,26 @@
 .confidence-low {
   background: #e2e8f0;
   color: #334155;
+}
+
+.identity-approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.identity-candidate {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.identity-unresolved {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.identity-rejected {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .state-online {

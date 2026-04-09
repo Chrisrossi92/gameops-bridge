@@ -3,6 +3,7 @@ import {
   configuredServersResponseSchema,
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
+  palworldIdentityApprovalsResponseSchema,
   palworldIdentityLinksResponseSchema,
   palworldLatestPlayersResponseSchema,
   palworldMetricsSummariesResponseSchema,
@@ -13,11 +14,13 @@ import {
   type ConfiguredServersResponse,
   type KnownPlayerProfileResponse,
   type NormalizedEvent,
+  type PalworldApprovedIdentity,
   type PalworldIdentityLinkCandidate,
   type PalworldIdentityLinkFailure,
   type PalworldLatestPlayerTelemetry,
   type PalworldMetricsSummary,
   type PalworldPlayerSnapshot,
+  type PalworldRejectedIdentity,
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -69,6 +72,13 @@ interface WarningSummaryEntry {
   signature: string;
 }
 
+type PalworldIdentityListState = 'approved' | 'candidate' | 'unresolved' | 'rejected';
+
+interface PalworldPlayerListEntry {
+  player: PalworldLatestPlayerTelemetry;
+  identityState: PalworldIdentityListState;
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
@@ -92,6 +102,8 @@ function App() {
   const [palworldPlayerDetailLoading, setPalworldPlayerDetailLoading] = useState(false);
   const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
+  const [palworldApprovedIdentities, setPalworldApprovedIdentities] = useState<PalworldApprovedIdentity[]>([]);
+  const [palworldRejectedIdentities, setPalworldRejectedIdentities] = useState<PalworldRejectedIdentity[]>([]);
   const [palworldIdentityCandidates, setPalworldIdentityCandidates] = useState<PalworldIdentityLinkCandidate[]>([]);
   const [palworldIdentityFailures, setPalworldIdentityFailures] = useState<PalworldIdentityLinkFailure[]>([]);
   const [palworldIdentityLoading, setPalworldIdentityLoading] = useState(false);
@@ -109,6 +121,8 @@ function App() {
     setPalworldPlayerDetailLoading(false);
     setPalworldLatestPlayers([]);
     setPalworldMetrics([]);
+    setPalworldApprovedIdentities([]);
+    setPalworldRejectedIdentities([]);
     setPalworldIdentityCandidates([]);
     setPalworldIdentityFailures([]);
     setPalworldIdentityLoading(false);
@@ -387,13 +401,6 @@ function App() {
 
         setPalworldLatestPlayers(latestPlayersParsed.data.players);
         setPalworldMetrics(metricsParsed.data.metrics);
-        setSelectedPalworldPlayerKey((current) => {
-          if (current && latestPlayersParsed.data.players.some((player) => player.lookupKey === current)) {
-            return current;
-          }
-
-          return latestPlayersParsed.data.players[0]?.lookupKey ?? null;
-        });
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
@@ -524,6 +531,8 @@ function App() {
 
     async function loadPalworldIdentityLinks(): Promise<void> {
       if (!selectedServer || selectedServer.game !== 'palworld') {
+        setPalworldApprovedIdentities([]);
+        setPalworldRejectedIdentities([]);
         setPalworldIdentityCandidates([]);
         setPalworldIdentityFailures([]);
         setPalworldIdentityLoading(false);
@@ -535,23 +544,37 @@ function App() {
         setPalworldIdentityLoading(true);
         setPalworldIdentityError(null);
 
-        const response = await fetch(`${apiBaseUrl}/palworld/identity-links?limit=200`);
+        const [linksResponse, approvalsResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/palworld/identity-links?limit=200`),
+          fetch(`${apiBaseUrl}/palworld/identity-approvals`)
+        ]);
 
-        if (!response.ok) {
-          throw new Error(`Identity links fetch failed with status ${response.status}`);
+        if (!linksResponse.ok || !approvalsResponse.ok) {
+          const statusCode = [linksResponse, approvalsResponse].find((response) => !response.ok)?.status;
+          throw new Error(`Identity review fetch failed with status ${statusCode ?? 'unknown'}`);
         }
 
-        const payload = await response.json();
-        const parsed = palworldIdentityLinksResponseSchema.safeParse(payload);
+        const [linksPayload, approvalsPayload] = await Promise.all([
+          linksResponse.json(),
+          approvalsResponse.json()
+        ]);
+        const parsed = palworldIdentityLinksResponseSchema.safeParse(linksPayload);
+        const approvalsParsed = palworldIdentityApprovalsResponseSchema.safeParse(approvalsPayload);
 
-        if (!parsed.success) {
-          throw new Error('Identity links payload validation failed.');
+        if (!parsed.success || !approvalsParsed.success) {
+          throw new Error('Identity review payload validation failed.');
         }
 
         if (!isMounted) {
           return;
         }
 
+        setPalworldApprovedIdentities(
+          approvalsParsed.data.approvals.filter((approval) => approval.serverId === selectedServer.id)
+        );
+        setPalworldRejectedIdentities(
+          approvalsParsed.data.rejections.filter((rejection) => rejection.serverId === selectedServer.id || rejection.serverId === null)
+        );
         setPalworldIdentityCandidates(
           parsed.data.candidates.filter((candidate) => candidate.serverId === selectedServer.id)
         );
@@ -577,6 +600,111 @@ function App() {
       isMounted = false;
     };
   }, [selectedServer]);
+
+  const palworldPlayerList = useMemo<PalworldPlayerListEntry[]>(() => {
+    const normalize = (value: string | null | undefined) => value?.trim().toLowerCase().replace(/\s+/g, ' ') ?? '';
+    const stateRank: Record<PalworldIdentityListState, number> = {
+      approved: 0,
+      candidate: 1,
+      unresolved: 2,
+      rejected: 3
+    };
+
+    const getPlayerState = (player: PalworldLatestPlayerTelemetry): PalworldIdentityListState => {
+      const playerKeys = [
+        player.lookupKey,
+        player.playerId ?? '',
+        player.userId ?? '',
+        player.accountName ?? '',
+        player.playerName ?? ''
+      ].map(normalize).filter(Boolean);
+
+      const matchesReviewRecord = (
+        record: PalworldApprovedIdentity | PalworldRejectedIdentity
+      ): boolean => {
+        const recordKeys = [
+          record.telemetryLookupKey ?? '',
+          record.playerId ?? '',
+          record.userId ?? '',
+          record.accountName ?? '',
+          record.playerName ?? ''
+        ].map(normalize).filter(Boolean);
+
+        return recordKeys.some((key) => playerKeys.includes(key));
+      };
+
+      if (palworldApprovedIdentities.some((record) => matchesReviewRecord(record))) {
+        return 'approved';
+      }
+
+      if (palworldRejectedIdentities.some((record) => matchesReviewRecord(record))) {
+        return 'rejected';
+      }
+
+      const hasCandidate = palworldIdentityCandidates.some((candidate) => {
+        const candidateKeys = [
+          candidate.telemetryLookupKey ?? '',
+          candidate.candidate.playerId ?? '',
+          candidate.candidate.userId ?? '',
+          candidate.candidate.accountName ?? '',
+          candidate.candidate.playerName ?? ''
+        ].map(normalize).filter(Boolean);
+
+        return candidateKeys.some((key) => playerKeys.includes(key));
+      });
+
+      return hasCandidate ? 'candidate' : 'unresolved';
+    };
+
+    return [...palworldLatestPlayers]
+      .map((player) => ({
+        player,
+        identityState: getPlayerState(player)
+      }))
+      .sort((left, right) => {
+        const stateDelta = stateRank[left.identityState] - stateRank[right.identityState];
+        if (stateDelta !== 0) {
+          return stateDelta;
+        }
+
+        if (Number(right.player.isOnline) !== Number(left.player.isOnline)) {
+          return Number(right.player.isOnline) - Number(left.player.isOnline);
+        }
+
+        if ((right.player.level ?? -1) !== (left.player.level ?? -1)) {
+          return (right.player.level ?? -1) - (left.player.level ?? -1);
+        }
+
+        return (right.player.lastSeenAt ?? '').localeCompare(left.player.lastSeenAt ?? '');
+      });
+  }, [
+    palworldApprovedIdentities,
+    palworldIdentityCandidates,
+    palworldLatestPlayers,
+    palworldRejectedIdentities
+  ]);
+
+  useEffect(() => {
+    if (!selectedServer || selectedServer.game !== 'palworld') {
+      return;
+    }
+
+    setSelectedPalworldPlayerKey((current) => {
+      if (current && palworldPlayerList.some((entry) => entry.player.lookupKey === current)) {
+        return current;
+      }
+
+      const approvedOnlinePlayers = palworldPlayerList.filter((entry) => (
+        entry.identityState === 'approved' && entry.player.isOnline
+      ));
+
+      if (approvedOnlinePlayers.length === 1) {
+        return approvedOnlinePlayers[0]?.player.lookupKey ?? null;
+      }
+
+      return palworldPlayerList[0]?.player.lookupKey ?? null;
+    });
+  }, [palworldPlayerList, selectedServer]);
 
   const filteredServers = useMemo(() => {
     return serverOptions.filter((server) => (
@@ -913,10 +1041,10 @@ function App() {
 
                 <section className="card-grid">
                   <article className="card">
-                    <h2>Player Telemetry</h2>
+                      <h2>Player Telemetry</h2>
                     <ul className="list telemetry-list">
                       {palworldLatestPlayers.length === 0 ? <li>No player telemetry yet</li> : null}
-                      {palworldLatestPlayers.map((player) => (
+                      {palworldPlayerList.map(({ player, identityState }) => (
                         <li
                           key={`${player.lookupKey}:${player.lastSeenAt}`}
                           className={`clickable-row telemetry-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
@@ -925,9 +1053,14 @@ function App() {
                           <div className="telemetry-main">
                             <div className="telemetry-heading">
                               <span className="telemetry-player-name">{player.playerName ?? player.accountName ?? player.lookupKey}</span>
-                              <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>
-                                {player.isOnline ? 'online' : 'offline'}
-                              </span>
+                              <div className="telemetry-badges">
+                                <span className={`identity-badge identity-${identityState}`}>
+                                  {identityState}
+                                </span>
+                                <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>
+                                  {player.isOnline ? 'online' : 'offline'}
+                                </span>
+                              </div>
                             </div>
                             <div className="telemetry-stats">
                               <span>lvl {player.level ?? 'N/A'}</span>
