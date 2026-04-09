@@ -294,6 +294,51 @@ export const palworldIdentityLinkReviewResponseSchema = z.object({
 });
 export type PalworldIdentityLinkReviewResponse = z.infer<typeof palworldIdentityLinkReviewResponseSchema>;
 
+export const palworldApprovedIdentitySchema = z.object({
+  state: z.literal('approved'),
+  serverId: z.string().min(1),
+  savePlayerSaveId: z.string().min(1),
+  savePlayerFileName: z.string().min(1),
+  telemetryLookupKey: z.string().nullable(),
+  playerId: z.string().nullable(),
+  userId: z.string().nullable(),
+  accountName: z.string().nullable(),
+  playerName: z.string().nullable(),
+  approvedAt: z.string().datetime(),
+  approvedBy: z.string().min(1),
+  notes: z.string().default('')
+});
+export type PalworldApprovedIdentity = z.infer<typeof palworldApprovedIdentitySchema>;
+
+export const palworldRejectedIdentitySchema = z.object({
+  state: z.literal('rejected'),
+  serverId: z.string().min(1).nullable(),
+  savePlayerSaveId: z.string().min(1),
+  savePlayerFileName: z.string().min(1),
+  telemetryLookupKey: z.string().nullable(),
+  playerId: z.string().nullable(),
+  userId: z.string().nullable(),
+  accountName: z.string().nullable(),
+  playerName: z.string().nullable(),
+  rejectedAt: z.string().datetime(),
+  rejectedBy: z.string().min(1),
+  notes: z.string().default('')
+});
+export type PalworldRejectedIdentity = z.infer<typeof palworldRejectedIdentitySchema>;
+
+export const palworldIdentityApprovalsResponseSchema = z.object({
+  approvals: z.array(palworldApprovedIdentitySchema),
+  rejections: z.array(palworldRejectedIdentitySchema)
+});
+export type PalworldIdentityApprovalsResponse = z.infer<typeof palworldIdentityApprovalsResponseSchema>;
+
+export const palworldIdentityApprovalActionSchema = z.object({
+  savePlayerKey: z.string().min(1),
+  reviewedBy: z.string().min(1),
+  notes: z.string().optional()
+});
+export type PalworldIdentityApprovalAction = z.infer<typeof palworldIdentityApprovalActionSchema>;
+
 const workspaceConfigSchema = z.object({
   workspaceId: z.string().min(1),
   workspaceName: z.string().min(1),
