@@ -370,6 +370,25 @@ export type PalworldSessionTier = z.infer<typeof palworldSessionTierSchema>;
 export const palworldLevelTierSchema = z.enum(['new', 'mid', 'high', 'elite']);
 export type PalworldLevelTier = z.infer<typeof palworldLevelTierSchema>;
 
+export const palworldMilestoneSignalKeySchema = z.enum([
+  'entered_elite_level_tier',
+  'reached_marathon_session_tier',
+  'top_online_level',
+  'top_online_session_duration'
+]);
+export type PalworldMilestoneSignalKey = z.infer<typeof palworldMilestoneSignalKeySchema>;
+
+export const palworldMilestoneSignalStrengthSchema = z.enum(['verified', 'provisional']);
+export type PalworldMilestoneSignalStrength = z.infer<typeof palworldMilestoneSignalStrengthSchema>;
+
+export const palworldMilestoneSignalSchema = z.object({
+  key: palworldMilestoneSignalKeySchema,
+  label: z.string().min(1),
+  reason: z.string().min(1),
+  strength: palworldMilestoneSignalStrengthSchema
+});
+export type PalworldMilestoneSignal = z.infer<typeof palworldMilestoneSignalSchema>;
+
 export const palworldUnifiedPlayerProfileSchema = z.object({
   serverId: z.string().min(1),
   playerId: z.string().min(1),
@@ -395,6 +414,7 @@ export const palworldUnifiedPlayerProfileSchema = z.object({
   levelTier: palworldLevelTierSchema.nullable(),
   onlineRankByLevel: z.number().int().min(1).nullable(),
   onlineRankBySessionDuration: z.number().int().min(1).nullable(),
+  milestoneSignals: z.array(palworldMilestoneSignalSchema),
   identityState: palworldIdentityReviewStateSchema,
   review: palworldPlayerReviewMetadataSchema,
   saveArtifact: palworldPlayerSaveArtifactSchema

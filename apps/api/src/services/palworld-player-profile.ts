@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import {
+  type PalworldMilestoneSignal,
   palworldUnifiedPlayerProfileSchema,
   type PalworldApprovedIdentity,
   type PalworldLatestPlayerTelemetry,
@@ -253,6 +254,56 @@ function toReviewMetadata(reviewRecord: PalworldApprovedIdentity | PalworldRejec
   };
 }
 
+function getMilestoneSignals(input: {
+  level: number | null;
+  levelTier: PalworldLevelTier | null;
+  sessionTier: PalworldSessionTier | null;
+  onlineRankByLevel: number | null;
+  onlineRankBySessionDuration: number | null;
+  identityState: 'approved' | 'rejected' | 'unresolved';
+}): PalworldMilestoneSignal[] {
+  const strength = input.identityState === 'approved' ? 'verified' : 'provisional';
+  const signals: PalworldMilestoneSignal[] = [];
+
+  if (input.levelTier === 'elite') {
+    signals.push({
+      key: 'entered_elite_level_tier',
+      label: 'Entered Elite Level Tier',
+      reason: `Current level ${input.level ?? 'unknown'} is in the elite tier.`,
+      strength
+    });
+  }
+
+  if (input.sessionTier === 'marathon') {
+    signals.push({
+      key: 'reached_marathon_session_tier',
+      label: 'Reached Marathon Session Tier',
+      reason: 'Current session duration is at least four hours.',
+      strength
+    });
+  }
+
+  if (input.onlineRankByLevel === 1) {
+    signals.push({
+      key: 'top_online_level',
+      label: 'Currently #1 By Online Level',
+      reason: 'This player currently has the highest level among online players.',
+      strength
+    });
+  }
+
+  if (input.onlineRankBySessionDuration === 1) {
+    signals.push({
+      key: 'top_online_session_duration',
+      label: 'Currently #1 By Online Session Duration',
+      reason: 'This player currently has the longest active session among online players.',
+      strength
+    });
+  }
+
+  return signals;
+}
+
 export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: string): PalworldUnifiedPlayerProfile | null {
   const telemetry = getLatestPalworldPlayerForServer(serverId, playerId);
 
@@ -272,6 +323,14 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
     onlinePlayers,
     (player) => player.currentSessionDurationSeconds ?? -1
   );
+  const milestoneSignals = getMilestoneSignals({
+    level: telemetry.level ?? null,
+    levelTier,
+    sessionTier,
+    onlineRankByLevel,
+    onlineRankBySessionDuration,
+    identityState: review.state
+  });
 
   return palworldUnifiedPlayerProfileSchema.parse({
     serverId,
@@ -298,6 +357,7 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
     levelTier,
     onlineRankByLevel,
     onlineRankBySessionDuration,
+    milestoneSignals,
     identityState: review.state,
     review,
     saveArtifact

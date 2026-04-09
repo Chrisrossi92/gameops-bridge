@@ -1112,6 +1112,18 @@ function App() {
                               <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
                               <li><span>Save MTime</span><span>{selectedPalworldPlayerProfile.saveArtifact.modifiedAt ? formatTimestamp(selectedPalworldPlayerProfile.saveArtifact.modifiedAt) : 'N/A'}</span></li>
                             </ul>
+                            <div className="milestone-block">
+                              <h4>Milestone Signals</h4>
+                              <ul className="list compact">
+                                {selectedPalworldPlayerProfile.milestoneSignals.length === 0 ? <li>No current milestone signals.</li> : null}
+                                {selectedPalworldPlayerProfile.milestoneSignals.map((signal) => (
+                                  <li key={signal.key}>
+                                    <span className={`milestone-badge milestone-${signal.strength}`}>{signal.label}</span>
+                                    <span className="subtle">{signal.reason}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
                           </div>
                           <div className="detail-block">
                             <h3>History</h3>
