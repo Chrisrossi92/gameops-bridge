@@ -43,12 +43,15 @@ interface ServerSummary {
   serverId: string;
   displayName: string;
   game: ServerOption['game'];
+  reportedState: 'online' | 'offline' | 'starting' | 'stopping' | 'restarting' | 'degraded';
   state: 'online' | 'offline' | 'starting' | 'stopping' | 'restarting' | 'degraded';
   activePlayers: number;
   knownPlayerCount: number;
   recentEvents: NormalizedEvent[];
   recentWarnings: NormalizedEvent[];
   knownPlayers: KnownPlayerEntry[];
+  palworldLatestPlayers: PalworldLatestPlayerTelemetry[];
+  palworldRecentMetrics: PalworldMetricsSummary[];
 }
 
 type WarningCategory = 'network' | 'disconnect' | 'save_storage' | 'general';
@@ -65,6 +68,7 @@ interface WarningSummaryEntry {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
+const LIVE_SIGNAL_WINDOW_MS = 10 * 60 * 1000;
 
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -174,12 +178,25 @@ function App() {
 
         const healthPromise = fetch(`${apiBaseUrl}/health`);
         const summaryPromises = serverOptions.map(async (server) => {
-          const [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse] = await Promise.all([
+          const sharedRequests = [
             fetch(`${apiBaseUrl}/servers/${server.id}/status`),
             fetch(`${apiBaseUrl}/servers/${server.id}/sessions/active`),
             fetch(`${apiBaseUrl}/servers/${server.id}/players/known?limit=100`),
             fetch(`${apiBaseUrl}/servers/${server.id}/events?limit=50`)
-          ]);
+          ];
+          const palworldRequests = server.game === 'palworld'
+            ? [
+                fetch(`${apiBaseUrl}/servers/${server.id}/palworld/players/latest?limit=8`),
+                fetch(`${apiBaseUrl}/servers/${server.id}/palworld/metrics/recent?limit=8`)
+              ]
+            : [];
+          const responses = await Promise.all([...sharedRequests, ...palworldRequests]);
+          const statusResponse = responses[0];
+          const sessionsResponse = responses[1];
+          const knownPlayersResponse = responses[2];
+          const eventsResponse = responses[3];
+          const palworldLatestPlayersResponse = server.game === 'palworld' ? responses[4] : null;
+          const palworldMetricsResponse = server.game === 'palworld' ? responses[5] : null;
 
           if (!statusResponse.ok || !sessionsResponse.ok || !knownPlayersResponse.ok || !eventsResponse.ok) {
             const statusCode = [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse]
@@ -187,38 +204,83 @@ function App() {
             throw new Error(`Server ${server.id} summary fetch failed with status ${statusCode ?? 'unknown'}`);
           }
 
-          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload] = await Promise.all([
+          if (palworldLatestPlayersResponse && !palworldLatestPlayersResponse.ok) {
+            throw new Error(`Server ${server.id} Palworld players fetch failed with status ${palworldLatestPlayersResponse.status}`);
+          }
+
+          if (palworldMetricsResponse && !palworldMetricsResponse.ok) {
+            throw new Error(`Server ${server.id} Palworld metrics fetch failed with status ${palworldMetricsResponse.status}`);
+          }
+
+          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, palworldLatestPlayersPayload, palworldMetricsPayload] = await Promise.all([
             statusResponse.json(),
             sessionsResponse.json(),
             knownPlayersResponse.json(),
-            eventsResponse.json()
+            eventsResponse.json(),
+            palworldLatestPlayersResponse ? palworldLatestPlayersResponse.json() : Promise.resolve(null),
+            palworldMetricsResponse ? palworldMetricsResponse.json() : Promise.resolve(null)
           ]);
 
           const statusParsed = serverStatusSchema.safeParse(statusPayload);
           const sessionsParsed = activeSessionsResponseSchema.safeParse(sessionsPayload);
           const knownPlayersParsed = knownPlayersResponseSchema.safeParse(knownPlayersPayload);
           const eventsParsed = recentEventsResponseSchema.safeParse(eventsPayload);
+          const palworldLatestPlayersParsed = server.game === 'palworld'
+            ? palworldLatestPlayersResponseSchema.safeParse(palworldLatestPlayersPayload)
+            : null;
+          const palworldMetricsParsed = server.game === 'palworld'
+            ? palworldMetricsSummariesResponseSchema.safeParse(palworldMetricsPayload)
+            : null;
 
           if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success) {
             throw new Error(`Server ${server.id} payload validation failed.`);
           }
 
+          if (palworldLatestPlayersParsed && !palworldLatestPlayersParsed.success) {
+            throw new Error(`Server ${server.id} Palworld players payload validation failed.`);
+          }
+
+          if (palworldMetricsParsed && !palworldMetricsParsed.success) {
+            throw new Error(`Server ${server.id} Palworld metrics payload validation failed.`);
+          }
+
+          const recentEvents = [...eventsParsed.data.events]
+            .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
+            .slice(0, 10);
+          const recentWarnings = recentEvents
+            .filter((event) => event.eventType === 'HEALTH_WARN')
+            .slice(0, 12);
+          const palworldLatestPlayers = palworldLatestPlayersParsed?.data.players ?? [];
+          const palworldRecentMetrics = palworldMetricsParsed?.data.metrics ?? [];
+          const effectiveState = deriveEffectiveServerState({
+            reportedState: statusParsed.data.state,
+            game: server.game,
+            activePlayers: sessionsParsed.data.sessions.length,
+            recentEvents,
+            recentWarnings,
+            palworldLatestPlayers,
+            palworldRecentMetrics
+          });
+
           return {
             serverId: server.id,
             displayName: server.displayName,
             game: server.game,
-            state: statusParsed.data.state,
+            reportedState: statusParsed.data.state,
+            state: effectiveState,
             activePlayers: sessionsParsed.data.sessions.length,
             knownPlayerCount: knownPlayersParsed.data.players.length,
-            recentEvents: eventsParsed.data.events.slice(0, 10),
-            recentWarnings: eventsParsed.data.events.filter((event) => event.eventType === 'HEALTH_WARN').slice(0, 12),
+            recentEvents,
+            recentWarnings,
             knownPlayers: knownPlayersParsed.data.players.map((player) => ({
               displayName: player.displayName,
               normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
               confidence: player.confidence,
               lastSeenAt: player.lastSeenAt,
               observationCount: player.observationCount
-            }))
+            })),
+            palworldLatestPlayers,
+            palworldRecentMetrics
           } satisfies ServerSummary;
         });
 
@@ -561,18 +623,37 @@ function App() {
                   </span>
                 </div>
                 <div className="fleet-metrics">
-                  <div className="summary-item">
-                    <span className="summary-label">Active</span>
-                    <span className="kpi-small">{summary?.activePlayers ?? 0}</span>
-                  </div>
-                  <div className="summary-item">
-                    <span className="summary-label">Known</span>
-                    <span className="kpi-small">{summary?.knownPlayerCount ?? 0}</span>
-                  </div>
-                  <div className="summary-item">
-                    <span className="summary-label">Warnings</span>
-                    <span className="kpi-small">{summary?.recentWarnings.length ?? 0}</span>
-                  </div>
+                  {summary?.game === 'palworld' ? (
+                    <>
+                      <div className="summary-item">
+                        <span className="summary-label">Players</span>
+                        <span className="kpi-small">{summary.palworldLatestPlayers.filter((player) => player.isOnline).length || summary.activePlayers}</span>
+                      </div>
+                      <div className="summary-item">
+                        <span className="summary-label">Server FPS</span>
+                        <span className="kpi-small">{formatQuickValue(summary.palworldRecentMetrics[0]?.serverFps)}</span>
+                      </div>
+                      <div className="summary-item">
+                        <span className="summary-label">Uptime</span>
+                        <span className="kpi-small">{formatHours(summary.palworldRecentMetrics[0]?.currentUptimeHours)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="summary-item">
+                        <span className="summary-label">Active</span>
+                        <span className="kpi-small">{summary?.activePlayers ?? 0}</span>
+                      </div>
+                      <div className="summary-item">
+                        <span className="summary-label">Known</span>
+                        <span className="kpi-small">{summary?.knownPlayerCount ?? 0}</span>
+                      </div>
+                      <div className="summary-item">
+                        <span className="summary-label">Warnings</span>
+                        <span className="kpi-small">{summary?.recentWarnings.length ?? 0}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <ul className="list compact">
                   {warnings.length === 0 ? <li>No recent warnings</li> : null}
@@ -608,6 +689,7 @@ function App() {
                   <li><span>Server</span><span>{selectedServerSummary.displayName}</span></li>
                   <li><span>Game</span><span>{selectedServerSummary.game}</span></li>
                   <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span></li>
+                  <li><span>Reported</span><span className="subtle">{selectedServerSummary.reportedState}</span></li>
                   <li><span>Active Players</span><span>{selectedServerSummary.activePlayers}</span></li>
                   <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
                 </ul>
@@ -620,8 +702,8 @@ function App() {
                   {selectedServerSummary.recentEvents.map((event, index) => (
                     <li key={`${event.eventType}:${event.occurredAt}:${index}`} className="activity-row">
                       <span className="activity-main">
-                        <span className={`activity-badge ${getEventBadgeClass(event.eventType)}`}>{event.eventType}</span>
-                        <span>{event.playerName ?? event.message ?? 'Event'}</span>
+                        <span className={`activity-badge ${getEventBadgeClass(event.eventType)}`}>{formatEventLabel(event.eventType)}</span>
+                        <span>{event.message ?? event.playerName ?? 'Event'}</span>
                       </span>
                       <span className="subtle activity-time">{formatClock(event.occurredAt)}</span>
                     </li>
@@ -930,6 +1012,79 @@ function normalizeWarningSignature(message: string): string {
 
 function formatWarningCategoryLabel(category: WarningCategory): string {
   return category === 'save_storage' ? 'save' : category;
+}
+
+function formatEventLabel(eventType: string): string {
+  if (eventType === 'PLAYER_JOIN') {
+    return 'join';
+  }
+
+  if (eventType === 'PLAYER_LEAVE') {
+    return 'leave';
+  }
+
+  if (eventType === 'HEALTH_WARN') {
+    return 'warn';
+  }
+
+  if (eventType === 'SERVER_ONLINE') {
+    return 'online';
+  }
+
+  return eventType.toLowerCase();
+}
+
+function formatQuickValue(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 'N/A';
+  }
+
+  return value >= 100 ? String(Math.round(value)) : value.toFixed(1);
+}
+
+function formatHours(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 'N/A';
+  }
+
+  return `${value.toFixed(1)}h`;
+}
+
+function isFreshTimestamp(value: string | undefined, windowMs: number): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const timestampMs = Date.parse(value);
+
+  if (!Number.isFinite(timestampMs)) {
+    return false;
+  }
+
+  return (Date.now() - timestampMs) <= windowMs;
+}
+
+function deriveEffectiveServerState(input: {
+  reportedState: ServerSummary['state'];
+  game: ServerSummary['game'];
+  activePlayers: number;
+  recentEvents: NormalizedEvent[];
+  recentWarnings: NormalizedEvent[];
+  palworldLatestPlayers: PalworldLatestPlayerTelemetry[];
+  palworldRecentMetrics: PalworldMetricsSummary[];
+}): ServerSummary['state'] {
+  const hasFreshEvent = input.recentEvents.some((event) => isFreshTimestamp(event.occurredAt, LIVE_SIGNAL_WINDOW_MS));
+  const hasFreshPalworldMetric = input.palworldRecentMetrics.some((metric) => isFreshTimestamp(metric.observedAt, LIVE_SIGNAL_WINDOW_MS));
+  const hasFreshPalworldPlayer = input.palworldLatestPlayers.some((player) => (
+    player.isOnline || isFreshTimestamp(player.lastSeenAt, LIVE_SIGNAL_WINDOW_MS)
+  ));
+  const hasLiveSignal = input.activePlayers > 0 || hasFreshEvent || hasFreshPalworldMetric || hasFreshPalworldPlayer;
+
+  if (hasLiveSignal) {
+    return input.recentWarnings.length > 0 && input.reportedState === 'degraded' ? 'degraded' : 'online';
+  }
+
+  return input.reportedState;
 }
 
 function getEventBadgeClass(eventType: string): string {
