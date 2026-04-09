@@ -1,10 +1,12 @@
 import {
   palworldLatestPlayersResponseSchema,
+  palworldMilestoneFeedResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerTelemetryProfileResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   type PalworldLatestPlayersResponse,
+  type PalworldMilestoneFeedResponse,
   type PalworldPlayerSnapshotsResponse,
   type PalworldMetricsSummariesResponse,
   type PalworldPlayerTelemetryProfileResponse,
@@ -18,7 +20,7 @@ import {
   getRecentPalworldPlayerSnapshotsForServer,
   getRecentPalworldMetricsForServer
 } from '../services/palworld-telemetry-store.js';
-import { getPalworldUnifiedPlayerProfile } from '../services/palworld-player-profile.js';
+import { getPalworldMilestoneFeedForServer, getPalworldUnifiedPlayerProfile } from '../services/palworld-player-profile.js';
 
 export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>(
@@ -88,6 +90,26 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       }
 
       return palworldUnifiedPlayerProfileSchema.parse(profile);
+    }
+  );
+
+  app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>(
+    '/servers/:serverId/palworld/milestones/current',
+    async (request, reply): Promise<PalworldMilestoneFeedResponse | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      const parsedLimit = Number(request.query.limit);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 50;
+
+      return palworldMilestoneFeedResponseSchema.parse({
+        serverId,
+        milestones: getPalworldMilestoneFeedForServer(serverId, limit)
+      });
     }
   );
 

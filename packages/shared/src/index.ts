@@ -389,6 +389,28 @@ export const palworldMilestoneSignalSchema = z.object({
 });
 export type PalworldMilestoneSignal = z.infer<typeof palworldMilestoneSignalSchema>;
 
+export const palworldMilestoneFeedEntrySchema = z.object({
+  serverId: z.string().min(1),
+  playerId: z.string().min(1),
+  playerName: z.string().nullable(),
+  accountName: z.string().nullable(),
+  identityState: palworldIdentityReviewStateSchema,
+  signalKey: palworldMilestoneSignalKeySchema,
+  signalLabel: z.string().min(1),
+  signalReason: z.string().min(1),
+  signalStrength: palworldMilestoneSignalStrengthSchema,
+  level: z.number().int().nullable(),
+  sessionTier: palworldSessionTierSchema.nullable(),
+  levelTier: palworldLevelTierSchema.nullable()
+});
+export type PalworldMilestoneFeedEntry = z.infer<typeof palworldMilestoneFeedEntrySchema>;
+
+export const palworldMilestoneFeedResponseSchema = z.object({
+  serverId: z.string().min(1),
+  milestones: z.array(palworldMilestoneFeedEntrySchema)
+});
+export type PalworldMilestoneFeedResponse = z.infer<typeof palworldMilestoneFeedResponseSchema>;
+
 export const palworldUnifiedPlayerProfileSchema = z.object({
   serverId: z.string().min(1),
   playerId: z.string().min(1),

@@ -6,6 +6,7 @@ import {
   palworldIdentityApprovalsResponseSchema,
   palworldIdentityLinksResponseSchema,
   palworldLatestPlayersResponseSchema,
+  palworldMilestoneFeedResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
   palworldUnifiedPlayerProfileSchema,
@@ -18,6 +19,7 @@ import {
   type PalworldIdentityLinkCandidate,
   type PalworldIdentityLinkFailure,
   type PalworldLatestPlayerTelemetry,
+  type PalworldMilestoneFeedEntry,
   type PalworldMetricsSummary,
   type PalworldPlayerSnapshot,
   type PalworldRejectedIdentity,
@@ -102,6 +104,7 @@ function App() {
   const [palworldPlayerDetailLoading, setPalworldPlayerDetailLoading] = useState(false);
   const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
+  const [palworldMilestoneFeed, setPalworldMilestoneFeed] = useState<PalworldMilestoneFeedEntry[]>([]);
   const [palworldApprovedIdentities, setPalworldApprovedIdentities] = useState<PalworldApprovedIdentity[]>([]);
   const [palworldRejectedIdentities, setPalworldRejectedIdentities] = useState<PalworldRejectedIdentity[]>([]);
   const [palworldIdentityCandidates, setPalworldIdentityCandidates] = useState<PalworldIdentityLinkCandidate[]>([]);
@@ -121,6 +124,7 @@ function App() {
     setPalworldPlayerDetailLoading(false);
     setPalworldLatestPlayers([]);
     setPalworldMetrics([]);
+    setPalworldMilestoneFeed([]);
     setPalworldApprovedIdentities([]);
     setPalworldRejectedIdentities([]);
     setPalworldIdentityCandidates([]);
@@ -364,6 +368,7 @@ function App() {
       if (!selectedServer || selectedServer.game !== 'palworld') {
         setPalworldLatestPlayers([]);
         setPalworldMetrics([]);
+        setPalworldMilestoneFeed([]);
         setDetailLoading(false);
         setDetailError(null);
         return;
@@ -373,25 +378,28 @@ function App() {
         setDetailLoading(true);
         setDetailError(null);
 
-        const [latestPlayersResponse, metricsResponse] = await Promise.all([
+        const [latestPlayersResponse, metricsResponse, milestonesResponse] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest?limit=40`),
-          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`)
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/current?limit=24`)
         ]);
 
-        if (!latestPlayersResponse.ok || !metricsResponse.ok) {
-          const statusCode = [latestPlayersResponse, metricsResponse].find((response) => !response.ok)?.status;
+        if (!latestPlayersResponse.ok || !metricsResponse.ok || !milestonesResponse.ok) {
+          const statusCode = [latestPlayersResponse, metricsResponse, milestonesResponse].find((response) => !response.ok)?.status;
           throw new Error(`Palworld detail fetch failed with status ${statusCode ?? 'unknown'}`);
         }
 
-        const [latestPlayersPayload, metricsPayload] = await Promise.all([
+        const [latestPlayersPayload, metricsPayload, milestonesPayload] = await Promise.all([
           latestPlayersResponse.json(),
-          metricsResponse.json()
+          metricsResponse.json(),
+          milestonesResponse.json()
         ]);
 
         const latestPlayersParsed = palworldLatestPlayersResponseSchema.safeParse(latestPlayersPayload);
         const metricsParsed = palworldMetricsSummariesResponseSchema.safeParse(metricsPayload);
+        const milestonesParsed = palworldMilestoneFeedResponseSchema.safeParse(milestonesPayload);
 
-        if (!latestPlayersParsed.success || !metricsParsed.success) {
+        if (!latestPlayersParsed.success || !metricsParsed.success || !milestonesParsed.success) {
           throw new Error('Palworld detail payload validation failed.');
         }
 
@@ -401,6 +409,7 @@ function App() {
 
         setPalworldLatestPlayers(latestPlayersParsed.data.players);
         setPalworldMetrics(metricsParsed.data.metrics);
+        setPalworldMilestoneFeed(milestonesParsed.data.milestones);
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
@@ -408,6 +417,7 @@ function App() {
           setDetailError(message);
           setPalworldLatestPlayers([]);
           setPalworldMetrics([]);
+          setPalworldMilestoneFeed([]);
         }
       } finally {
         if (isMounted) {
@@ -1147,6 +1157,30 @@ function App() {
                         </div>
                       </>
                     ) : null}
+                  </article>
+
+                  <article className="card">
+                    <h2>Current Milestone Feed</h2>
+                    <ul className="list review-list">
+                      {palworldMilestoneFeed.length === 0 ? <li>No active milestone signals.</li> : null}
+                      {palworldMilestoneFeed.map((entry) => (
+                        <li key={`${entry.playerId}:${entry.signalKey}`} className="review-row">
+                          <div className="review-main">
+                            <div className="review-header">
+                              <span className="review-id">{entry.playerName ?? entry.accountName ?? entry.playerId}</span>
+                              <span className={`milestone-badge milestone-${entry.signalStrength}`}>{entry.signalStrength}</span>
+                            </div>
+                            <div>
+                              <strong>{entry.signalLabel}</strong>
+                            </div>
+                            <div className="subtle">{entry.signalReason}</div>
+                            <div className="subtle">
+                              identity {entry.identityState} • lvl {entry.level ?? 'N/A'} • session {entry.sessionTier ?? 'N/A'} • tier {entry.levelTier ?? 'N/A'}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </article>
 
                   <article className="card">

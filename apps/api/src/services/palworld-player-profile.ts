@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import {
+  type PalworldMilestoneFeedEntry,
   type PalworldMilestoneSignal,
   palworldUnifiedPlayerProfileSchema,
   type PalworldApprovedIdentity,
@@ -362,4 +363,40 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
     review,
     saveArtifact
   });
+}
+
+export function getPalworldMilestoneFeedForServer(serverId: string, limit = 50): PalworldMilestoneFeedEntry[] {
+  const onlinePlayers = getLatestPalworldPlayersForServer(serverId, 10_000)
+    .filter((player) => player.isOnline);
+
+  return onlinePlayers
+    .map((player) => getPalworldUnifiedPlayerProfile(serverId, player.playerId ?? player.lookupKey))
+    .filter((profile): profile is PalworldUnifiedPlayerProfile => Boolean(profile))
+    .flatMap((profile) => profile.milestoneSignals.map((signal) => ({
+      serverId: profile.serverId,
+      playerId: profile.playerId,
+      playerName: profile.playerName,
+      accountName: profile.accountName,
+      identityState: profile.identityState,
+      signalKey: signal.key,
+      signalLabel: signal.label,
+      signalReason: signal.reason,
+      signalStrength: signal.strength,
+      level: profile.level,
+      sessionTier: profile.sessionTier,
+      levelTier: profile.levelTier
+    } satisfies PalworldMilestoneFeedEntry)))
+    .sort((left, right) => {
+      if (left.signalStrength !== right.signalStrength) {
+        return left.signalStrength === 'verified' ? -1 : 1;
+      }
+
+      if ((right.level ?? -1) !== (left.level ?? -1)) {
+        return (right.level ?? -1) - (left.level ?? -1);
+      }
+
+      return (left.playerName ?? left.accountName ?? left.playerId)
+        .localeCompare(right.playerName ?? right.accountName ?? right.playerId);
+    })
+    .slice(0, Math.max(1, limit));
 }
