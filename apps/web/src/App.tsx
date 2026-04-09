@@ -85,6 +85,7 @@ function App() {
   const [selectedPalworldPlayerKey, setSelectedPalworldPlayerKey] = useState<string | null>(null);
   const [selectedPalworldPlayer, setSelectedPalworldPlayer] = useState<PalworldLatestPlayerTelemetry | null>(null);
   const [selectedPalworldHistory, setSelectedPalworldHistory] = useState<PalworldPlayerSnapshot[]>([]);
+  const [palworldPlayerDetailLoading, setPalworldPlayerDetailLoading] = useState(false);
   const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -97,6 +98,7 @@ function App() {
     setSelectedPalworldPlayerKey(null);
     setSelectedPalworldPlayer(null);
     setSelectedPalworldHistory([]);
+    setPalworldPlayerDetailLoading(false);
     setPalworldLatestPlayers([]);
     setPalworldMetrics([]);
     setDetailError(null);
@@ -373,6 +375,13 @@ function App() {
 
         setPalworldLatestPlayers(latestPlayersParsed.data.players);
         setPalworldMetrics(metricsParsed.data.metrics);
+        setSelectedPalworldPlayerKey((current) => {
+          if (current && latestPlayersParsed.data.players.some((player) => player.lookupKey === current)) {
+            return current;
+          }
+
+          return latestPlayersParsed.data.players[0]?.lookupKey ?? null;
+        });
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
@@ -448,6 +457,7 @@ function App() {
       }
 
       try {
+        setPalworldPlayerDetailLoading(true);
         const [playerResponse, historyResponse] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest/${encodeURIComponent(selectedPalworldPlayerKey)}`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest/${encodeURIComponent(selectedPalworldPlayerKey)}/history?limit=12`)
@@ -480,6 +490,10 @@ function App() {
         if (isMounted) {
           setSelectedPalworldPlayer(null);
           setSelectedPalworldHistory([]);
+        }
+      } finally {
+        if (isMounted) {
+          setPalworldPlayerDetailLoading(false);
         }
       }
     }
@@ -826,17 +840,32 @@ function App() {
 
                 <section className="card-grid">
                   <article className="card">
-                    <h2>Latest Players</h2>
-                    <ul className="list">
+                    <h2>Player Telemetry</h2>
+                    <ul className="list telemetry-list">
                       {palworldLatestPlayers.length === 0 ? <li>No player telemetry yet</li> : null}
                       {palworldLatestPlayers.map((player) => (
                         <li
                           key={`${player.lookupKey}:${player.lastSeenAt}`}
-                          className={`clickable-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
+                          className={`clickable-row telemetry-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
                           onClick={() => setSelectedPalworldPlayerKey(player.lookupKey)}
                         >
-                          <span>{player.playerName ?? player.accountName ?? player.lookupKey}</span>
-                          <span className="subtle">{player.isOnline ? 'online' : formatClock(player.lastSeenAt)}</span>
+                          <div className="telemetry-main">
+                            <div className="telemetry-heading">
+                              <span className="telemetry-player-name">{player.playerName ?? player.accountName ?? player.lookupKey}</span>
+                              <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>
+                                {player.isOnline ? 'online' : 'offline'}
+                              </span>
+                            </div>
+                            <div className="telemetry-stats">
+                              <span>lvl {player.level ?? 'N/A'}</span>
+                              <span>{player.region ?? 'unknown region'}</span>
+                              <span>ping {formatMetric(player.ping)}</span>
+                              <span>avg {formatMetric(player.avgPing)}</span>
+                              <span>max {formatMetric(player.maxPing)}</span>
+                              <span>sd {formatMetric(player.pingStdDev)}</span>
+                              <span>session {formatDurationMaybe(player.currentSessionDurationSeconds)}</span>
+                            </div>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -844,7 +873,8 @@ function App() {
 
                   <article className="card">
                     <h2>Player Detail / History</h2>
-                    {!selectedPalworldPlayer ? <p className="subtle">Select a Palworld player to inspect current state and recent snapshots.</p> : null}
+                    {!selectedPalworldPlayer && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect current state and recent snapshots.</p> : null}
+                    {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
                     {selectedPalworldPlayer ? (
                       <>
                         <div className="detail-grid">
@@ -853,9 +883,15 @@ function App() {
                             <ul className="list compact">
                               <li><span>Name</span><span>{selectedPalworldPlayer.playerName ?? 'Unknown'}</span></li>
                               <li><span>Account</span><span>{selectedPalworldPlayer.accountName ?? 'Unknown'}</span></li>
+                              <li><span>Player ID</span><span>{selectedPalworldPlayer.playerId ?? 'N/A'}</span></li>
+                              <li><span>User ID</span><span>{selectedPalworldPlayer.userId ?? 'N/A'}</span></li>
                               <li><span>Level</span><span>{selectedPalworldPlayer.level ?? 'N/A'}</span></li>
                               <li><span>Region</span><span>{selectedPalworldPlayer.region ?? 'Unknown'}</span></li>
-                              <li><span>Ping</span><span>{selectedPalworldPlayer.ping ?? 'N/A'}</span></li>
+                              <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayer.ping)}</span></li>
+                              <li><span>Avg Ping</span><span>{formatMetric(selectedPalworldPlayer.avgPing)}</span></li>
+                              <li><span>Max Ping</span><span>{formatMetric(selectedPalworldPlayer.maxPing)}</span></li>
+                              <li><span>Ping Std Dev</span><span>{formatMetric(selectedPalworldPlayer.pingStdDev)}</span></li>
+                              <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayer.currentSessionDurationSeconds)}</span></li>
                               <li><span>Status</span><span>{selectedPalworldPlayer.isOnline ? 'Online' : 'Offline'}</span></li>
                             </ul>
                           </div>
@@ -865,10 +901,15 @@ function App() {
                               {selectedPalworldHistory.length === 0 ? <li>No snapshots</li> : null}
                               {selectedPalworldHistory.map((snapshot) => (
                                 <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
-                                  <span>{formatTimestamp(snapshot.observedAt)}</span>
-                                  <span className="subtle">
-                                    lvl {snapshot.level ?? 'N/A'} • ping {snapshot.ping ?? 'N/A'}
-                                  </span>
+                                  <div className="history-entry">
+                                    <span>{formatTimestamp(snapshot.observedAt)}</span>
+                                    <span className="subtle">
+                                      lvl {snapshot.level ?? 'N/A'} • {snapshot.region ?? 'unknown region'} • ping {formatMetric(snapshot.ping)}
+                                    </span>
+                                    <span className="subtle">
+                                      x {formatCoordinate(snapshot.locationX)} • y {formatCoordinate(snapshot.locationY)}
+                                    </span>
+                                  </div>
                                 </li>
                               ))}
                             </ul>
@@ -941,6 +982,30 @@ function formatDurationFromSeconds(totalSeconds: number): string {
   }
 
   return `${seconds}s`;
+}
+
+function formatDurationMaybe(totalSeconds: number | undefined): string {
+  if (totalSeconds === undefined || !Number.isFinite(totalSeconds)) {
+    return 'N/A';
+  }
+
+  return formatDurationFromSeconds(totalSeconds);
+}
+
+function formatMetric(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 'N/A';
+  }
+
+  return value >= 100 ? `${Math.round(value)}` : `${value.toFixed(1)}`;
+}
+
+function formatCoordinate(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 'N/A';
+  }
+
+  return value.toFixed(1);
 }
 
 function summarizeWarnings(events: NormalizedEvent[]): WarningSummaryEntry[] {

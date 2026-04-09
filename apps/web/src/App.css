@@ -223,11 +223,55 @@
 
 .activity-main,
 .warning-main,
-.known-meta {
+.known-meta,
+.telemetry-main {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   min-width: 0;
+}
+
+.telemetry-main {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.telemetry-row {
+  border: 1px solid #e5eaf2;
+  background: #fff;
+  padding: 0.55rem 0.65rem;
+}
+
+.telemetry-list {
+  gap: 0.55rem;
+}
+
+.telemetry-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.telemetry-player-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.telemetry-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  color: #475569;
+  font-size: 0.84rem;
+}
+
+.history-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
 }
 
 .activity-badge,
