@@ -4,12 +4,14 @@ import {
   palworldUnifiedPlayerProfileSchema,
   type PalworldApprovedIdentity,
   type PalworldLatestPlayerTelemetry,
+  type PalworldLevelTier,
   type PalworldRejectedIdentity,
+  type PalworldSessionTier,
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import { z } from 'zod';
 import { listPalworldIdentityApprovals } from './palworld-identity-approvals.js';
-import { getLatestPalworldPlayerForServer } from './palworld-telemetry-store.js';
+import { getLatestPalworldPlayerForServer, getLatestPalworldPlayersForServer } from './palworld-telemetry-store.js';
 
 const rawPlayerFileSchema = z.object({
   path: z.string().min(1),
@@ -34,6 +36,89 @@ function resolvePlayersSummaryPath(): string {
 
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isSamePlayer(left: PalworldLatestPlayerTelemetry, right: PalworldLatestPlayerTelemetry): boolean {
+  const leftKeys = [
+    left.lookupKey,
+    left.playerId ?? '',
+    left.userId ?? '',
+    left.accountName ?? '',
+    left.playerName ?? ''
+  ].map(normalize).filter(Boolean);
+  const rightKeys = [
+    right.lookupKey,
+    right.playerId ?? '',
+    right.userId ?? '',
+    right.accountName ?? '',
+    right.playerName ?? ''
+  ].map(normalize).filter(Boolean);
+
+  return leftKeys.some((key) => rightKeys.includes(key));
+}
+
+function getSessionTier(currentSessionDurationSeconds: number | null | undefined): PalworldSessionTier | null {
+  if (typeof currentSessionDurationSeconds !== 'number' || !Number.isFinite(currentSessionDurationSeconds)) {
+    return null;
+  }
+
+  if (currentSessionDurationSeconds < 30 * 60) {
+    return 'short';
+  }
+
+  if (currentSessionDurationSeconds < 2 * 60 * 60) {
+    return 'active';
+  }
+
+  if (currentSessionDurationSeconds < 4 * 60 * 60) {
+    return 'grinding';
+  }
+
+  return 'marathon';
+}
+
+function getLevelTier(level: number | null | undefined): PalworldLevelTier | null {
+  if (typeof level !== 'number' || !Number.isFinite(level)) {
+    return null;
+  }
+
+  if (level < 10) {
+    return 'new';
+  }
+
+  if (level < 40) {
+    return 'mid';
+  }
+
+  if (level < 60) {
+    return 'high';
+  }
+
+  return 'elite';
+}
+
+function getOnlineRank(
+  telemetry: PalworldLatestPlayerTelemetry,
+  onlinePlayers: PalworldLatestPlayerTelemetry[],
+  getMetric: (player: PalworldLatestPlayerTelemetry) => number
+): number | null {
+  if (!telemetry.isOnline) {
+    return null;
+  }
+
+  const rankedPlayers = onlinePlayers
+    .slice()
+    .sort((left, right) => {
+      const metricDelta = getMetric(right) - getMetric(left);
+      if (metricDelta !== 0) {
+        return metricDelta;
+      }
+
+      return right.lastSeenAt.localeCompare(left.lastSeenAt);
+    });
+  const index = rankedPlayers.findIndex((player) => isSamePlayer(player, telemetry));
+
+  return index >= 0 ? index + 1 : null;
 }
 
 function loadPlayersSummary(): z.infer<typeof rawPlayersSummarySchema> {
@@ -175,9 +260,18 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
     return null;
   }
 
+  const onlinePlayers = getLatestPalworldPlayersForServer(serverId, 10_000).filter((player) => player.isOnline);
   const reviewRecord = findMatchingReviewRecord(serverId, telemetry);
   const review = toReviewMetadata(reviewRecord);
   const saveArtifact = findSaveArtifact(telemetry, reviewRecord);
+  const sessionTier = getSessionTier(telemetry.currentSessionDurationSeconds);
+  const levelTier = getLevelTier(telemetry.level);
+  const onlineRankByLevel = getOnlineRank(telemetry, onlinePlayers, (player) => player.level ?? -1);
+  const onlineRankBySessionDuration = getOnlineRank(
+    telemetry,
+    onlinePlayers,
+    (player) => player.currentSessionDurationSeconds ?? -1
+  );
 
   return palworldUnifiedPlayerProfileSchema.parse({
     serverId,
@@ -200,6 +294,10 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
     maxPing: telemetry.maxPing ?? null,
     pingStdDev: telemetry.pingStdDev ?? null,
     currentSessionDurationSeconds: telemetry.currentSessionDurationSeconds ?? null,
+    sessionTier,
+    levelTier,
+    onlineRankByLevel,
+    onlineRankBySessionDuration,
     identityState: review.state,
     review,
     saveArtifact

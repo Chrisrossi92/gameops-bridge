@@ -1098,7 +1098,11 @@ function App() {
                               <li><span>Max Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.maxPing)}</span></li>
                               <li><span>Ping Std Dev</span><span>{formatMetric(selectedPalworldPlayerProfile.pingStdDev)}</span></li>
                               <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds)}</span></li>
+                              <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.sessionTier ?? 'N/A'}</span></li>
                               <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                              <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.levelTier ?? 'N/A'}</span></li>
+                              <li><span>Online Rank by Level</span><span>{selectedPalworldPlayerProfile.onlineRankByLevel ?? 'N/A'}</span></li>
+                              <li><span>Online Rank by Session</span><span>{selectedPalworldPlayerProfile.onlineRankBySessionDuration ?? 'N/A'}</span></li>
                               <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
                               <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
                               <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>

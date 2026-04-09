@@ -364,6 +364,12 @@ export const palworldPlayerReviewMetadataSchema = z.object({
 });
 export type PalworldPlayerReviewMetadata = z.infer<typeof palworldPlayerReviewMetadataSchema>;
 
+export const palworldSessionTierSchema = z.enum(['short', 'active', 'grinding', 'marathon']);
+export type PalworldSessionTier = z.infer<typeof palworldSessionTierSchema>;
+
+export const palworldLevelTierSchema = z.enum(['new', 'mid', 'high', 'elite']);
+export type PalworldLevelTier = z.infer<typeof palworldLevelTierSchema>;
+
 export const palworldUnifiedPlayerProfileSchema = z.object({
   serverId: z.string().min(1),
   playerId: z.string().min(1),
@@ -385,6 +391,10 @@ export const palworldUnifiedPlayerProfileSchema = z.object({
   maxPing: z.number().nullable(),
   pingStdDev: z.number().nullable(),
   currentSessionDurationSeconds: z.number().int().min(0).nullable(),
+  sessionTier: palworldSessionTierSchema.nullable(),
+  levelTier: palworldLevelTierSchema.nullable(),
+  onlineRankByLevel: z.number().int().min(1).nullable(),
+  onlineRankBySessionDuration: z.number().int().min(1).nullable(),
   identityState: palworldIdentityReviewStateSchema,
   review: palworldPlayerReviewMetadataSchema,
   saveArtifact: palworldPlayerSaveArtifactSchema
