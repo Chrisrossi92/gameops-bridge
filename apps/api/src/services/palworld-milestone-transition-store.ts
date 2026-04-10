@@ -48,6 +48,11 @@ function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function hasValidPlayerIdentity(profile: PalworldUnifiedPlayerProfile): boolean {
+  const normalizedPlayerId = normalize(profile.playerId);
+  return Boolean(normalizedPlayerId) && normalizedPlayerId !== 'none';
+}
+
 function initializeTransitionStoreIfNeeded(): void {
   if (transitionStateInitialized) {
     return;
@@ -167,6 +172,10 @@ function createTransitionEvent(input: {
 }
 
 function evaluateProfileTransitions(profile: PalworldUnifiedPlayerProfile): PalworldTransitionMilestoneEvent[] {
+  if (!hasValidPlayerIdentity(profile)) {
+    return [];
+  }
+
   const existing = getStateRecord(profile.serverId, profile.playerId);
   const activeSessionKey = findActiveSessionKey(profile);
   const nextState: TransitionStateRecord = transitionStateRecordSchema.parse({
@@ -200,8 +209,12 @@ function evaluateProfileTransitions(profile: PalworldUnifiedPlayerProfile): Palw
     }));
   }
 
+  const canEvaluateSessionTier = activeSessionKey !== null
+    || typeof profile.currentSessionDurationSeconds === 'number';
   const sessionKeyChanged = existing.activeSessionKey !== activeSessionKey;
-  if (sessionKeyChanged) {
+  if (!canEvaluateSessionTier) {
+    nextState.lastEmittedSessionTier = existing.lastEmittedSessionTier;
+  } else if (sessionKeyChanged) {
     nextState.lastEmittedSessionTier = profile.sessionTier;
   } else if (
     getSessionTierRank(profile.sessionTier) > getSessionTierRank((existing.lastEmittedSessionTier as PalworldSessionTier | null) ?? null)

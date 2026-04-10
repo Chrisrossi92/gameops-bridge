@@ -9,6 +9,7 @@ import {
   palworldMilestoneFeedResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
+  palworldTransitionMilestoneEventsResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   recentEventsResponseSchema,
   serverStatusSchema,
@@ -23,6 +24,7 @@ import {
   type PalworldMetricsSummary,
   type PalworldPlayerSnapshot,
   type PalworldRejectedIdentity,
+  type PalworldTransitionMilestoneEvent,
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -105,6 +107,7 @@ function App() {
   const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
   const [palworldMilestoneFeed, setPalworldMilestoneFeed] = useState<PalworldMilestoneFeedEntry[]>([]);
+  const [palworldTransitionEvents, setPalworldTransitionEvents] = useState<PalworldTransitionMilestoneEvent[]>([]);
   const [palworldApprovedIdentities, setPalworldApprovedIdentities] = useState<PalworldApprovedIdentity[]>([]);
   const [palworldRejectedIdentities, setPalworldRejectedIdentities] = useState<PalworldRejectedIdentity[]>([]);
   const [palworldIdentityCandidates, setPalworldIdentityCandidates] = useState<PalworldIdentityLinkCandidate[]>([]);
@@ -125,6 +128,7 @@ function App() {
     setPalworldLatestPlayers([]);
     setPalworldMetrics([]);
     setPalworldMilestoneFeed([]);
+    setPalworldTransitionEvents([]);
     setPalworldApprovedIdentities([]);
     setPalworldRejectedIdentities([]);
     setPalworldIdentityCandidates([]);
@@ -369,6 +373,7 @@ function App() {
         setPalworldLatestPlayers([]);
         setPalworldMetrics([]);
         setPalworldMilestoneFeed([]);
+        setPalworldTransitionEvents([]);
         setDetailLoading(false);
         setDetailError(null);
         return;
@@ -378,28 +383,31 @@ function App() {
         setDetailLoading(true);
         setDetailError(null);
 
-        const [latestPlayersResponse, metricsResponse, milestonesResponse] = await Promise.all([
+        const [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest?limit=40`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`),
-          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/current?limit=24`)
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/current?limit=24`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/transitions/recent?limit=24`)
         ]);
 
-        if (!latestPlayersResponse.ok || !metricsResponse.ok || !milestonesResponse.ok) {
-          const statusCode = [latestPlayersResponse, metricsResponse, milestonesResponse].find((response) => !response.ok)?.status;
+        if (!latestPlayersResponse.ok || !metricsResponse.ok || !milestonesResponse.ok || !transitionsResponse.ok) {
+          const statusCode = [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse].find((response) => !response.ok)?.status;
           throw new Error(`Palworld detail fetch failed with status ${statusCode ?? 'unknown'}`);
         }
 
-        const [latestPlayersPayload, metricsPayload, milestonesPayload] = await Promise.all([
+        const [latestPlayersPayload, metricsPayload, milestonesPayload, transitionsPayload] = await Promise.all([
           latestPlayersResponse.json(),
           metricsResponse.json(),
-          milestonesResponse.json()
+          milestonesResponse.json(),
+          transitionsResponse.json()
         ]);
 
         const latestPlayersParsed = palworldLatestPlayersResponseSchema.safeParse(latestPlayersPayload);
         const metricsParsed = palworldMetricsSummariesResponseSchema.safeParse(metricsPayload);
         const milestonesParsed = palworldMilestoneFeedResponseSchema.safeParse(milestonesPayload);
+        const transitionsParsed = palworldTransitionMilestoneEventsResponseSchema.safeParse(transitionsPayload);
 
-        if (!latestPlayersParsed.success || !metricsParsed.success || !milestonesParsed.success) {
+        if (!latestPlayersParsed.success || !metricsParsed.success || !milestonesParsed.success || !transitionsParsed.success) {
           throw new Error('Palworld detail payload validation failed.');
         }
 
@@ -410,6 +418,7 @@ function App() {
         setPalworldLatestPlayers(latestPlayersParsed.data.players);
         setPalworldMetrics(metricsParsed.data.metrics);
         setPalworldMilestoneFeed(milestonesParsed.data.milestones);
+        setPalworldTransitionEvents(transitionsParsed.data.events);
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
@@ -418,6 +427,7 @@ function App() {
           setPalworldLatestPlayers([]);
           setPalworldMetrics([]);
           setPalworldMilestoneFeed([]);
+          setPalworldTransitionEvents([]);
         }
       } finally {
         if (isMounted) {
@@ -1176,6 +1186,32 @@ function App() {
                             <div className="subtle">{entry.signalReason}</div>
                             <div className="subtle">
                               identity {entry.identityState} • lvl {entry.level ?? 'N/A'} • session {entry.sessionTier ?? 'N/A'} • tier {entry.levelTier ?? 'N/A'}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+
+                  <article className="card">
+                    <h2>Recent Transition Events</h2>
+                    <ul className="list review-list">
+                      {palworldTransitionEvents.length === 0 ? <li>No recent transition events.</li> : null}
+                      {palworldTransitionEvents.map((event) => (
+                        <li key={`${event.playerId}:${event.eventType}:${event.occurredAt}`} className="review-row">
+                          <div className="review-main">
+                            <div className="review-header">
+                              <span className="review-id">{event.playerName ?? event.accountName ?? event.playerId}</span>
+                              <span className={`confidence-badge confidence-${event.identityState === 'approved' ? 'high' : event.identityState === 'rejected' ? 'low' : 'medium'}`}>
+                                {event.identityState}
+                              </span>
+                            </div>
+                            <div><strong>{event.eventType}</strong></div>
+                            <div className="subtle">
+                              {event.fromValue ?? 'N/A'} → {event.toValue ?? 'N/A'}
+                            </div>
+                            <div className="subtle">
+                              {formatTimestamp(event.occurredAt)}
                             </div>
                           </div>
                         </li>
