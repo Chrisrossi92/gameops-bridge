@@ -457,6 +457,23 @@ export const palworldTransitionMilestoneEventsResponseSchema = z.object({
 });
 export type PalworldTransitionMilestoneEventsResponse = z.infer<typeof palworldTransitionMilestoneEventsResponseSchema>;
 
+export const palworldManualTransitionPostActionSchema = z.object({
+  serverId: z.string().min(1),
+  playerId: z.string().min(1),
+  eventType: palworldTransitionMilestoneEventTypeSchema,
+  occurredAt: z.string().datetime(),
+  fromValue: z.string().nullable().optional(),
+  toValue: z.string().nullable().optional()
+});
+export type PalworldManualTransitionPostAction = z.infer<typeof palworldManualTransitionPostActionSchema>;
+
+export const palworldManualTransitionPostResponseSchema = z.object({
+  ok: z.literal(true),
+  channelId: z.string().min(1),
+  messagePreview: z.string().min(1)
+});
+export type PalworldManualTransitionPostResponse = z.infer<typeof palworldManualTransitionPostResponseSchema>;
+
 export const palworldUnifiedPlayerProfileSchema = z.object({
   serverId: z.string().min(1),
   playerId: z.string().min(1),

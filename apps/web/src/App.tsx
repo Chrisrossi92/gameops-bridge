@@ -20,6 +20,7 @@ import {
   type PalworldIdentityLinkCandidate,
   type PalworldIdentityLinkFailure,
   type PalworldLatestPlayerTelemetry,
+  type PalworldManualTransitionPostResponse,
   type PalworldMilestoneFeedEntry,
   type PalworldMetricsSummary,
   type PalworldPlayerSnapshot,
@@ -110,6 +111,10 @@ function App() {
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
   const [palworldMilestoneFeed, setPalworldMilestoneFeed] = useState<PalworldMilestoneFeedEntry[]>([]);
   const [palworldTransitionEvents, setPalworldTransitionEvents] = useState<PalworldTransitionMilestoneEvent[]>([]);
+  const [palworldTransitionPostSubmittingKey, setPalworldTransitionPostSubmittingKey] = useState<string | null>(null);
+  const [palworldTransitionPostSuccessKey, setPalworldTransitionPostSuccessKey] = useState<string | null>(null);
+  const [palworldTransitionPostErrorKey, setPalworldTransitionPostErrorKey] = useState<string | null>(null);
+  const [palworldTransitionPostError, setPalworldTransitionPostError] = useState<string | null>(null);
   const [palworldApprovedIdentities, setPalworldApprovedIdentities] = useState<PalworldApprovedIdentity[]>([]);
   const [palworldRejectedIdentities, setPalworldRejectedIdentities] = useState<PalworldRejectedIdentity[]>([]);
   const [palworldIdentityCandidates, setPalworldIdentityCandidates] = useState<PalworldIdentityLinkCandidate[]>([]);
@@ -140,6 +145,10 @@ function App() {
     setPalworldMetrics([]);
     setPalworldMilestoneFeed([]);
     setPalworldTransitionEvents([]);
+    setPalworldTransitionPostSubmittingKey(null);
+    setPalworldTransitionPostSuccessKey(null);
+    setPalworldTransitionPostErrorKey(null);
+    setPalworldTransitionPostError(null);
     setPalworldApprovedIdentities([]);
     setPalworldRejectedIdentities([]);
     setPalworldIdentityCandidates([]);
@@ -751,6 +760,53 @@ function App() {
       setPalworldManualLinkError(caughtError instanceof Error ? caughtError.message : 'Unknown manual link error');
     } finally {
       setPalworldReviewSubmittingKey(null);
+    }
+  }
+
+  function getTransitionEventKey(event: PalworldTransitionMilestoneEvent): string {
+    return `${event.playerId}:${event.eventType}:${event.occurredAt}:${event.fromValue ?? ''}:${event.toValue ?? ''}`;
+  }
+
+  async function postPalworldTransitionEvent(event: PalworldTransitionMilestoneEvent): Promise<void> {
+    if (!selectedServer || selectedServer.game !== 'palworld') {
+      return;
+    }
+
+    const eventKey = getTransitionEventKey(event);
+
+    try {
+      setPalworldTransitionPostSubmittingKey(eventKey);
+      setPalworldTransitionPostSuccessKey(null);
+      setPalworldTransitionPostErrorKey(null);
+      setPalworldTransitionPostError(null);
+
+      const response = await fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/transitions/post`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          serverId: selectedServer.id,
+          playerId: event.playerId,
+          eventType: event.eventType,
+          occurredAt: event.occurredAt,
+          fromValue: event.fromValue ?? null,
+          toValue: event.toValue ?? null
+        })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Manual post failed with status ${response.status}`);
+      }
+
+      await response.json().catch(() => null) as PalworldManualTransitionPostResponse | null;
+      setPalworldTransitionPostSuccessKey(eventKey);
+    } catch (caughtError) {
+      setPalworldTransitionPostErrorKey(eventKey);
+      setPalworldTransitionPostError(caughtError instanceof Error ? caughtError.message : 'Unknown manual post error');
+    } finally {
+      setPalworldTransitionPostSubmittingKey(null);
     }
   }
 
@@ -1377,7 +1433,7 @@ function App() {
                     <ul className="list review-list">
                       {palworldTransitionEvents.length === 0 ? <li>No recent transition events.</li> : null}
                       {palworldTransitionEvents.map((event) => (
-                        <li key={`${event.playerId}:${event.eventType}:${event.occurredAt}`} className="review-row">
+                        <li key={getTransitionEventKey(event)} className="review-row">
                           <div className="review-main">
                             <div className="review-header">
                               <span className="review-id">{event.playerName ?? event.accountName ?? event.playerId}</span>
@@ -1393,6 +1449,24 @@ function App() {
                             <div className="subtle">
                               {formatTimestamp(event.occurredAt)}
                             </div>
+                            <div className="review-button-row">
+                              <button
+                                type="button"
+                                className="review-button approve-button"
+                                onClick={() => void postPalworldTransitionEvent(event)}
+                                disabled={palworldTransitionPostSubmittingKey !== null}
+                              >
+                                {palworldTransitionPostSubmittingKey === getTransitionEventKey(event)
+                                  ? 'Posting...'
+                                  : 'Post to #palworld-activity'}
+                              </button>
+                            </div>
+                            {palworldTransitionPostSuccessKey === getTransitionEventKey(event) ? (
+                              <p className="success-message">Posted to the configured Palworld activity channel.</p>
+                            ) : null}
+                            {palworldTransitionPostErrorKey === getTransitionEventKey(event) && palworldTransitionPostError ? (
+                              <p className="error">{palworldTransitionPostError}</p>
+                            ) : null}
                           </div>
                         </li>
                       ))}

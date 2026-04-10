@@ -1,5 +1,7 @@
 import {
   palworldLatestPlayersResponseSchema,
+  palworldManualTransitionPostActionSchema,
+  palworldManualTransitionPostResponseSchema,
   palworldMilestoneFeedResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
   palworldTransitionMilestoneEventsResponseSchema,
@@ -7,6 +9,8 @@ import {
   palworldPlayerTelemetryProfileResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   type PalworldLatestPlayersResponse,
+  type PalworldManualTransitionPostAction,
+  type PalworldManualTransitionPostResponse,
   type PalworldMilestoneFeedResponse,
   type PalworldPlayerSnapshotsResponse,
   type PalworldTransitionMilestoneEventsResponse,
@@ -27,6 +31,7 @@ import {
   evaluatePalworldMilestoneTransitionsForServer,
   getRecentPalworldMilestoneTransitionEventsForServer
 } from '../services/palworld-milestone-transition-store.js';
+import { postPalworldTransitionPreviewToDiscord } from '../services/palworld-manual-discord-post.js';
 
 export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>(
@@ -138,6 +143,33 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
         serverId,
         events: getRecentPalworldMilestoneTransitionEventsForServer(serverId, limit)
       });
+    }
+  );
+
+  app.post<{ Params: { serverId: string }; Body: PalworldManualTransitionPostAction }>(
+    '/servers/:serverId/palworld/milestones/transitions/post',
+    async (request, reply): Promise<PalworldManualTransitionPostResponse | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+      const parsed = palworldManualTransitionPostActionSchema.safeParse(request.body);
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      if (!parsed.success || parsed.data.serverId !== serverId) {
+        reply.code(400);
+        return { error: 'Invalid manual transition post payload' };
+      }
+
+      try {
+        return palworldManualTransitionPostResponseSchema.parse(
+          await postPalworldTransitionPreviewToDiscord(parsed.data)
+        );
+      } catch (error) {
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
     }
   );
 
