@@ -446,7 +446,8 @@ export const palworldTransitionMilestoneEventSchema = z.object({
   activeSessionKey: z.string().nullable(),
   fromValue: z.string().nullable(),
   toValue: z.string().nullable(),
-  reason: z.string().min(1)
+  reason: z.string().min(1),
+  previewMessage: z.string().default('')
 });
 export type PalworldTransitionMilestoneEvent = z.infer<typeof palworldTransitionMilestoneEventSchema>;
 

@@ -123,6 +123,8 @@ function App() {
   const [palworldReviewRefreshToken, setPalworldReviewRefreshToken] = useState(0);
   const [palworldManualSavePlayerSaveId, setPalworldManualSavePlayerSaveId] = useState('');
   const [palworldManualSavePlayerFileName, setPalworldManualSavePlayerFileName] = useState('');
+  const [palworldManualLinkError, setPalworldManualLinkError] = useState<string | null>(null);
+  const [palworldManualLinkSuccess, setPalworldManualLinkSuccess] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -149,6 +151,8 @@ function App() {
     setPalworldReviewActionError(null);
     setPalworldManualSavePlayerSaveId('');
     setPalworldManualSavePlayerFileName('');
+    setPalworldManualLinkError(null);
+    setPalworldManualLinkSuccess(null);
     setDetailError(null);
   }, [selectedServerId]);
 
@@ -684,38 +688,53 @@ function App() {
 
     const reviewedBy = palworldReviewActor.trim();
     const savePlayerSaveId = palworldManualSavePlayerSaveId.trim();
+    const savePlayerFileName = palworldManualSavePlayerFileName.trim();
+    const telemetryLookupKey = selectedPalworldPlayerProfile.lookupKey ?? '';
+    const playerId = selectedPalworldPlayerProfile.playerId ?? '';
+    const userId = selectedPalworldPlayerProfile.userId ?? '';
+    const accountName = selectedPalworldPlayerProfile.accountName ?? '';
+    const playerName = selectedPalworldPlayerProfile.playerName ?? '';
+    const notes = palworldReviewNotes.trim();
 
     if (!reviewedBy) {
-      setPalworldReviewActionError('Reviewed by is required.');
+      setPalworldManualLinkError('Reviewed by is required.');
       return;
     }
 
     if (!savePlayerSaveId) {
-      setPalworldReviewActionError('Save player ID is required for a manual link.');
+      setPalworldManualLinkError('Save player ID is required for a manual link.');
+      return;
+    }
+
+    if (!playerId) {
+      setPalworldManualLinkError('The selected player is missing a player ID, so a manual link cannot be created.');
       return;
     }
 
     try {
       setPalworldReviewSubmittingKey(`manual:${savePlayerSaveId}`);
-      setPalworldReviewActionError(null);
+      setPalworldManualLinkError(null);
+      setPalworldManualLinkSuccess(null);
+
+      const payload = {
+        serverId: selectedServer.id,
+        savePlayerSaveId,
+        ...(savePlayerFileName ? { savePlayerFileName } : {}),
+        telemetryLookupKey,
+        playerId,
+        userId,
+        accountName,
+        playerName,
+        reviewedBy,
+        notes
+      };
 
       const response = await fetch(`${apiBaseUrl}/palworld/identity-approvals/manual-link`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          serverId: selectedServer.id,
-          savePlayerSaveId,
-          ...(palworldManualSavePlayerFileName.trim() ? { savePlayerFileName: palworldManualSavePlayerFileName.trim() } : {}),
-          ...(selectedPalworldPlayerProfile.lookupKey ? { telemetryLookupKey: selectedPalworldPlayerProfile.lookupKey } : {}),
-          playerId: selectedPalworldPlayerProfile.playerId,
-          ...(selectedPalworldPlayerProfile.userId ? { userId: selectedPalworldPlayerProfile.userId } : {}),
-          ...(selectedPalworldPlayerProfile.accountName ? { accountName: selectedPalworldPlayerProfile.accountName } : {}),
-          ...(selectedPalworldPlayerProfile.playerName ? { playerName: selectedPalworldPlayerProfile.playerName } : {}),
-          reviewedBy,
-          ...(palworldReviewNotes.trim() ? { notes: palworldReviewNotes.trim() } : {})
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -726,9 +745,10 @@ function App() {
       setPalworldReviewNotes('');
       setPalworldManualSavePlayerSaveId('');
       setPalworldManualSavePlayerFileName('');
+      setPalworldManualLinkSuccess(`Manual link saved for ${playerName || accountName || playerId}.`);
       setPalworldReviewRefreshToken((current) => current + 1);
     } catch (caughtError) {
-      setPalworldReviewActionError(caughtError instanceof Error ? caughtError.message : 'Unknown manual link error');
+      setPalworldManualLinkError(caughtError instanceof Error ? caughtError.message : 'Unknown manual link error');
     } finally {
       setPalworldReviewSubmittingKey(null);
     }
@@ -1279,9 +1299,19 @@ function App() {
                                   />
                                 </label>
                               </div>
+                              <div className="manual-link-summary">
+                                <div className="subtle">
+                                  telemetry target {selectedPalworldPlayerProfile.playerName ?? selectedPalworldPlayerProfile.accountName ?? selectedPalworldPlayerProfile.playerId}
+                                </div>
+                                <div className="subtle">
+                                  playerId {selectedPalworldPlayerProfile.playerId} • userId {selectedPalworldPlayerProfile.userId ?? 'N/A'} • lookup {selectedPalworldPlayerProfile.lookupKey ?? 'N/A'}
+                                </div>
+                              </div>
                               <p className="subtle">
                                 Creates an approved identity record directly for the selected live player without requiring an existing candidate link.
                               </p>
+                              {palworldManualLinkError ? <p className="error">{palworldManualLinkError}</p> : null}
+                              {palworldManualLinkSuccess ? <p className="success-message">{palworldManualLinkSuccess}</p> : null}
                               <div className="review-button-row">
                                 <button
                                   type="button"
@@ -1356,6 +1386,7 @@ function App() {
                               </span>
                             </div>
                             <div><strong>{event.eventType}</strong></div>
+                            <div>{event.previewMessage}</div>
                             <div className="subtle">
                               {event.fromValue ?? 'N/A'} → {event.toValue ?? 'N/A'}
                             </div>

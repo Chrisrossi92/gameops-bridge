@@ -271,6 +271,13 @@
   margin-bottom: 0.8rem;
 }
 
+.manual-link-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  margin-bottom: 0.55rem;
+}
+
 .review-field {
   display: flex;
   flex-direction: column;
@@ -322,6 +329,12 @@
   border-color: #fecaca;
   background: #fee2e2;
   color: #991b1b;
+}
+
+.success-message {
+  margin: 0.35rem 0 0;
+  color: #166534;
+  font-size: 0.84rem;
 }
 
 .review-header {

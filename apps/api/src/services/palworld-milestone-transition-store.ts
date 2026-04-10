@@ -153,6 +153,20 @@ function createTransitionEvent(input: {
   reason: string;
   activeSessionKey: string | null;
 }): PalworldTransitionMilestoneEvent {
+  const subject = input.profile.playerName ?? input.profile.accountName ?? `Player ${input.profile.playerId}`;
+  const previewMessage = (() => {
+    switch (input.eventType) {
+      case 'PALWORLD_IDENTITY_APPROVED':
+        return `${subject} is now identity-approved for progression tracking.`;
+      case 'PALWORLD_LEVEL_TIER_ENTERED':
+        return `${subject} entered the ${input.toValue ?? 'new'} level tier.`;
+      case 'PALWORLD_SESSION_TIER_ENTERED':
+        return `${subject} reached the ${input.toValue ?? 'new'} session tier.`;
+      default:
+        return input.reason;
+    }
+  })();
+
   return palworldTransitionMilestoneEventSchema.parse({
     serverId: input.profile.serverId,
     playerId: input.profile.playerId,
@@ -167,7 +181,33 @@ function createTransitionEvent(input: {
     activeSessionKey: input.activeSessionKey,
     fromValue: input.fromValue,
     toValue: input.toValue,
-    reason: input.reason
+    reason: input.reason,
+    previewMessage
+  });
+}
+
+function withPreviewMessage(event: PalworldTransitionMilestoneEvent): PalworldTransitionMilestoneEvent {
+  if (event.previewMessage) {
+    return event;
+  }
+
+  const subject = event.playerName ?? event.accountName ?? `Player ${event.playerId}`;
+  const previewMessage = (() => {
+    switch (event.eventType) {
+      case 'PALWORLD_IDENTITY_APPROVED':
+        return `${subject} is now identity-approved for progression tracking.`;
+      case 'PALWORLD_LEVEL_TIER_ENTERED':
+        return `${subject} entered the ${event.toValue ?? 'new'} level tier.`;
+      case 'PALWORLD_SESSION_TIER_ENTERED':
+        return `${subject} reached the ${event.toValue ?? 'new'} session tier.`;
+      default:
+        return event.reason;
+    }
+  })();
+
+  return palworldTransitionMilestoneEventSchema.parse({
+    ...event,
+    previewMessage
   });
 }
 
@@ -268,6 +308,7 @@ export function getRecentPalworldMilestoneTransitionEventsForServer(serverId: st
   initializeTransitionStoreIfNeeded();
   return recentTransitionEvents
     .filter((event) => event.serverId === serverId)
+    .map(withPreviewMessage)
     .slice(-Math.max(1, limit))
     .reverse();
 }
