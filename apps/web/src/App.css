@@ -265,6 +265,65 @@
   gap: 0.22rem;
 }
 
+.review-actions-form {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.review-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.review-field input {
+  border: 1px solid #d7e0ec;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  color: #0f172a;
+  background: #fff;
+}
+
+.review-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.32rem;
+}
+
+.review-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.34rem 0.75rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.review-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.approve-button {
+  border-color: #bbf7d0;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.reject-button {
+  border-color: #fecaca;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .review-header {
   display: flex;
   align-items: center;

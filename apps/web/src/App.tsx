@@ -83,6 +83,8 @@ interface PalworldPlayerListEntry {
   identityState: PalworldIdentityListState;
 }
 
+type PalworldReviewAction = 'approve' | 'reject';
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
@@ -114,6 +116,11 @@ function App() {
   const [palworldIdentityFailures, setPalworldIdentityFailures] = useState<PalworldIdentityLinkFailure[]>([]);
   const [palworldIdentityLoading, setPalworldIdentityLoading] = useState(false);
   const [palworldIdentityError, setPalworldIdentityError] = useState<string | null>(null);
+  const [palworldReviewActor, setPalworldReviewActor] = useState('');
+  const [palworldReviewNotes, setPalworldReviewNotes] = useState('');
+  const [palworldReviewSubmittingKey, setPalworldReviewSubmittingKey] = useState<string | null>(null);
+  const [palworldReviewActionError, setPalworldReviewActionError] = useState<string | null>(null);
+  const [palworldReviewRefreshToken, setPalworldReviewRefreshToken] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -135,6 +142,9 @@ function App() {
     setPalworldIdentityFailures([]);
     setPalworldIdentityLoading(false);
     setPalworldIdentityError(null);
+    setPalworldReviewNotes('');
+    setPalworldReviewSubmittingKey(null);
+    setPalworldReviewActionError(null);
     setDetailError(null);
   }, [selectedServerId]);
 
@@ -441,7 +451,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [selectedServer]);
+  }, [palworldReviewRefreshToken, selectedServer]);
 
   useEffect(() => {
     let isMounted = true;
@@ -544,7 +554,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [palworldLatestPlayers, selectedServer, selectedPalworldPlayerKey]);
+  }, [palworldLatestPlayers, palworldReviewRefreshToken, selectedServer, selectedPalworldPlayerKey]);
 
   useEffect(() => {
     let isMounted = true;
@@ -619,7 +629,49 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [selectedServer]);
+  }, [palworldReviewRefreshToken, selectedServer]);
+
+  async function submitPalworldReviewAction(action: PalworldReviewAction, savePlayerKey: string): Promise<void> {
+    if (!selectedServer || selectedServer.game !== 'palworld') {
+      return;
+    }
+
+    const reviewedBy = palworldReviewActor.trim();
+
+    if (!reviewedBy) {
+      setPalworldReviewActionError('Reviewed by is required.');
+      return;
+    }
+
+    try {
+      setPalworldReviewSubmittingKey(`${action}:${savePlayerKey}`);
+      setPalworldReviewActionError(null);
+
+      const response = await fetch(`${apiBaseUrl}/palworld/identity-approvals/${action}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          savePlayerKey,
+          reviewedBy,
+          ...(palworldReviewNotes.trim() ? { notes: palworldReviewNotes.trim() } : {})
+        })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Review action failed with status ${response.status}`);
+      }
+
+      setPalworldReviewNotes('');
+      setPalworldReviewRefreshToken((current) => current + 1);
+    } catch (caughtError) {
+      setPalworldReviewActionError(caughtError instanceof Error ? caughtError.message : 'Unknown review action error');
+    } finally {
+      setPalworldReviewSubmittingKey(null);
+    }
+  }
 
   const palworldPlayerList = useMemo<PalworldPlayerListEntry[]>(() => {
     const normalize = (value: string | null | undefined) => value?.trim().toLowerCase().replace(/\s+/g, ' ') ?? '';
@@ -1238,6 +1290,27 @@ function App() {
                     <h2>Identity Review Candidates</h2>
                     {palworldIdentityLoading ? <p className="subtle">Loading identity link candidates...</p> : null}
                     {palworldIdentityError ? <p className="error">{palworldIdentityError}</p> : null}
+                    <div className="review-actions-form">
+                      <label className="review-field">
+                        <span>Reviewed By</span>
+                        <input
+                          type="text"
+                          value={palworldReviewActor}
+                          onChange={(event) => setPalworldReviewActor(event.target.value)}
+                          placeholder="your name"
+                        />
+                      </label>
+                      <label className="review-field">
+                        <span>Notes</span>
+                        <input
+                          type="text"
+                          value={palworldReviewNotes}
+                          onChange={(event) => setPalworldReviewNotes(event.target.value)}
+                          placeholder="optional review note"
+                        />
+                      </label>
+                    </div>
+                    {palworldReviewActionError ? <p className="error">{palworldReviewActionError}</p> : null}
                     <ul className="list review-list">
                       {!palworldIdentityLoading && palworldIdentityCandidates.length === 0 ? <li>No candidate links found.</li> : null}
                       {palworldIdentityCandidates.map((candidate) => (
@@ -1259,6 +1332,24 @@ function App() {
                             <div className="subtle">
                               {candidate.notes.join(' • ') || 'no additional notes'}
                             </div>
+                            <div className="review-button-row">
+                              <button
+                                type="button"
+                                className="review-button approve-button"
+                                onClick={() => void submitPalworldReviewAction('approve', candidate.savePlayerSaveId)}
+                                disabled={palworldReviewSubmittingKey !== null}
+                              >
+                                {palworldReviewSubmittingKey === `approve:${candidate.savePlayerSaveId}` ? 'Approving...' : 'Approve'}
+                              </button>
+                              <button
+                                type="button"
+                                className="review-button reject-button"
+                                onClick={() => void submitPalworldReviewAction('reject', candidate.savePlayerSaveId)}
+                                disabled={palworldReviewSubmittingKey !== null}
+                              >
+                                {palworldReviewSubmittingKey === `reject:${candidate.savePlayerSaveId}` ? 'Rejecting...' : 'Reject'}
+                              </button>
+                            </div>
                           </div>
                         </li>
                       ))}
@@ -1278,6 +1369,16 @@ function App() {
                             </div>
                             <div className="subtle">save file {failure.savePlayerFileName}</div>
                             <div className="subtle">{failure.message}</div>
+                            <div className="review-button-row">
+                              <button
+                                type="button"
+                                className="review-button reject-button"
+                                onClick={() => void submitPalworldReviewAction('reject', failure.savePlayerSaveId)}
+                                disabled={palworldReviewSubmittingKey !== null}
+                              >
+                                {palworldReviewSubmittingKey === `reject:${failure.savePlayerSaveId}` ? 'Rejecting...' : 'Reject'}
+                              </button>
+                            </div>
                           </div>
                         </li>
                       ))}
