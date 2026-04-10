@@ -339,6 +339,20 @@ export const palworldIdentityApprovalActionSchema = z.object({
 });
 export type PalworldIdentityApprovalAction = z.infer<typeof palworldIdentityApprovalActionSchema>;
 
+export const palworldManualIdentityLinkActionSchema = z.object({
+  serverId: z.string().min(1),
+  savePlayerSaveId: z.string().min(1),
+  savePlayerFileName: z.string().min(1).optional(),
+  telemetryLookupKey: z.string().optional(),
+  playerId: z.string().optional(),
+  userId: z.string().optional(),
+  accountName: z.string().optional(),
+  playerName: z.string().optional(),
+  reviewedBy: z.string().min(1),
+  notes: z.string().optional()
+});
+export type PalworldManualIdentityLinkAction = z.infer<typeof palworldManualIdentityLinkActionSchema>;
+
 export const palworldIdentityReviewStateSchema = z.enum(['approved', 'rejected', 'unresolved']);
 export type PalworldIdentityReviewState = z.infer<typeof palworldIdentityReviewStateSchema>;
 

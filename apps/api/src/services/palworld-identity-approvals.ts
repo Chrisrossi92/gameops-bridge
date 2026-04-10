@@ -4,6 +4,7 @@ import {
   palworldApprovedIdentitySchema,
   palworldIdentityApprovalsResponseSchema,
   palworldRejectedIdentitySchema,
+  type PalworldManualIdentityLinkAction,
   type PalworldApprovedIdentity,
   type PalworldIdentityApprovalsResponse,
   type PalworldRejectedIdentity
@@ -130,4 +131,30 @@ export function rejectPalworldIdentity(input: {
   payload.rejections.push(rejection);
   writeApprovals(payload);
   return rejection;
+}
+
+export function manuallyApprovePalworldIdentity(input: PalworldManualIdentityLinkAction): PalworldApprovedIdentity {
+  const payload = loadApprovals();
+  const savePlayerFileName = input.savePlayerFileName?.trim() || `${input.savePlayerSaveId.trim()}.sav`;
+
+  removeExistingReview(payload, input.savePlayerSaveId, savePlayerFileName);
+
+  const approval = palworldApprovedIdentitySchema.parse({
+    state: 'approved',
+    serverId: input.serverId,
+    savePlayerSaveId: input.savePlayerSaveId,
+    savePlayerFileName,
+    telemetryLookupKey: input.telemetryLookupKey?.trim() || null,
+    playerId: input.playerId?.trim() || null,
+    userId: input.userId?.trim() || null,
+    accountName: input.accountName?.trim() || null,
+    playerName: input.playerName?.trim() || null,
+    approvedAt: new Date().toISOString(),
+    approvedBy: input.reviewedBy,
+    notes: input.notes ?? ''
+  });
+
+  payload.approvals.push(approval);
+  writeApprovals(payload);
+  return approval;
 }

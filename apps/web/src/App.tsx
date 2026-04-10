@@ -121,6 +121,8 @@ function App() {
   const [palworldReviewSubmittingKey, setPalworldReviewSubmittingKey] = useState<string | null>(null);
   const [palworldReviewActionError, setPalworldReviewActionError] = useState<string | null>(null);
   const [palworldReviewRefreshToken, setPalworldReviewRefreshToken] = useState(0);
+  const [palworldManualSavePlayerSaveId, setPalworldManualSavePlayerSaveId] = useState('');
+  const [palworldManualSavePlayerFileName, setPalworldManualSavePlayerFileName] = useState('');
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -145,6 +147,8 @@ function App() {
     setPalworldReviewNotes('');
     setPalworldReviewSubmittingKey(null);
     setPalworldReviewActionError(null);
+    setPalworldManualSavePlayerSaveId('');
+    setPalworldManualSavePlayerFileName('');
     setDetailError(null);
   }, [selectedServerId]);
 
@@ -673,6 +677,63 @@ function App() {
     }
   }
 
+  async function submitPalworldManualLink(): Promise<void> {
+    if (!selectedServer || selectedServer.game !== 'palworld' || !selectedPalworldPlayerProfile) {
+      return;
+    }
+
+    const reviewedBy = palworldReviewActor.trim();
+    const savePlayerSaveId = palworldManualSavePlayerSaveId.trim();
+
+    if (!reviewedBy) {
+      setPalworldReviewActionError('Reviewed by is required.');
+      return;
+    }
+
+    if (!savePlayerSaveId) {
+      setPalworldReviewActionError('Save player ID is required for a manual link.');
+      return;
+    }
+
+    try {
+      setPalworldReviewSubmittingKey(`manual:${savePlayerSaveId}`);
+      setPalworldReviewActionError(null);
+
+      const response = await fetch(`${apiBaseUrl}/palworld/identity-approvals/manual-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          serverId: selectedServer.id,
+          savePlayerSaveId,
+          ...(palworldManualSavePlayerFileName.trim() ? { savePlayerFileName: palworldManualSavePlayerFileName.trim() } : {}),
+          ...(selectedPalworldPlayerProfile.lookupKey ? { telemetryLookupKey: selectedPalworldPlayerProfile.lookupKey } : {}),
+          playerId: selectedPalworldPlayerProfile.playerId,
+          ...(selectedPalworldPlayerProfile.userId ? { userId: selectedPalworldPlayerProfile.userId } : {}),
+          ...(selectedPalworldPlayerProfile.accountName ? { accountName: selectedPalworldPlayerProfile.accountName } : {}),
+          ...(selectedPalworldPlayerProfile.playerName ? { playerName: selectedPalworldPlayerProfile.playerName } : {}),
+          reviewedBy,
+          ...(palworldReviewNotes.trim() ? { notes: palworldReviewNotes.trim() } : {})
+        })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Manual link failed with status ${response.status}`);
+      }
+
+      setPalworldReviewNotes('');
+      setPalworldManualSavePlayerSaveId('');
+      setPalworldManualSavePlayerFileName('');
+      setPalworldReviewRefreshToken((current) => current + 1);
+    } catch (caughtError) {
+      setPalworldReviewActionError(caughtError instanceof Error ? caughtError.message : 'Unknown manual link error');
+    } finally {
+      setPalworldReviewSubmittingKey(null);
+    }
+  }
+
   const palworldPlayerList = useMemo<PalworldPlayerListEntry[]>(() => {
     const normalize = (value: string | null | undefined) => value?.trim().toLowerCase().replace(/\s+/g, ' ') ?? '';
     const stateRank: Record<PalworldIdentityListState, number> = {
@@ -1195,6 +1256,42 @@ function App() {
                                   </li>
                                 ))}
                               </ul>
+                            </div>
+                            <div className="milestone-block">
+                              <h4>Manual Identity Link</h4>
+                              <div className="review-actions-form">
+                                <label className="review-field">
+                                  <span>Save Player ID</span>
+                                  <input
+                                    type="text"
+                                    value={palworldManualSavePlayerSaveId}
+                                    onChange={(event) => setPalworldManualSavePlayerSaveId(event.target.value)}
+                                    placeholder="save player id"
+                                  />
+                                </label>
+                                <label className="review-field">
+                                  <span>Save File Name</span>
+                                  <input
+                                    type="text"
+                                    value={palworldManualSavePlayerFileName}
+                                    onChange={(event) => setPalworldManualSavePlayerFileName(event.target.value)}
+                                    placeholder="optional .sav file name"
+                                  />
+                                </label>
+                              </div>
+                              <p className="subtle">
+                                Creates an approved identity record directly for the selected live player without requiring an existing candidate link.
+                              </p>
+                              <div className="review-button-row">
+                                <button
+                                  type="button"
+                                  className="review-button approve-button"
+                                  onClick={() => void submitPalworldManualLink()}
+                                  disabled={palworldReviewSubmittingKey !== null}
+                                >
+                                  {palworldReviewSubmittingKey?.startsWith('manual:') ? 'Linking...' : 'Manual Link'}
+                                </button>
+                              </div>
                             </div>
                           </div>
                           <div className="detail-block">
