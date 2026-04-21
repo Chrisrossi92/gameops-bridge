@@ -789,7 +789,7 @@ function App() {
           serverId: selectedServer.id,
           playerId: event.playerId,
           eventType: event.eventType,
-          occurredAt: event.occurredAt,
+          occurredAt: new Date(event.occurredAt).toISOString().replace(/\.\d{3}Z$/, 'Z'),
           fromValue: event.fromValue ?? null,
           toValue: event.toValue ?? null
         })
