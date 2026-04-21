@@ -168,6 +168,33 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
     }
   );
 
+  app.get<{ Params: { serverId: string } }>(
+    '/servers/:serverId/palworld/base-signal',
+    async (request, reply): Promise<{ serverId: string; baseSignal: number } | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      try {
+        const { execSync } = await import('node:child_process');
+
+        const result = execSync(
+          "grep -c 'BaseCampSaveData' /tmp/level.strings.txt"
+        ).toString().trim();
+
+        const baseSignal = parseInt(result, 10) || 0;
+
+        return { serverId, baseSignal };
+      } catch (error) {
+        reply.code(500);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
   app.post<{ Params: { serverId: string }; Body: PalworldManualTransitionPostAction }>(
     '/servers/:serverId/palworld/milestones/transitions/post',
     async (request, reply): Promise<PalworldManualTransitionPostResponse | { error: string }> => {
