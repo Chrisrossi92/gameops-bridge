@@ -134,6 +134,8 @@ function App() {
   const [selectedPalworldPlayerKey, setSelectedPalworldPlayerKey] = useState<string | null>(null);
   const [selectedPalworldPlayerProfile, setSelectedPalworldPlayerProfile] = useState<PalworldUnifiedPlayerProfile | null>(null);
   const [selectedPalworldHistory, setSelectedPalworldHistory] = useState<PalworldPlayerSnapshot[]>([]);
+  const [palworldPlayerProfiles, setPalworldPlayerProfiles] = useState<PalworldUnifiedPlayerProfile[]>([]);
+  const [palworldPlayerProfilesLoading, setPalworldPlayerProfilesLoading] = useState(false);
   const [palworldPlayerDetailLoading, setPalworldPlayerDetailLoading] = useState(false);
   const [palworldLatestPlayers, setPalworldLatestPlayers] = useState<PalworldLatestPlayerTelemetry[]>([]);
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
@@ -172,6 +174,8 @@ function App() {
     setSelectedPalworldPlayerKey(null);
     setSelectedPalworldPlayerProfile(null);
     setSelectedPalworldHistory([]);
+    setPalworldPlayerProfiles([]);
+    setPalworldPlayerProfilesLoading(false);
     setPalworldPlayerDetailLoading(false);
     setPalworldLatestPlayers([]);
     setPalworldMetrics([]);
@@ -588,6 +592,60 @@ function App() {
       isMounted = false;
     };
   }, [selectedServer, selectedValheimPlayerLookupKey]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPalworldPlayerProfiles(): Promise<void> {
+      if (!selectedServer || selectedServer.game !== 'palworld' || palworldLatestPlayers.length === 0) {
+        setPalworldPlayerProfiles([]);
+        setPalworldPlayerProfilesLoading(false);
+        return;
+      }
+
+      try {
+        setPalworldPlayerProfilesLoading(true);
+
+        const profileResponses = await Promise.all(
+          palworldLatestPlayers.slice(0, 40).map(async (player) => {
+            const profileLookupId = player.playerId ?? player.lookupKey;
+            const response = await fetch(
+              `${apiBaseUrl}/servers/${selectedServer.id}/palworld/player-profile/${encodeURIComponent(profileLookupId)}`
+            );
+
+            if (!response.ok) {
+              return null;
+            }
+
+            const payload = await response.json();
+            const parsed = palworldUnifiedPlayerProfileSchema.safeParse(payload);
+
+            return parsed.success ? parsed.data : null;
+          })
+        );
+
+        if (!isMounted) {
+          return;
+        }
+
+        setPalworldPlayerProfiles(profileResponses.filter((profile): profile is PalworldUnifiedPlayerProfile => profile !== null));
+      } catch {
+        if (isMounted) {
+          setPalworldPlayerProfiles([]);
+        }
+      } finally {
+        if (isMounted) {
+          setPalworldPlayerProfilesLoading(false);
+        }
+      }
+    }
+
+    void loadPalworldPlayerProfiles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [palworldLatestPlayers, selectedServer]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1083,6 +1141,21 @@ function App() {
     };
   }, [palworldBaseCapacity, palworldBaseSignalTrend]);
 
+  const palworldCorePlayers = useMemo(() => {
+    return [...palworldPlayerProfiles]
+      .filter((profile) => profile.playerIntelligence.classification === 'Core Player')
+      .sort((left, right) => {
+        const engagementDelta = right.playerIntelligence.engagementScore - left.playerIntelligence.engagementScore;
+
+        if (engagementDelta !== 0) {
+          return engagementDelta;
+        }
+
+        return (right.level ?? -1) - (left.level ?? -1);
+      })
+      .slice(0, 10);
+  }, [palworldPlayerProfiles]);
+
   const palworldGuildSummary = useMemo(() => {
     const namedGuilds = palworldGuilds.filter((guild) => (guild.guildName?.trim() ?? '') !== '').length;
     const guildsWithTwoPlusMembers = palworldGuilds.filter((guild) => (guild.memberCount ?? guild.members?.length ?? 0) >= 2).length;
@@ -1491,6 +1564,33 @@ function App() {
                   </article>
 
                   <article className="card">
+                    <h2>Core Players</h2>
+                    {palworldPlayerProfilesLoading ? <p className="subtle">Loading core player rankings...</p> : null}
+                    <ul className="list review-list">
+                      {!palworldPlayerProfilesLoading && palworldCorePlayers.length === 0 ? <li>No core players identified.</li> : null}
+                      {palworldCorePlayers.map((profile) => (
+                        <li key={profile.playerId} className="review-row">
+                          <div className="review-main">
+                            <div className="review-header">
+                              <span className="review-id">{profile.playerName ?? profile.accountName ?? profile.playerId}</span>
+                              <span className="confidence-badge confidence-high">{profile.playerIntelligence.classification}</span>
+                            </div>
+                            <div className="subtle">
+                              score {profile.playerIntelligence.engagementScore} • lvl {profile.level ?? 'N/A'}
+                            </div>
+                            <div className="subtle">
+                              impact {profile.playerIntelligence.impactLevel}
+                            </div>
+                            <div className="subtle">
+                              guild {profile.playerIntelligence.likelyGuildName ?? 'N/A'}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+
+                  <article className="card">
                     <h2>Player Profile / History</h2>
                     {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect the unified live/save identity profile and recent snapshots.</p> : null}
                     {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
@@ -1525,6 +1625,19 @@ function App() {
                               <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
                               <li><span>Save MTime</span><span>{selectedPalworldPlayerProfile.saveArtifact.modifiedAt ? formatTimestamp(selectedPalworldPlayerProfile.saveArtifact.modifiedAt) : 'N/A'}</span></li>
                             </ul>
+                            <div className="milestone-block">
+                              <h4>Player Intelligence</h4>
+                              <ul className="list compact">
+                                <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
+                                <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
+                                <li><span>Identity State</span><span>{selectedPalworldPlayerProfile.playerIntelligence.identityState}</span></li>
+                                <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
+                                <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
+                                <li><span>Engagement Score</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
+                                <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
+                                <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
+                              </ul>
+                            </div>
                             <div className="milestone-block">
                               <h4>Milestone Signals</h4>
                               <ul className="list compact">

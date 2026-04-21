@@ -474,6 +474,33 @@ export const palworldManualTransitionPostResponseSchema = z.object({
 });
 export type PalworldManualTransitionPostResponse = z.infer<typeof palworldManualTransitionPostResponseSchema>;
 
+export const palworldPlayerClassificationSchema = z.enum([
+  'Core Player',
+  'Active Player',
+  'New / Light Player'
+]);
+export type PalworldPlayerClassification = z.infer<typeof palworldPlayerClassificationSchema>;
+
+export const palworldPlayerImpactLevelSchema = z.enum([
+  'High Impact',
+  'Core',
+  'Active',
+  'Low'
+]);
+export type PalworldPlayerImpactLevel = z.infer<typeof palworldPlayerImpactLevelSchema>;
+
+export const palworldPlayerIntelligenceSchema = z.object({
+  likelyGuildName: z.string().nullable(),
+  guildMemberCount: z.number().int().min(0).nullable(),
+  identityState: palworldIdentityReviewStateSchema,
+  levelTier: palworldLevelTierSchema.nullable(),
+  sessionTier: palworldSessionTierSchema.nullable(),
+  engagementScore: z.number().int().min(0),
+  classification: palworldPlayerClassificationSchema,
+  impactLevel: palworldPlayerImpactLevelSchema
+});
+export type PalworldPlayerIntelligence = z.infer<typeof palworldPlayerIntelligenceSchema>;
+
 export const palworldUnifiedPlayerProfileSchema = z.object({
   serverId: z.string().min(1),
   playerId: z.string().min(1),
@@ -502,7 +529,8 @@ export const palworldUnifiedPlayerProfileSchema = z.object({
   milestoneSignals: z.array(palworldMilestoneSignalSchema),
   identityState: palworldIdentityReviewStateSchema,
   review: palworldPlayerReviewMetadataSchema,
-  saveArtifact: palworldPlayerSaveArtifactSchema
+  saveArtifact: palworldPlayerSaveArtifactSchema,
+  playerIntelligence: palworldPlayerIntelligenceSchema
 });
 export type PalworldUnifiedPlayerProfile = z.infer<typeof palworldUnifiedPlayerProfileSchema>;
 

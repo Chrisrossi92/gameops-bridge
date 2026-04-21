@@ -3,6 +3,8 @@ import { isAbsolute, resolve } from 'node:path';
 import {
   type PalworldMilestoneFeedEntry,
   type PalworldMilestoneSignal,
+  type PalworldPlayerClassification,
+  type PalworldPlayerImpactLevel,
   palworldUnifiedPlayerProfileSchema,
   type PalworldApprovedIdentity,
   type PalworldLatestPlayerTelemetry,
@@ -31,6 +33,16 @@ const rawPlayersSummarySchema = z.object({
   playerFiles: z.array(rawPlayerFileSchema).default([])
 });
 
+const rawGuildSummarySchema = z.object({
+  guildName: z.string().nullable().optional(),
+  guildId: z.string().nullable().optional(),
+  memberCount: z.number().int().min(0).nullable().optional(),
+  members: z.array(z.string()).default([])
+});
+
+const rawGuildsSummarySchema = z.array(rawGuildSummarySchema);
+const GUILDS_SUMMARY_PATH = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
+
 function resolvePlayersSummaryPath(): string {
   const rawPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH ?? '../players-summary.json';
   return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
@@ -38,6 +50,11 @@ function resolvePlayersSummaryPath(): string {
 
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isPlaceholderGuildName(value: string | null | undefined): boolean {
+  const normalized = value ? normalize(value) : '';
+  return !normalized || normalized === 'unknown' || normalized === 'unknown guild' || normalized === 'unnamed guild';
 }
 
 function isSamePlayer(left: PalworldLatestPlayerTelemetry, right: PalworldLatestPlayerTelemetry): boolean {
@@ -130,6 +147,14 @@ function loadPlayersSummary(): z.infer<typeof rawPlayersSummarySchema> {
     return rawPlayersSummarySchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown);
   } catch {
     return rawPlayersSummarySchema.parse({});
+  }
+}
+
+function loadGuildsSummary(): z.infer<typeof rawGuildsSummarySchema> {
+  try {
+    return rawGuildsSummarySchema.parse(JSON.parse(readFileSync(GUILDS_SUMMARY_PATH, 'utf8')) as unknown);
+  } catch {
+    return [];
   }
 }
 
@@ -305,6 +330,112 @@ function getMilestoneSignals(input: {
   return signals;
 }
 
+function findLikelyGuildForPlayer(telemetry: PalworldLatestPlayerTelemetry): {
+  likelyGuildName: string | null;
+  guildMemberCount: number | null;
+} {
+  const playerKeys = [
+    telemetry.lookupKey,
+    telemetry.playerId ?? '',
+    telemetry.userId ?? '',
+    telemetry.accountName ?? '',
+    telemetry.playerName ?? ''
+  ].map(normalize).filter(Boolean);
+
+  const matchingGuild = loadGuildsSummary().find((guild) => {
+    const memberKeys = guild.members.map(normalize).filter(Boolean);
+    return memberKeys.some((memberKey) => playerKeys.includes(memberKey));
+  });
+
+  if (!matchingGuild) {
+    return {
+      likelyGuildName: null,
+      guildMemberCount: null
+    };
+  }
+
+  return {
+    likelyGuildName: isPlaceholderGuildName(matchingGuild.guildName ?? null) ? null : (matchingGuild.guildName ?? null),
+    guildMemberCount: matchingGuild.memberCount ?? matchingGuild.members.length
+  };
+}
+
+function classifyPalworldPlayer(input: {
+  identityState: 'approved' | 'rejected' | 'unresolved';
+  levelTier: PalworldLevelTier | null;
+  sessionTier: PalworldSessionTier | null;
+  milestoneSignals: PalworldMilestoneSignal[];
+  guildMemberCount: number | null;
+}): { engagementScore: number; classification: PalworldPlayerClassification } {
+  let engagementScore = 0;
+
+  if (input.levelTier === 'elite') {
+    engagementScore += 3;
+  } else if (input.levelTier === 'high') {
+    engagementScore += 2;
+  } else if (input.levelTier === 'mid') {
+    engagementScore += 1;
+  }
+
+  if (input.sessionTier === 'marathon') {
+    engagementScore += 3;
+  } else if (input.sessionTier === 'grinding') {
+    engagementScore += 2;
+  } else if (input.sessionTier === 'active') {
+    engagementScore += 1;
+  }
+
+  engagementScore += Math.min(3, input.milestoneSignals.length);
+
+  if ((input.guildMemberCount ?? 0) >= 4) {
+    engagementScore += 2;
+  } else if ((input.guildMemberCount ?? 0) >= 2) {
+    engagementScore += 1;
+  }
+
+  if (input.identityState === 'approved') {
+    engagementScore += 1;
+  }
+
+  let classification: PalworldPlayerClassification = 'New / Light Player';
+
+  if (engagementScore >= 7) {
+    classification = 'Core Player';
+  } else if (engagementScore >= 4) {
+    classification = 'Active Player';
+  }
+
+  return {
+    engagementScore,
+    classification
+  };
+}
+
+function getPalworldPlayerImpactLevel(input: {
+  classification: PalworldPlayerClassification;
+  guildMemberCount: number | null;
+  level: number | null | undefined;
+  sessionTier: PalworldSessionTier | null;
+}): PalworldPlayerImpactLevel {
+  if (
+    input.classification === 'Core Player'
+    && (input.guildMemberCount ?? 0) >= 3
+    && (input.level ?? 0) >= 50
+  ) {
+    return 'High Impact';
+  }
+
+  if (input.classification === 'Core Player') {
+    return 'Core';
+  }
+
+  if (input.classification === 'Active Player') {
+    return 'Active';
+  }
+
+  return 'Low';
+}
+
 export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: string): PalworldUnifiedPlayerProfile | null {
   const telemetry = getLatestPalworldPlayerForServer(serverId, playerId);
 
@@ -331,6 +462,20 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
     onlineRankByLevel,
     onlineRankBySessionDuration,
     identityState: review.state
+  });
+  const guildIntelligence = findLikelyGuildForPlayer(telemetry);
+  const playerEngagement = classifyPalworldPlayer({
+    identityState: review.state,
+    levelTier,
+    sessionTier,
+    milestoneSignals,
+    guildMemberCount: guildIntelligence.guildMemberCount
+  });
+  const impactLevel = getPalworldPlayerImpactLevel({
+    classification: playerEngagement.classification,
+    guildMemberCount: guildIntelligence.guildMemberCount,
+    level: telemetry.level,
+    sessionTier
   });
 
   return palworldUnifiedPlayerProfileSchema.parse({
@@ -361,7 +506,17 @@ export function getPalworldUnifiedPlayerProfile(serverId: string, playerId: stri
     milestoneSignals,
     identityState: review.state,
     review,
-    saveArtifact
+    saveArtifact,
+    playerIntelligence: {
+      likelyGuildName: guildIntelligence.likelyGuildName,
+      guildMemberCount: guildIntelligence.guildMemberCount,
+      identityState: review.state,
+      levelTier,
+      sessionTier,
+      engagementScore: playerEngagement.engagementScore,
+      classification: playerEngagement.classification,
+      impactLevel
+    }
   });
 }
 
