@@ -93,6 +93,11 @@ interface PalworldGuildHint {
   members?: string[] | null;
 }
 
+interface PalworldBaseSignalHistoryEntry {
+  timestamp: string;
+  baseSignal: number;
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
@@ -134,6 +139,8 @@ function App() {
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
   const [palworldMilestoneFeed, setPalworldMilestoneFeed] = useState<PalworldMilestoneFeedEntry[]>([]);
   const [palworldTransitionEvents, setPalworldTransitionEvents] = useState<PalworldTransitionMilestoneEvent[]>([]);
+  const [palworldBaseSignal, setPalworldBaseSignal] = useState<number | null>(null);
+  const [palworldBaseSignalHistory, setPalworldBaseSignalHistory] = useState<PalworldBaseSignalHistoryEntry[]>([]);
   const [palworldGuilds, setPalworldGuilds] = useState<PalworldGuildHint[]>([]);
   const [palworldGuildsError, setPalworldGuildsError] = useState<string | null>(null);
   const [palworldTransitionPostSubmittingKey, setPalworldTransitionPostSubmittingKey] = useState<string | null>(null);
@@ -170,6 +177,8 @@ function App() {
     setPalworldMetrics([]);
     setPalworldMilestoneFeed([]);
     setPalworldTransitionEvents([]);
+    setPalworldBaseSignal(null);
+    setPalworldBaseSignalHistory([]);
     setPalworldGuilds([]);
     setPalworldGuildsError(null);
     setPalworldTransitionPostSubmittingKey(null);
@@ -419,6 +428,27 @@ function App() {
     [selectedServerId, serverOptions]
   );
 
+  async function loadBaseSignal(serverId: string, response?: Response): Promise<void> {
+    const res = response ?? await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/base-signal`);
+    const data = await res.json() as { baseSignal?: number };
+    setPalworldBaseSignal(data.baseSignal ?? 0);
+  }
+
+  async function loadBaseSignalHistory(serverId: string, response?: Response): Promise<void> {
+    const res = response ?? await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/base-signal/history`);
+    const data = await res.json() as { history?: Array<{ timestamp?: string; baseSignal?: number }> };
+
+    setPalworldBaseSignalHistory(
+      Array.isArray(data.history)
+        ? data.history
+          .filter((entry): entry is { timestamp: string; baseSignal: number } => (
+            typeof entry?.timestamp === 'string' && typeof entry?.baseSignal === 'number'
+          ))
+          .slice(-100)
+        : []
+    );
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -428,6 +458,8 @@ function App() {
         setPalworldMetrics([]);
         setPalworldMilestoneFeed([]);
         setPalworldTransitionEvents([]);
+        setPalworldBaseSignal(null);
+        setPalworldBaseSignalHistory([]);
         setPalworldGuilds([]);
         setPalworldGuildsError(null);
         setDetailLoading(false);
@@ -439,11 +471,13 @@ function App() {
         setDetailLoading(true);
         setDetailError(null);
 
-        const [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse, guildsResult] = await Promise.all([
+        const [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse, guildsResult] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest?limit=40`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/current?limit=24`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/transitions/recent?limit=24`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/base-signal`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/base-signal/history`),
           loadPalworldGuilds(selectedServer.id)
             .then((guilds) => ({ guilds, error: null }))
             .catch((error: unknown) => ({
@@ -452,8 +486,8 @@ function App() {
             }))
         ]);
 
-        if (!latestPlayersResponse.ok || !metricsResponse.ok || !milestonesResponse.ok || !transitionsResponse.ok) {
-          const statusCode = [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse].find((response) => !response.ok)?.status;
+        if (!latestPlayersResponse.ok || !metricsResponse.ok || !milestonesResponse.ok || !transitionsResponse.ok || !baseSignalResponse.ok || !baseSignalHistoryResponse.ok) {
+          const statusCode = [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse].find((response) => !response.ok)?.status;
           throw new Error(`Palworld detail fetch failed with status ${statusCode ?? 'unknown'}`);
         }
 
@@ -481,6 +515,8 @@ function App() {
         setPalworldMetrics(metricsParsed.data.metrics);
         setPalworldMilestoneFeed(milestonesParsed.data.milestones);
         setPalworldTransitionEvents(transitionsParsed.data.events);
+        await loadBaseSignal(selectedServer.id, baseSignalResponse);
+        await loadBaseSignalHistory(selectedServer.id, baseSignalHistoryResponse);
         setPalworldGuilds(guildsResult.guilds);
         setPalworldGuildsError(guildsResult.error);
       } catch (caughtError) {
@@ -492,6 +528,8 @@ function App() {
           setPalworldMetrics([]);
           setPalworldMilestoneFeed([]);
           setPalworldTransitionEvents([]);
+          setPalworldBaseSignal(null);
+          setPalworldBaseSignalHistory([]);
           setPalworldGuilds([]);
           setPalworldGuildsError(null);
         }
@@ -931,6 +969,133 @@ function App() {
     palworldLatestPlayers,
     palworldRejectedIdentities
   ]);
+
+  const palworldBaseCapacity = useMemo(() => {
+    if (palworldBaseSignal === null) {
+      return null;
+    }
+
+    const estimatedBases = Math.round(palworldBaseSignal / 3);
+    const usagePercent = Math.round((palworldBaseSignal / 3 / 240) * 100);
+    const remainingCapacity = Math.max(0, 240 - estimatedBases);
+    let statusLabel = 'Safe';
+    let summary = 'Plenty of room remaining';
+
+    if (usagePercent >= 90) {
+      statusLabel = 'Critical';
+    } else if (usagePercent >= 75) {
+      statusLabel = 'High';
+    } else if (usagePercent >= 50) {
+      statusLabel = 'Moderate';
+    }
+
+    if (usagePercent >= 95) {
+      summary = 'Near cap';
+    } else if (usagePercent >= 80) {
+      summary = 'High base pressure';
+    } else if (usagePercent >= 60) {
+      summary = 'Watch base growth closely';
+    } else if (usagePercent >= 30) {
+      summary = 'Growing, but comfortable';
+    }
+
+    return {
+      estimatedBases,
+      usagePercent,
+      remainingCapacity,
+      statusLabel,
+      summary
+    };
+  }, [palworldBaseSignal]);
+
+  const palworldBaseSignalTrend = useMemo(() => {
+    const recentValues = palworldBaseSignalHistory.slice(-5).map((entry) => entry.baseSignal);
+
+    if (recentValues.length < 2) {
+      return {
+        direction: 'stable',
+        indicator: '→',
+        recentValues
+      } as const;
+    }
+
+    const delta = recentValues[recentValues.length - 1] - recentValues[0];
+
+    if (delta > 0) {
+      return {
+        direction: 'increasing',
+        indicator: '▲',
+        recentValues
+      } as const;
+    }
+
+    if (delta < 0) {
+      return {
+        direction: 'decreasing',
+        indicator: '▼',
+        recentValues
+      } as const;
+    }
+
+    return {
+      direction: 'stable',
+      indicator: '→',
+      recentValues
+    } as const;
+  }, [palworldBaseSignalHistory]);
+
+  const palworldBaseCapacityAlerts = useMemo(() => {
+    if (palworldBaseCapacity === null) {
+      return null;
+    }
+
+    let severity = 'safe';
+    let alertMessage = 'No immediate base pressure';
+
+    if (palworldBaseCapacity.usagePercent >= 95) {
+      severity = 'critical';
+      alertMessage = 'Base cap is near full';
+    } else if (palworldBaseCapacity.usagePercent >= 80) {
+      severity = 'high';
+      alertMessage = 'High base pressure';
+    } else if (palworldBaseCapacity.usagePercent >= 60) {
+      severity = 'warning';
+      alertMessage = 'Base usage is climbing';
+    }
+
+    const recentValues = palworldBaseSignalTrend.recentValues;
+    const growthDelta = recentValues.length >= 2
+      ? recentValues[recentValues.length - 1] - recentValues[0]
+      : 0;
+
+    let growthAlert: string | null = null;
+
+    if (growthDelta >= 20) {
+      growthAlert = 'Rapid base growth detected';
+    } else if (growthDelta >= 10) {
+      growthAlert = 'Base growth is accelerating';
+    }
+
+    return {
+      severity,
+      alertMessage,
+      growthAlert
+    };
+  }, [palworldBaseCapacity, palworldBaseSignalTrend]);
+
+  const palworldGuildSummary = useMemo(() => {
+    const namedGuilds = palworldGuilds.filter((guild) => (guild.guildName?.trim() ?? '') !== '').length;
+    const guildsWithTwoPlusMembers = palworldGuilds.filter((guild) => (guild.memberCount ?? guild.members?.length ?? 0) >= 2).length;
+    const guildsWithThreePlusMembers = palworldGuilds.filter((guild) => (guild.memberCount ?? guild.members?.length ?? 0) >= 3).length;
+
+    return {
+      totalGuildHints: palworldGuilds.length,
+      namedGuilds,
+      unnamedGuilds: palworldGuilds.length - namedGuilds,
+      guildsWithTwoPlusMembers,
+      guildsWithThreePlusMembers
+    };
+  }, [palworldGuilds]);
 
   useEffect(() => {
     if (!selectedServer || selectedServer.game !== 'palworld') {
@@ -1444,8 +1609,69 @@ function App() {
                   </article>
 
                   <article className="card">
+                    <h2>Base Capacity</h2>
+
+                    {palworldBaseSignal !== null && palworldBaseCapacity !== null && (
+                      <>
+                        <div><strong>Raw Signal:</strong> {palworldBaseSignal}</div>
+
+                        <div>
+                          <strong>Estimated Bases:</strong> {palworldBaseCapacity.estimatedBases} / 240
+                        </div>
+
+                        <div>
+                          <strong>Usage:</strong> {palworldBaseCapacity.usagePercent}%
+                        </div>
+
+                        <div>
+                          <strong>Remaining Capacity:</strong> {palworldBaseCapacity.remainingCapacity}
+                        </div>
+
+                        <div className="subtle">
+                          <strong>Status:</strong> {palworldBaseCapacity.statusLabel}
+                        </div>
+
+                        <div className="subtle">{palworldBaseCapacity.summary}</div>
+
+                        <div className="subtle">
+                          <strong>Last 5 Values:</strong> {palworldBaseSignalTrend.recentValues.length > 0 ? palworldBaseSignalTrend.recentValues.join(', ') : 'No history'}
+                        </div>
+
+                        <div className="subtle">
+                          <strong>Trend:</strong> {palworldBaseSignalTrend.indicator} {palworldBaseSignalTrend.direction}
+                        </div>
+
+                        {palworldBaseCapacityAlerts ? (
+                          <>
+                            <div className="subtle">
+                              <strong>Alert:</strong> {palworldBaseCapacityAlerts.severity} - {palworldBaseCapacityAlerts.alertMessage}
+                            </div>
+
+                            {palworldBaseCapacityAlerts.growthAlert ? (
+                              <div className="subtle">
+                                <strong>Growth Alert:</strong> {palworldBaseCapacityAlerts.growthAlert}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : null}
+                      </>
+                    )}
+                  </article>
+
+                  <article className="card">
                     <h2>Guild Hints</h2>
                     {palworldGuildsError ? <p className="error">{palworldGuildsError}</p> : null}
+                    {!palworldGuildsError ? (
+                      <div className="detail-block">
+                        <ul className="list compact">
+                          <li><span>Total Guild Hints</span><span>{palworldGuildSummary.totalGuildHints}</span></li>
+                          <li><span>Named Guilds</span><span>{palworldGuildSummary.namedGuilds}</span></li>
+                          <li><span>Unnamed / Unknown</span><span>{palworldGuildSummary.unnamedGuilds}</span></li>
+                          <li><span>Guilds With 2+ Members</span><span>{palworldGuildSummary.guildsWithTwoPlusMembers}</span></li>
+                          <li><span>Guilds With 3+ Members</span><span>{palworldGuildSummary.guildsWithThreePlusMembers}</span></li>
+                        </ul>
+                      </div>
+                    ) : null}
                     <ul className="list review-list">
                       {!palworldGuildsError && palworldGuilds.length === 0 ? <li>No guild hints available.</li> : null}
                       {palworldGuilds.map((guild, index) => (
