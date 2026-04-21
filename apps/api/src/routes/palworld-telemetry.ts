@@ -19,6 +19,7 @@ import {
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import type { FastifyInstance } from 'fastify';
+import { readFileSync } from 'node:fs';
 import {
   getLatestPalworldPlayerForServer,
   getLatestPalworldPlayersForServer,
@@ -143,6 +144,27 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
         serverId,
         events: getRecentPalworldMilestoneTransitionEventsForServer(serverId, limit)
       });
+    }
+  );
+
+  app.get<{ Params: { serverId: string } }>(
+    '/servers/:serverId/palworld/guilds',
+    async (request, reply): Promise<{ serverId: string; guilds: unknown[] } | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      try {
+        const path = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
+        const guilds = JSON.parse(readFileSync(path, 'utf8')) as unknown[];
+        return { serverId, guilds };
+      } catch (error) {
+        reply.code(500);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
     }
   );
 
