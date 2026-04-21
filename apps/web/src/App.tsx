@@ -786,13 +786,13 @@ function App() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          serverId: selectedServer.id,
-          playerId: event.playerId,
-          eventType: event.eventType,
-          occurredAt: new Date(event.occurredAt).toISOString().replace(/\.\d{3}Z$/, 'Z'),
-          fromValue: event.fromValue ?? null,
-          toValue: event.toValue ?? null
-        })
+  serverId: event.serverId,
+  playerId: event.playerId,
+  eventType: event.eventType,
+  occurredAt: event.occurredAt,  
+  fromValue: event.fromValue,
+  toValue: event.toValue
+})
       });
 
       if (!response.ok) {
