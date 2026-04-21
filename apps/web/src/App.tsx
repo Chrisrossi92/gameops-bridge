@@ -86,10 +86,33 @@ interface PalworldPlayerListEntry {
 
 type PalworldReviewAction = 'approve' | 'reject';
 
+interface PalworldGuildHint {
+  guildName?: string | null;
+  guildId?: string | null;
+  memberCount?: number | null;
+  members?: string[] | null;
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
 const LIVE_SIGNAL_WINDOW_MS = 10 * 60 * 1000;
+
+async function loadPalworldGuilds(serverId: string): Promise<PalworldGuildHint[]> {
+  const response = await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/guilds`);
+
+  if (!response.ok) {
+    throw new Error(`Palworld guilds fetch failed with status ${response.status}`);
+  }
+
+  const payload = await response.json() as { guilds?: unknown };
+
+  if (!Array.isArray(payload.guilds)) {
+    throw new Error('Palworld guilds payload validation failed.');
+  }
+
+  return payload.guilds.filter((guild): guild is PalworldGuildHint => typeof guild === 'object' && guild !== null);
+}
 
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -111,6 +134,8 @@ function App() {
   const [palworldMetrics, setPalworldMetrics] = useState<PalworldMetricsSummary[]>([]);
   const [palworldMilestoneFeed, setPalworldMilestoneFeed] = useState<PalworldMilestoneFeedEntry[]>([]);
   const [palworldTransitionEvents, setPalworldTransitionEvents] = useState<PalworldTransitionMilestoneEvent[]>([]);
+  const [palworldGuilds, setPalworldGuilds] = useState<PalworldGuildHint[]>([]);
+  const [palworldGuildsError, setPalworldGuildsError] = useState<string | null>(null);
   const [palworldTransitionPostSubmittingKey, setPalworldTransitionPostSubmittingKey] = useState<string | null>(null);
   const [palworldTransitionPostSuccessKey, setPalworldTransitionPostSuccessKey] = useState<string | null>(null);
   const [palworldTransitionPostErrorKey, setPalworldTransitionPostErrorKey] = useState<string | null>(null);
@@ -145,6 +170,8 @@ function App() {
     setPalworldMetrics([]);
     setPalworldMilestoneFeed([]);
     setPalworldTransitionEvents([]);
+    setPalworldGuilds([]);
+    setPalworldGuildsError(null);
     setPalworldTransitionPostSubmittingKey(null);
     setPalworldTransitionPostSuccessKey(null);
     setPalworldTransitionPostErrorKey(null);
@@ -401,6 +428,8 @@ function App() {
         setPalworldMetrics([]);
         setPalworldMilestoneFeed([]);
         setPalworldTransitionEvents([]);
+        setPalworldGuilds([]);
+        setPalworldGuildsError(null);
         setDetailLoading(false);
         setDetailError(null);
         return;
@@ -410,11 +439,17 @@ function App() {
         setDetailLoading(true);
         setDetailError(null);
 
-        const [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse] = await Promise.all([
+        const [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse, guildsResult] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest?limit=40`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/current?limit=24`),
-          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/transitions/recent?limit=24`)
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/transitions/recent?limit=24`),
+          loadPalworldGuilds(selectedServer.id)
+            .then((guilds) => ({ guilds, error: null }))
+            .catch((error: unknown) => ({
+              guilds: [],
+              error: error instanceof Error ? error.message : 'Unknown error'
+            }))
         ]);
 
         if (!latestPlayersResponse.ok || !metricsResponse.ok || !milestonesResponse.ok || !transitionsResponse.ok) {
@@ -446,6 +481,8 @@ function App() {
         setPalworldMetrics(metricsParsed.data.metrics);
         setPalworldMilestoneFeed(milestonesParsed.data.milestones);
         setPalworldTransitionEvents(transitionsParsed.data.events);
+        setPalworldGuilds(guildsResult.guilds);
+        setPalworldGuildsError(guildsResult.error);
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
@@ -455,6 +492,8 @@ function App() {
           setPalworldMetrics([]);
           setPalworldMilestoneFeed([]);
           setPalworldTransitionEvents([]);
+          setPalworldGuilds([]);
+          setPalworldGuildsError(null);
         }
       } finally {
         if (isMounted) {
@@ -1402,6 +1441,26 @@ function App() {
                         </div>
                       </>
                     ) : null}
+                  </article>
+
+                  <article className="card">
+                    <h2>Guild Hints</h2>
+                    {palworldGuildsError ? <p className="error">{palworldGuildsError}</p> : null}
+                    <ul className="list review-list">
+                      {!palworldGuildsError && palworldGuilds.length === 0 ? <li>No guild hints available.</li> : null}
+                      {palworldGuilds.map((guild, index) => (
+                        <li key={`${guild.guildId ?? guild.guildName ?? 'guild'}:${index}`} className="review-row">
+                          <div className="review-main">
+                            <div><strong>{guild.guildName?.trim() || 'Unknown Guild'}</strong></div>
+                            <div className="subtle">guildId {guild.guildId?.trim() || 'N/A'}</div>
+                            <div className="subtle">memberCount {guild.memberCount ?? guild.members?.length ?? 0}</div>
+                            <div className="subtle">
+                              members {guild.members && guild.members.length > 0 ? guild.members.join(', ') : 'None'}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </article>
 
                   <article className="card">
