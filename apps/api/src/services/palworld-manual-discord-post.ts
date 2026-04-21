@@ -19,7 +19,7 @@ const localBotConfigSchema = z.object({
 });
 
 function resolveBotConfigPath(): string {
-  const configured = process.env.BOT_LOCAL_CONFIG_PATH;
+  const configured = process.env.GAMEOPS_BOT_CONFIG_PATH ?? process.env.BOT_LOCAL_CONFIG_PATH;
 
   if (configured) {
     return isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
@@ -54,21 +54,42 @@ function resolvePalworldActivityChannelId(serverId: string): string {
   return channelId;
 }
 
+function normalizeNullable(value: string | null | undefined): string | null {
+  return value == null ? null : value.trim();
+}
+
+function normalizeIso(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value.trim() : parsed.toISOString();
+}
+
 function findTransitionEvent(input: PalworldManualTransitionPostAction): PalworldTransitionMilestoneEvent {
   const events = getRecentPalworldMilestoneTransitionEventsForServer(input.serverId, 500);
-  const matched = events.find((event) => (
+
+  const exactMatch = events.find((event) => (
     event.playerId === input.playerId
     && event.eventType === input.eventType
-    && event.occurredAt === input.occurredAt
-    && (event.fromValue ?? null) === (input.fromValue ?? null)
-    && (event.toValue ?? null) === (input.toValue ?? null)
+    && normalizeIso(event.occurredAt) === normalizeIso(input.occurredAt)
+    && normalizeNullable(event.fromValue) === normalizeNullable(input.fromValue)
+    && normalizeNullable(event.toValue) === normalizeNullable(input.toValue)
   )) ?? null;
 
-  if (!matched) {
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const fallbackMatch = events.find((event) => (
+    event.playerId === input.playerId
+    && event.eventType === input.eventType
+    && normalizeNullable(event.fromValue) === normalizeNullable(input.fromValue)
+    && normalizeNullable(event.toValue) === normalizeNullable(input.toValue)
+  )) ?? null;
+
+  if (!fallbackMatch) {
     throw new Error('Transition event not found');
   }
 
-  return matched;
+  return fallbackMatch;
 }
 
 export async function postPalworldTransitionPreviewToDiscord(
