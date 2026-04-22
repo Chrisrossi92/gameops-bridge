@@ -33,7 +33,7 @@ import {
   evaluatePalworldMilestoneTransitionsForServer,
   getRecentPalworldMilestoneTransitionEventsForServer
 } from '../services/palworld-milestone-transition-store.js';
-import { postPalworldTransitionPreviewToDiscord } from '../services/palworld-manual-discord-post.js';
+import { postPalworldDiscordMessage, postPalworldTransitionPreviewToDiscord } from '../services/palworld-manual-discord-post.js';
 
 interface PalworldGuildSummary {
   guildName?: string | null;
@@ -47,6 +47,17 @@ interface PalworldBaseSignalHistoryEntry {
   baseSignal: number;
 }
 
+interface PalworldBaseAlertState {
+  statusLabel: PalworldBaseAlertResponse['statusLabel'] | null;
+  growthAlertMessage: string | null;
+}
+
+interface PalworldBaseSignalResponse {
+  serverId: string;
+  baseSignal: number;
+  refinedEstimatedBases: number;
+}
+
 interface PalworldBaseAlertResponse {
   serverId: string;
   usagePercent: number;
@@ -58,6 +69,19 @@ interface PalworldBaseAlertResponse {
 }
 
 const PALWORLD_GUILD_PLACEHOLDERS = new Set(['unknown', 'unknown guild', 'unnamed guild', 'none', 'null']);
+const PALWORLD_GUILD_MEMBER_FALSE_POSITIVES = new Set([
+  'epalgrouptype',
+  'grouptype',
+  'rawdata',
+  'none',
+  'groupid',
+  'guildid',
+  'guildname',
+  'playeruid',
+  'instanceid',
+  'name',
+  'members'
+]);
 const PALWORLD_GUILD_ENGINE_LABELS = [
   'epalgrouptype',
   'grouptype',
@@ -75,6 +99,9 @@ const PALWORLD_GUILD_ENGINE_LABELS = [
   'instanceid'
 ];
 const PALWORLD_BASE_SIGNAL_HISTORY_PATH = '/var/backups/gameops/palworld-parse-output/latest/base-signal-history.json';
+const PALWORLD_BASE_ALERT_STATE_PATH = '/var/backups/gameops/palworld-parse-output/latest/base-alert-state.json';
+const PALWORLD_LEVEL_STRINGS_PATH = '/tmp/level.strings.txt';
+const PALWORLD_GUID_PATTERN = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})\b/gi;
 
 function normalizeGuildText(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
@@ -100,6 +127,37 @@ function hasEnoughLettersForGuildName(value: string): boolean {
   return letters.length >= 4 && vowelish.length >= 1;
 }
 
+function isLikelyJunkGuildToken(value: string): boolean {
+  const normalized = normalizeGuildText(value);
+  const letterCount = (normalized.match(/[A-Za-z]/g) ?? []).length;
+  const upperCount = (normalized.match(/[A-Z]/g) ?? []).length;
+  const lowerCount = (normalized.match(/[a-z]/g) ?? []).length;
+
+  if (!normalized || /^[^A-Za-z]*$/.test(normalized) || /(.)\1{3,}/.test(normalized)) {
+    return true;
+  }
+
+  if (
+    normalized.length <= 6
+    && /[0-9]/.test(normalized)
+    && !/[aeiouy]/i.test(normalized)
+  ) {
+    return true;
+  }
+
+  if (
+    normalized.length <= 6
+    && letterCount >= 3
+    && upperCount >= 1
+    && lowerCount >= 1
+    && !/[aeiouy]/i.test(normalized)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function isReadableGuildNameCandidate(value: string): boolean {
   const normalized = normalizeGuildText(value);
 
@@ -112,6 +170,10 @@ function isReadableGuildNameCandidate(value: string): boolean {
   }
 
   if (!/[A-Za-z]/.test(normalized) || !hasEnoughLettersForGuildName(normalized)) {
+    return false;
+  }
+
+  if (isLikelyJunkGuildToken(normalized)) {
     return false;
   }
 
@@ -161,12 +223,20 @@ function scoreGuildNameCandidate(value: string): number {
     score += 1;
   }
 
+  if (/^[A-Z][a-z]+(?: [A-Z][a-z]+)*$/.test(normalized)) {
+    score += 2;
+  }
+
   if (/[0-9]/.test(normalized)) {
     score -= 2;
   }
 
   if (/^[a-z][A-Z]/.test(normalized)) {
     score -= 1;
+  }
+
+  if (isLikelyJunkGuildToken(normalized)) {
+    score -= 4;
   }
 
   return score;
@@ -179,7 +249,13 @@ function isStrictMemberCandidate(value: string): boolean {
     return false;
   }
 
-  if (isGuidLike(normalized) || isPlaceholderGuildLabel(normalized) || isEngineLikeGuildLabel(normalized)) {
+  if (
+    isGuidLike(normalized)
+    || isPlaceholderGuildLabel(normalized)
+    || isEngineLikeGuildLabel(normalized)
+    || PALWORLD_GUILD_MEMBER_FALSE_POSITIVES.has(normalized.toLowerCase())
+    || isLikelyJunkGuildToken(normalized)
+  ) {
     return false;
   }
 
@@ -192,6 +268,17 @@ function isStrictMemberCandidate(value: string): boolean {
   }
 
   return true;
+}
+
+function looksMoreLikeGuildNameThanPlayer(value: string): boolean {
+  const normalized = normalizeGuildText(value);
+  return isReadableGuildNameCandidate(normalized)
+    && (
+      scoreGuildNameCandidate(normalized) >= 4
+      || normalized.includes(' ')
+      || /s$/i.test(normalized)
+      || normalized.length >= 8
+    );
 }
 
 function collectGuildStringCandidates(value: unknown, found = new Set<string>(), depth = 0): string[] {
@@ -246,7 +333,7 @@ function sanitizePalworldGuilds(guilds: unknown[]): PalworldGuildSummary[] {
 
     const preferredGuildName = candidatePool[0] ?? '';
     const shouldPromoteMemberName = cleanedMembers.includes(preferredGuildName)
-      && scoreGuildNameCandidate(preferredGuildName) >= 3
+      && looksMoreLikeGuildNameThanPlayer(preferredGuildName)
       && (!isReadableGuildNameCandidate(rawGuildName) || isPlaceholderGuildLabel(rawGuildName));
     const resolvedGuildName = isReadableGuildNameCandidate(rawGuildName)
       ? rawGuildName
@@ -260,7 +347,7 @@ function sanitizePalworldGuilds(guilds: unknown[]): PalworldGuildSummary[] {
       ...guild,
       guildName: finalGuildName,
       members: finalMembers,
-      memberCount: guild.memberCount ?? finalMembers.length
+      memberCount: finalMembers.length
     };
   });
 }
@@ -296,16 +383,150 @@ function appendPalworldBaseSignalHistory(baseSignal: number): void {
   writeFileSync(PALWORLD_BASE_SIGNAL_HISTORY_PATH, `${JSON.stringify(nextHistory, null, 2)}\n`, 'utf8');
 }
 
-function readCurrentPalworldBaseSignal(): number {
-  const result = execSync(
-    "grep -c 'BaseCampSaveData' /tmp/level.strings.txt"
-  ).toString().trim();
+function readPalworldBaseAlertStateByServer(): Record<string, PalworldBaseAlertState> {
+  try {
+    const parsed = JSON.parse(readFileSync(PALWORLD_BASE_ALERT_STATE_PATH, 'utf8')) as unknown;
 
-  return parseInt(result, 10) || 0;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const entries = Object.entries(parsed as Record<string, unknown>)
+      .filter(([, value]) => Boolean(value) && typeof value === 'object' && !Array.isArray(value))
+      .map(([serverId, value]) => {
+        const candidate = value as Partial<PalworldBaseAlertState>;
+        const statusLabel = candidate.statusLabel;
+
+        return [
+          serverId,
+          {
+            statusLabel: statusLabel === 'safe' || statusLabel === 'warning' || statusLabel === 'high' || statusLabel === 'critical'
+              ? statusLabel
+              : null,
+            growthAlertMessage: typeof candidate.growthAlertMessage === 'string' ? candidate.growthAlertMessage : null
+          }
+        ] satisfies [string, PalworldBaseAlertState];
+      });
+
+    return Object.fromEntries(entries);
+  } catch {
+    return {};
+  }
 }
 
-function buildPalworldBaseAlertResponse(serverId: string, baseSignal: number, history: PalworldBaseSignalHistoryEntry[]): PalworldBaseAlertResponse {
-  const estimatedBases = Math.round(baseSignal / 3);
+function writePalworldBaseAlertStateByServer(value: Record<string, PalworldBaseAlertState>): void {
+  writeFileSync(PALWORLD_BASE_ALERT_STATE_PATH, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
+function computePalworldBaseSignalTrend(history: PalworldBaseSignalHistoryEntry[]): {
+  direction: 'increasing' | 'stable' | 'decreasing';
+  indicator: '▲' | '→' | '▼';
+} {
+  const recentHistory = history.slice(-5);
+
+  if (recentHistory.length < 2) {
+    return {
+      direction: 'stable',
+      indicator: '→'
+    };
+  }
+
+  const delta = recentHistory[recentHistory.length - 1].baseSignal - recentHistory[0].baseSignal;
+
+  if (delta > 0) {
+    return {
+      direction: 'increasing',
+      indicator: '▲'
+    };
+  }
+
+  if (delta < 0) {
+    return {
+      direction: 'decreasing',
+      indicator: '▼'
+    };
+  }
+
+  return {
+    direction: 'stable',
+    indicator: '→'
+  };
+}
+
+function countBaseSignalOccurrences(content: string): number {
+  return content.match(/BaseCampSaveData/g)?.length ?? 0;
+}
+
+function estimateRefinedBaseCountFromStrings(content: string, rawBaseSignal: number): number {
+  const fallbackEstimate = Math.round(rawBaseSignal / 3);
+
+  if (rawBaseSignal <= 0) {
+    return 0;
+  }
+
+  const lines = content.split(/\r?\n/);
+  const baseMarkerIndexes = lines
+    .map((line, index) => (line.includes('BaseCampSaveData') ? index : -1))
+    .filter((index) => index >= 0);
+  const nearbyUniqueIds = new Set<string>();
+
+  for (const index of baseMarkerIndexes) {
+    const windowText = lines.slice(Math.max(0, index - 2), index + 25).join('\n');
+    const matches = [...windowText.matchAll(PALWORLD_GUID_PATTERN)]
+      .map((match) => match[0].toLowerCase())
+      .filter((value) => !/^0+$/.test(value.replace(/-/g, '')));
+    const candidateId = matches[0];
+
+    if (candidateId) {
+      nearbyUniqueIds.add(candidateId);
+    }
+  }
+
+  const uniqueIdEstimate = nearbyUniqueIds.size;
+
+  if (
+    uniqueIdEstimate > 0
+    && uniqueIdEstimate <= rawBaseSignal
+    && uniqueIdEstimate >= Math.max(1, Math.floor(fallbackEstimate / 2))
+  ) {
+    return uniqueIdEstimate;
+  }
+
+  return fallbackEstimate;
+}
+
+function readCurrentPalworldBaseSignal(): {
+  baseSignal: number;
+  refinedEstimatedBases: number;
+} {
+  try {
+    const content = readFileSync(PALWORLD_LEVEL_STRINGS_PATH, 'utf8');
+    const baseSignal = countBaseSignalOccurrences(content);
+
+    return {
+      baseSignal,
+      refinedEstimatedBases: estimateRefinedBaseCountFromStrings(content, baseSignal)
+    };
+  } catch {
+    const result = execSync(
+      "grep -c 'BaseCampSaveData' /tmp/level.strings.txt"
+    ).toString().trim();
+    const baseSignal = parseInt(result, 10) || 0;
+
+    return {
+      baseSignal,
+      refinedEstimatedBases: Math.round(baseSignal / 3)
+    };
+  }
+}
+
+function buildPalworldBaseAlertResponse(
+  serverId: string,
+  baseSignal: number,
+  refinedEstimatedBases: number,
+  history: PalworldBaseSignalHistoryEntry[]
+): PalworldBaseAlertResponse {
+  const estimatedBases = refinedEstimatedBases;
   const usagePercent = Math.round((estimatedBases / 240) * 100);
   const remainingCapacity = Math.max(0, 240 - estimatedBases);
 
@@ -345,6 +566,89 @@ function buildPalworldBaseAlertResponse(serverId: string, baseSignal: number, hi
     alertMessage,
     growthAlertMessage
   };
+}
+
+function buildPalworldBasePressureDiscordMessage(input: {
+  alert: PalworldBaseAlertResponse;
+  trend: ReturnType<typeof computePalworldBaseSignalTrend>;
+}): string {
+  const title = input.alert.statusLabel === 'critical'
+    ? '🚨 Base Pressure Critical'
+    : input.alert.statusLabel === 'high'
+      ? '⚠️ Base Pressure High'
+      : '⚠️ Base Pressure Warning';
+
+  return [
+    title,
+    `Usage: ${input.alert.usagePercent}%`,
+    `Estimated Bases: ${input.alert.estimatedBases} / 240`,
+    `Remaining Slots: ${input.alert.remainingCapacity}`,
+    '',
+    `Status: ${input.alert.statusLabel[0]!.toUpperCase()}${input.alert.statusLabel.slice(1)}`,
+    `Trend: ${input.trend.indicator} ${input.trend.direction}`
+  ].join('\n');
+}
+
+function buildPalworldBaseGrowthDiscordMessage(input: {
+  alert: PalworldBaseAlertResponse;
+  trend: ReturnType<typeof computePalworldBaseSignalTrend>;
+}): string {
+  return [
+    '📈 Base Growth Alert',
+    input.alert.growthAlertMessage ?? 'Base growth detected',
+    '',
+    `Usage: ${input.alert.usagePercent}%`,
+    `Estimated Bases: ${input.alert.estimatedBases} / 240`,
+    `Remaining Slots: ${input.alert.remainingCapacity}`,
+    '',
+    `Status: ${input.alert.statusLabel[0]!.toUpperCase()}${input.alert.statusLabel.slice(1)}`,
+    `Trend: ${input.trend.indicator} ${input.trend.direction}`
+  ].join('\n');
+}
+
+async function evaluatePalworldBasePressureAlerts(input: {
+  serverId: string;
+  alert: PalworldBaseAlertResponse;
+  history: PalworldBaseSignalHistoryEntry[];
+}): Promise<void> {
+  const stateByServer = readPalworldBaseAlertStateByServer();
+  const previousState = stateByServer[input.serverId] ?? {
+    statusLabel: null,
+    growthAlertMessage: null
+  };
+  const trend = computePalworldBaseSignalTrend(input.history);
+  const shouldSendStatusAlert = input.alert.statusLabel !== previousState.statusLabel
+    && (input.alert.statusLabel === 'warning' || input.alert.statusLabel === 'high' || input.alert.statusLabel === 'critical');
+  const shouldSendGrowthAlert = input.alert.growthAlertMessage !== null
+    && input.alert.growthAlertMessage !== previousState.growthAlertMessage;
+
+  if (shouldSendStatusAlert) {
+    await postPalworldDiscordMessage(
+      input.serverId,
+      buildPalworldBasePressureDiscordMessage({
+        alert: input.alert,
+        trend
+      })
+    );
+  }
+
+  if (shouldSendGrowthAlert) {
+    await postPalworldDiscordMessage(
+      input.serverId,
+      buildPalworldBaseGrowthDiscordMessage({
+        alert: input.alert,
+        trend
+      })
+    );
+  }
+
+  if (shouldSendStatusAlert || shouldSendGrowthAlert || previousState.statusLabel !== input.alert.statusLabel || previousState.growthAlertMessage !== input.alert.growthAlertMessage) {
+    stateByServer[input.serverId] = {
+      statusLabel: input.alert.statusLabel,
+      growthAlertMessage: input.alert.growthAlertMessage
+    };
+    writePalworldBaseAlertStateByServer(stateByServer);
+  }
 }
 
 export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Promise<void> {
@@ -483,7 +787,7 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
 
   app.get<{ Params: { serverId: string } }>(
     '/servers/:serverId/palworld/base-signal',
-    async (request, reply): Promise<{ serverId: string; baseSignal: number } | { error: string }> => {
+    async (request, reply): Promise<PalworldBaseSignalResponse | { error: string }> => {
       const serverId = request.params.serverId.trim();
 
       if (!serverId) {
@@ -492,10 +796,21 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       }
 
       try {
-        const baseSignal = readCurrentPalworldBaseSignal();
+        const { baseSignal, refinedEstimatedBases } = readCurrentPalworldBaseSignal();
         appendPalworldBaseSignalHistory(baseSignal);
+        const history = readPalworldBaseSignalHistory();
+        const alert = buildPalworldBaseAlertResponse(serverId, baseSignal, refinedEstimatedBases, history);
+        try {
+          await evaluatePalworldBasePressureAlerts({
+            serverId,
+            alert,
+            history
+          });
+        } catch {
+          // Keep the route readable even if Discord is temporarily unavailable.
+        }
 
-        return { serverId, baseSignal };
+        return { serverId, baseSignal, refinedEstimatedBases };
       } catch (error) {
         reply.code(500);
         return { error: error instanceof Error ? error.message : String(error) };
@@ -514,10 +829,26 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       }
 
       try {
-        const baseSignal = readCurrentPalworldBaseSignal();
-        const history = readPalworldBaseSignalHistory();
+        const { baseSignal, refinedEstimatedBases } = readCurrentPalworldBaseSignal();
+        const history = [
+          ...readPalworldBaseSignalHistory(),
+          {
+            timestamp: new Date().toISOString(),
+            baseSignal
+          }
+        ].slice(-100);
+        const alert = buildPalworldBaseAlertResponse(serverId, baseSignal, refinedEstimatedBases, history);
+        try {
+          await evaluatePalworldBasePressureAlerts({
+            serverId,
+            alert,
+            history
+          });
+        } catch {
+          // Keep the route readable even if Discord is temporarily unavailable.
+        }
 
-        return buildPalworldBaseAlertResponse(serverId, baseSignal, history);
+        return alert;
       } catch (error) {
         reply.code(500);
         return { error: error instanceof Error ? error.message : String(error) };

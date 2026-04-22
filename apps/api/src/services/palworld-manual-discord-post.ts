@@ -42,7 +42,7 @@ function resolveBotConfigPath(): string {
   return candidatePaths[0]!;
 }
 
-function resolvePalworldActivityChannelId(serverId: string): string {
+export function resolvePalworldActivityChannelId(serverId: string): string {
   const path = resolveBotConfigPath();
   const parsed = localBotConfigSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown);
   const channelId = parsed.eventRoutes[serverId]?.PLAYER_JOIN ?? '';
@@ -52,6 +52,36 @@ function resolvePalworldActivityChannelId(serverId: string): string {
   }
 
   return channelId;
+}
+
+export async function postPalworldDiscordMessage(serverId: string, content: string): Promise<{ channelId: string; messagePreview: string }> {
+  const token = process.env.DISCORD_BOT_TOKEN;
+
+  if (!token) {
+    throw new Error('Missing DISCORD_BOT_TOKEN');
+  }
+
+  const channelId = resolvePalworldActivityChannelId(serverId);
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      content
+    })
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: string } | null;
+    throw new Error(payload?.message ?? `Discord post failed with status ${response.status}`);
+  }
+
+  return {
+    channelId,
+    messagePreview: content
+  };
 }
 
 function normalizeNullable(value: string | null | undefined): string | null {
@@ -95,34 +125,12 @@ function findTransitionEvent(input: PalworldManualTransitionPostAction): Palworl
 export async function postPalworldTransitionPreviewToDiscord(
   input: PalworldManualTransitionPostAction
 ): Promise<PalworldManualTransitionPostResponse> {
-  const token = process.env.DISCORD_BOT_TOKEN;
-
-  if (!token) {
-    throw new Error('Missing DISCORD_BOT_TOKEN');
-  }
-
   const event = findTransitionEvent(input);
-  const channelId = resolvePalworldActivityChannelId(input.serverId);
-
-  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bot ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      content: event.previewMessage
-    })
-  });
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { message?: string } | null;
-    throw new Error(payload?.message ?? `Discord post failed with status ${response.status}`);
-  }
+  const { channelId, messagePreview } = await postPalworldDiscordMessage(input.serverId, event.previewMessage);
 
   return palworldManualTransitionPostResponseSchema.parse({
     ok: true,
     channelId,
-    messagePreview: event.previewMessage
+    messagePreview
   });
 }
