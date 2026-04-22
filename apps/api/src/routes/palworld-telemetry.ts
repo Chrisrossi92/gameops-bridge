@@ -7,8 +7,10 @@ import {
   palworldTransitionMilestoneEventsResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerTelemetryProfileResponseSchema,
+  palworldHighlightsResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   type PalworldLatestPlayersResponse,
+  type PalworldHighlightsResponse,
   type PalworldManualTransitionPostAction,
   type PalworldManualTransitionPostResponse,
   type PalworldMilestoneFeedResponse,
@@ -28,7 +30,8 @@ import {
   getRecentPalworldPlayerSnapshotsForServer,
   getRecentPalworldMetricsForServer
 } from '../services/palworld-telemetry-store.js';
-import { getPalworldMilestoneFeedForServer, getPalworldUnifiedPlayerProfile } from '../services/palworld-player-profile.js';
+import { getPalworldMilestoneFeedForServer, getPalworldUnifiedPlayerProfile, getPalworldUnifiedProfilesForServer } from '../services/palworld-player-profile.js';
+import { generatePalworldHighlights } from '../services/palworld-highlight-generator.js';
 import {
   evaluatePalworldMilestoneTransitionsForServer,
   getRecentPalworldMilestoneTransitionEventsForServer
@@ -871,6 +874,45 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
           serverId,
           history: readPalworldBaseSignalHistory()
         };
+      } catch (error) {
+        reply.code(500);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  app.get<{ Params: { serverId: string } }>(
+    '/servers/:serverId/palworld/highlights',
+    async (request, reply): Promise<PalworldHighlightsResponse | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      try {
+        const path = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
+        const guilds = sanitizePalworldGuilds(JSON.parse(readFileSync(path, 'utf8')) as unknown[]);
+        const { baseSignal, refinedEstimatedBases } = readCurrentPalworldBaseSignal();
+        const history = [
+          ...readPalworldBaseSignalHistory(),
+          {
+            timestamp: new Date().toISOString(),
+            baseSignal
+          }
+        ].slice(-100);
+        const baseAlert = buildPalworldBaseAlertResponse(serverId, baseSignal, refinedEstimatedBases, history);
+
+        return palworldHighlightsResponseSchema.parse(
+          generatePalworldHighlights({
+            serverId,
+            milestoneFeed: getPalworldMilestoneFeedForServer(serverId, 50),
+            guilds,
+            profiles: getPalworldUnifiedProfilesForServer(serverId, 10_000),
+            baseAlert
+          })
+        );
       } catch (error) {
         reply.code(500);
         return { error: error instanceof Error ? error.message : String(error) };

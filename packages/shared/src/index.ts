@@ -255,6 +255,22 @@ export const palworldMetricsSummariesResponseSchema = z.object({
 });
 export type PalworldMetricsSummariesResponse = z.infer<typeof palworldMetricsSummariesResponseSchema>;
 
+export const palworldHighlightImportanceSchema = z.enum(['high', 'medium', 'low']);
+export type PalworldHighlightImportance = z.infer<typeof palworldHighlightImportanceSchema>;
+
+export const palworldHighlightSchema = z.object({
+  type: z.string().min(1),
+  message: z.string().min(1),
+  importance: palworldHighlightImportanceSchema
+});
+export type PalworldHighlight = z.infer<typeof palworldHighlightSchema>;
+
+export const palworldHighlightsResponseSchema = z.object({
+  serverId: z.string().min(1),
+  highlights: z.array(palworldHighlightSchema).max(5)
+});
+export type PalworldHighlightsResponse = z.infer<typeof palworldHighlightsResponseSchema>;
+
 export const palworldIdentityLinkCandidateSchema = z.object({
   serverId: z.string().min(1),
   savePlayerFileName: z.string().min(1),
