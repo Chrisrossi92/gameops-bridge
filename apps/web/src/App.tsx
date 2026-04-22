@@ -98,6 +98,8 @@ interface PalworldBaseSignalHistoryEntry {
   baseSignal: number;
 }
 
+type DashboardTab = 'overview' | 'highlights' | 'players' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
@@ -142,6 +144,7 @@ function App() {
   const [palworldMilestoneFeed, setPalworldMilestoneFeed] = useState<PalworldMilestoneFeedEntry[]>([]);
   const [palworldTransitionEvents, setPalworldTransitionEvents] = useState<PalworldTransitionMilestoneEvent[]>([]);
   const [palworldBaseSignal, setPalworldBaseSignal] = useState<number | null>(null);
+  const [palworldRefinedEstimatedBases, setPalworldRefinedEstimatedBases] = useState<number | null>(null);
   const [palworldBaseSignalHistory, setPalworldBaseSignalHistory] = useState<PalworldBaseSignalHistoryEntry[]>([]);
   const [palworldGuilds, setPalworldGuilds] = useState<PalworldGuildHint[]>([]);
   const [palworldGuildsError, setPalworldGuildsError] = useState<string | null>(null);
@@ -167,6 +170,7 @@ function App() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [selectedDashboardTab, setSelectedDashboardTab] = useState<DashboardTab>('overview');
 
   useEffect(() => {
     setSelectedValheimPlayerLookupKey(null);
@@ -182,6 +186,7 @@ function App() {
     setPalworldMilestoneFeed([]);
     setPalworldTransitionEvents([]);
     setPalworldBaseSignal(null);
+    setPalworldRefinedEstimatedBases(null);
     setPalworldBaseSignalHistory([]);
     setPalworldGuilds([]);
     setPalworldGuildsError(null);
@@ -203,6 +208,7 @@ function App() {
     setPalworldManualLinkError(null);
     setPalworldManualLinkSuccess(null);
     setDetailError(null);
+    setSelectedDashboardTab('overview');
   }, [selectedServerId]);
 
   useEffect(() => {
@@ -434,8 +440,9 @@ function App() {
 
   async function loadBaseSignal(serverId: string, response?: Response): Promise<void> {
     const res = response ?? await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/base-signal`);
-    const data = await res.json() as { baseSignal?: number };
+    const data = await res.json() as { baseSignal?: number; refinedEstimatedBases?: number };
     setPalworldBaseSignal(data.baseSignal ?? 0);
+    setPalworldRefinedEstimatedBases(data.refinedEstimatedBases ?? Math.round((data.baseSignal ?? 0) / 3));
   }
 
   async function loadBaseSignalHistory(serverId: string, response?: Response): Promise<void> {
@@ -463,6 +470,7 @@ function App() {
         setPalworldMilestoneFeed([]);
         setPalworldTransitionEvents([]);
         setPalworldBaseSignal(null);
+        setPalworldRefinedEstimatedBases(null);
         setPalworldBaseSignalHistory([]);
         setPalworldGuilds([]);
         setPalworldGuildsError(null);
@@ -533,6 +541,7 @@ function App() {
           setPalworldMilestoneFeed([]);
           setPalworldTransitionEvents([]);
           setPalworldBaseSignal(null);
+          setPalworldRefinedEstimatedBases(null);
           setPalworldBaseSignalHistory([]);
           setPalworldGuilds([]);
           setPalworldGuildsError(null);
@@ -1033,8 +1042,8 @@ function App() {
       return null;
     }
 
-    const estimatedBases = Math.round(palworldBaseSignal / 3);
-    const usagePercent = Math.round((palworldBaseSignal / 3 / 240) * 100);
+    const estimatedBases = palworldRefinedEstimatedBases ?? Math.round(palworldBaseSignal / 3);
+    const usagePercent = Math.round((estimatedBases / 240) * 100);
     const remainingCapacity = Math.max(0, 240 - estimatedBases);
     let statusLabel = 'Safe';
     let summary = 'Plenty of room remaining';
@@ -1064,7 +1073,7 @@ function App() {
       statusLabel,
       summary
     };
-  }, [palworldBaseSignal]);
+  }, [palworldBaseSignal, palworldRefinedEstimatedBases]);
 
   const palworldBaseSignalTrend = useMemo(() => {
     const recentValues = palworldBaseSignalHistory.slice(-5).map((entry) => entry.baseSignal);
@@ -1157,18 +1166,34 @@ function App() {
   }, [palworldPlayerProfiles]);
 
   const palworldGuildSummary = useMemo(() => {
-    const namedGuilds = palworldGuilds.filter((guild) => (guild.guildName?.trim() ?? '') !== '').length;
+    const isLikelyRealGuild = (guild: PalworldGuildHint): boolean => {
+      const normalizedName = guild.guildName?.trim().toLowerCase() ?? '';
+      return normalizedName !== ''
+        && normalizedName !== 'unknown'
+        && normalizedName !== 'unknown guild'
+        && normalizedName !== 'unnamed guild';
+    };
+
     const guildsWithTwoPlusMembers = palworldGuilds.filter((guild) => (guild.memberCount ?? guild.members?.length ?? 0) >= 2).length;
     const guildsWithThreePlusMembers = palworldGuilds.filter((guild) => (guild.memberCount ?? guild.members?.length ?? 0) >= 3).length;
 
     return {
       totalGuildHints: palworldGuilds.length,
-      namedGuilds,
-      unnamedGuilds: palworldGuilds.length - namedGuilds,
-      guildsWithTwoPlusMembers,
-      guildsWithThreePlusMembers
+      likelyRealGuilds: palworldGuilds.filter(isLikelyRealGuild).length,
+      activeGuildsTwoPlus: guildsWithTwoPlusMembers,
+      activeGuildsThreePlus: guildsWithThreePlusMembers
     };
   }, [palworldGuilds]);
+
+  const palworldWorldCapacitySummary = useMemo(() => {
+    return {
+      likelyRealGuilds: palworldGuildSummary.likelyRealGuilds,
+      activeGuilds: palworldGuildSummary.activeGuildsTwoPlus,
+      estimatedBases: palworldBaseCapacity?.estimatedBases ?? null,
+      remainingBaseSlots: palworldBaseCapacity?.remainingCapacity ?? null,
+      pressureStatus: palworldBaseCapacity?.statusLabel ?? 'Unknown'
+    };
+  }, [palworldBaseCapacity, palworldGuildSummary]);
 
   useEffect(() => {
     if (!selectedServer || selectedServer.game !== 'palworld') {
@@ -1229,6 +1254,275 @@ function App() {
     () => summarizeWarnings(selectedServerSummary?.recentWarnings ?? []),
     [selectedServerSummary]
   );
+
+  const detailTabs = useMemo(() => {
+    if (selectedServer?.game === 'palworld') {
+      return [
+        { key: 'overview', label: 'Overview' },
+        { key: 'highlights', label: 'Highlights' },
+        { key: 'players', label: 'Players' },
+        { key: 'guilds', label: 'Guilds' },
+        { key: 'metrics', label: 'Metrics' },
+        { key: 'ops', label: 'Ops' },
+        { key: 'diagnostics', label: 'Diagnostics' }
+      ] satisfies Array<{ key: DashboardTab; label: string }>;
+    }
+
+    return [
+      { key: 'overview', label: 'Overview' },
+      { key: 'highlights', label: 'Highlights' },
+      { key: 'players', label: 'Players' },
+      { key: 'activity', label: 'Activity' },
+      { key: 'metrics', label: 'Metrics' },
+      { key: 'ops', label: 'Ops' },
+      { key: 'diagnostics', label: 'Diagnostics' }
+    ] satisfies Array<{ key: DashboardTab; label: string }>;
+  }, [selectedServer?.game]);
+
+  useEffect(() => {
+    if (!detailTabs.some((tab) => tab.key === selectedDashboardTab)) {
+      setSelectedDashboardTab('overview');
+    }
+  }, [detailTabs, selectedDashboardTab]);
+
+  const selectedAlertCount = useMemo(() => {
+    let count = selectedServerSummary?.recentWarnings.length ?? 0;
+
+    if (selectedServer?.game === 'palworld' && palworldBaseCapacityAlerts) {
+      if (palworldBaseCapacityAlerts.severity !== 'safe') {
+        count += 1;
+      }
+
+      if (palworldBaseCapacityAlerts.growthAlert) {
+        count += 1;
+      }
+    }
+
+    return count;
+  }, [palworldBaseCapacityAlerts, selectedServer?.game, selectedServerSummary]);
+
+  const palworldOverviewHighlights = useMemo(() => {
+    const items: string[] = [];
+    const pushHighlight = (value: string | null | undefined): void => {
+      const normalized = value?.trim();
+
+      if (!normalized || items.includes(normalized)) {
+        return;
+      }
+
+      items.push(normalized);
+    };
+
+    if (palworldBaseCapacity) {
+      pushHighlight(`Base pressure is ${palworldBaseCapacity.statusLabel.toLowerCase()} at ${palworldBaseCapacity.usagePercent}% capacity`);
+      pushHighlight(`Estimated bases at ${palworldBaseCapacity.estimatedBases} / 240 with ${palworldBaseCapacity.remainingCapacity} slots left`);
+    }
+
+    if (palworldBaseCapacityAlerts?.growthAlert) {
+      pushHighlight(palworldBaseCapacityAlerts.growthAlert);
+    } else if (palworldBaseSignalTrend.direction === 'increasing') {
+      pushHighlight(`Base trend is ${palworldBaseSignalTrend.indicator} increasing`);
+    }
+
+    if (palworldGuildSummary.activeGuildsThreePlus > 0) {
+      pushHighlight(`${palworldGuildSummary.activeGuildsThreePlus} guilds have 3+ active members`);
+    } else if (palworldGuildSummary.activeGuildsTwoPlus > 0) {
+      pushHighlight(`${palworldGuildSummary.activeGuildsTwoPlus} guilds have at least 2 active members`);
+    } else if (palworldGuildSummary.likelyRealGuilds > 0) {
+      pushHighlight(`${palworldGuildSummary.likelyRealGuilds} likely real guilds detected`);
+    }
+
+    if (palworldCorePlayers[0]) {
+      const player = palworldCorePlayers[0];
+      pushHighlight(`Core player online: ${player.playerName ?? player.accountName ?? player.playerId}`);
+    }
+
+    if (palworldMilestoneFeed[0]) {
+      const entry = palworldMilestoneFeed[0];
+      pushHighlight(`${entry.playerName ?? entry.accountName ?? entry.playerId} reached ${entry.signalLabel}`);
+    }
+
+    if (palworldTransitionEvents[0]) {
+      const event = palworldTransitionEvents[0];
+      pushHighlight(`${event.playerName ?? event.accountName ?? event.playerId}: ${event.eventType.toLowerCase().replace(/_/g, ' ')}`);
+    }
+
+    if (items.length === 0) {
+      items.push('Highlights engine coming next');
+    }
+
+    return items.slice(0, 5);
+  }, [
+    palworldBaseCapacity,
+    palworldBaseCapacityAlerts,
+    palworldBaseSignalTrend.direction,
+    palworldBaseSignalTrend.indicator,
+    palworldCorePlayers,
+    palworldGuildSummary.activeGuildsThreePlus,
+    palworldGuildSummary.activeGuildsTwoPlus,
+    palworldGuildSummary.likelyRealGuilds,
+    palworldMilestoneFeed,
+    palworldTransitionEvents
+  ]);
+
+  const valheimOverviewHighlights = useMemo(() => {
+    const items: string[] = [];
+    const pushHighlight = (value: string | null | undefined): void => {
+      const normalized = value?.trim();
+
+      if (!normalized || items.includes(normalized)) {
+        return;
+      }
+
+      items.push(normalized);
+    };
+
+    if (selectedWarningSummary[0]) {
+      pushHighlight(selectedWarningSummary[0].snippet);
+    }
+
+    if (selectedServerSummary?.recentEvents[0]) {
+      const event = selectedServerSummary.recentEvents[0];
+      pushHighlight(event.message ?? `${formatEventLabel(event.eventType)} detected`);
+    }
+
+    const topPlayer = [...(selectedServerSummary?.knownPlayers ?? [])]
+      .sort((left, right) => right.observationCount - left.observationCount)[0];
+
+    if (topPlayer) {
+      pushHighlight(`Most observed player: ${topPlayer.displayName}`);
+    }
+
+    if ((selectedServerSummary?.activePlayers ?? 0) > 0) {
+      pushHighlight(`${selectedServerSummary?.activePlayers ?? 0} active sessions detected`);
+    }
+
+    if (items.length === 0) {
+      items.push('Highlights engine coming next');
+    }
+
+    return items.slice(0, 5);
+  }, [selectedServerSummary, selectedWarningSummary]);
+
+  const valheimCorePlayers = useMemo(() => {
+    return [...(selectedServerSummary?.knownPlayers ?? [])]
+      .sort((left, right) => right.observationCount - left.observationCount)
+      .slice(0, 5);
+  }, [selectedServerSummary]);
+
+  const valheimWorldCapacitySummary = useMemo(() => {
+    return {
+      likelyRealGuilds: selectedServerSummary?.knownPlayerCount ?? 0,
+      activeGuilds: selectedServerSummary?.activePlayers ?? 0,
+      estimatedBases: null,
+      remainingBaseSlots: null,
+      pressureStatus: selectedWarningSummary.length > 0 ? 'Watch' : 'Stable'
+    };
+  }, [selectedServerSummary, selectedWarningSummary]);
+
+  const activeWorldCapacitySummary = selectedServer?.game === 'palworld'
+    ? palworldWorldCapacitySummary
+    : valheimWorldCapacitySummary;
+  const activeHighlights = selectedServer?.game === 'palworld'
+    ? palworldOverviewHighlights
+    : valheimOverviewHighlights;
+  const homepageHighlights = activeHighlights.slice(0, 4);
+  const palworldCommunityPulse = useMemo(() => {
+    const onlinePlayers = palworldLatestPlayers.filter((player) => player.isOnline).length;
+    const activeGuilds = palworldGuildSummary.activeGuildsTwoPlus;
+    const corePlayers = palworldCorePlayers.length;
+    const pulseLoad = onlinePlayers + activeGuilds + corePlayers;
+
+    if (pulseLoad >= 18 || (onlinePlayers >= 10 && activeGuilds >= 4)) {
+      return {
+        state: 'Surging',
+        summary: 'Multiple groups are active and the world is moving quickly.'
+      };
+    }
+
+    if (pulseLoad >= 10 || (onlinePlayers >= 6 && activeGuilds >= 2)) {
+      return {
+        state: 'Active',
+        summary: 'Player and guild activity are clearly elevated.'
+      };
+    }
+
+    if (pulseLoad >= 4) {
+      return {
+        state: 'Steady',
+        summary: 'The world is engaged without unusual pressure.'
+      };
+    }
+
+    return {
+      state: 'Quiet',
+      summary: 'Light activity across players and guilds right now.'
+    };
+  }, [palworldCorePlayers.length, palworldGuildSummary.activeGuildsTwoPlus, palworldLatestPlayers]);
+
+  const valheimCommunityPulse = useMemo(() => {
+    const activePlayers = selectedServerSummary?.activePlayers ?? 0;
+    const recentWarnings = selectedWarningSummary.length;
+
+    if (activePlayers >= 8) {
+      return {
+        state: 'Surging',
+        summary: 'Heavy player traffic is hitting the server right now.'
+      };
+    }
+
+    if (activePlayers >= 4) {
+      return {
+        state: 'Active',
+        summary: 'Player activity is healthy and visible across the server.'
+      };
+    }
+
+    if (activePlayers >= 1 || recentWarnings > 0) {
+      return {
+        state: 'Steady',
+        summary: 'Some activity is present, but the server is not crowded.'
+      };
+    }
+
+    return {
+      state: 'Quiet',
+      summary: 'Very little activity is visible right now.'
+    };
+  }, [selectedServerSummary, selectedWarningSummary.length]);
+
+  const activeCommunityPulse = selectedServer?.game === 'palworld'
+    ? palworldCommunityPulse
+    : valheimCommunityPulse;
+
+  const palworldServerHealthSummary = useMemo(() => {
+    if (!palworldBaseCapacity) {
+      return null;
+    }
+
+    return {
+      status: palworldBaseCapacity.statusLabel,
+      estimatedBasesLabel: `${palworldBaseCapacity.estimatedBases} / 240`,
+      remainingSlotsLabel: `${palworldBaseCapacity.remainingCapacity}`,
+      trendLabel: `${palworldBaseSignalTrend.indicator} ${palworldBaseSignalTrend.direction}`,
+      summary: palworldBaseCapacity.summary
+    };
+  }, [palworldBaseCapacity, palworldBaseSignalTrend.direction, palworldBaseSignalTrend.indicator]);
+
+  const palworldAlertsSnapshot = useMemo(() => {
+    const pressureStatus = palworldBaseCapacity?.statusLabel ?? 'Unknown';
+    const growthState = palworldBaseCapacityAlerts?.growthAlert ?? 'None';
+    const hasActiveAlert = Boolean(
+      palworldBaseCapacityAlerts
+      && (palworldBaseCapacityAlerts.severity !== 'safe' || palworldBaseCapacityAlerts.growthAlert)
+    );
+
+    return {
+      pressureStatus,
+      growthState,
+      alertState: hasActiveAlert ? 'Active' : 'Clear'
+    };
+  }, [palworldBaseCapacity?.statusLabel, palworldBaseCapacityAlerts]);
 
   return (
     <main className="dashboard">
@@ -1385,46 +1679,13 @@ function App() {
           <>
             <section className="card-grid">
               <article className="card">
-                <h2>Server Summary</h2>
+                <h2>Top Status Rail</h2>
                 <ul className="list compact">
-                  <li><span>Server</span><span>{selectedServerSummary.displayName}</span></li>
+                  <li><span>Selected Server</span><span>{selectedServerSummary.displayName}</span></li>
                   <li><span>Game</span><span>{selectedServerSummary.game}</span></li>
-                  <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span></li>
-                  <li><span>Reported</span><span className="subtle">{selectedServerSummary.reportedState}</span></li>
-                  <li><span>Active Players</span><span>{selectedServerSummary.activePlayers}</span></li>
-                  <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
-                </ul>
-              </article>
-
-              <article className="card">
-                <h2>Recent Events</h2>
-                <ul className="list activity-list">
-                  {selectedServerSummary.recentEvents.length === 0 ? <li>No recent events</li> : null}
-                  {selectedServerSummary.recentEvents.map((event, index) => (
-                    <li key={`${event.eventType}:${event.occurredAt}:${index}`} className="activity-row">
-                      <span className="activity-main">
-                        <span className={`activity-badge ${getEventBadgeClass(event.eventType)}`}>{formatEventLabel(event.eventType)}</span>
-                        <span>{event.message ?? event.playerName ?? 'Event'}</span>
-                      </span>
-                      <span className="subtle activity-time">{formatClock(event.occurredAt)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-
-              <article className="card">
-                <h2>Recent Warnings</h2>
-                <ul className="list">
-                  {selectedWarningSummary.length === 0 ? <li>No recent warnings</li> : null}
-                  {selectedWarningSummary.map((warning, index) => (
-                    <li key={`${warning.signature}:${index}`}>
-                      <span className="warning-main">
-                        <span className={`warning-badge warning-${warning.category}`}>{formatWarningCategoryLabel(warning.category)}</span>
-                        {warning.snippet}
-                      </span>
-                      <span className="subtle">{formatClock(warning.latestAt)}</span>
-                    </li>
-                  ))}
+                  <li><span>API / Connection</span><span>{health?.ok ? `${apiHealthLabel} / ${selectedServerSummary.state}` : selectedServerSummary.state}</span></li>
+                  <li><span>Current Alerts</span><span>{selectedAlertCount}</span></li>
+                  <li><span>Last Updated</span><span>{lastUpdatedLabel}</span></li>
                 </ul>
               </article>
             </section>
@@ -1432,561 +1693,654 @@ function App() {
             {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
             {detailError ? <p className="error">{detailError}</p> : null}
 
-            {selectedServer.game === 'valheim' ? (
-              <section className="game-section">
-                <div className="section-heading">
-                  <h2>Valheim Panels</h2>
-                  <p className="subtle">Existing player and identity views stay grouped under Valheim.</p>
-                </div>
+            <section className="game-section">
+              <section className="card-grid">
+                <article className="card">
+                  <h2>Server Health</h2>
+                  {selectedServer.game === 'palworld' && palworldServerHealthSummary ? (
+                    <ul className="list compact">
+                      <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{palworldServerHealthSummary.status}</span></li>
+                      <li><span>Estimated Bases</span><span>{palworldServerHealthSummary.estimatedBasesLabel}</span></li>
+                      <li><span>Remaining Slots</span><span>{palworldServerHealthSummary.remainingSlotsLabel}</span></li>
+                      <li><span>Trend</span><span>{palworldServerHealthSummary.trendLabel}</span></li>
+                      <li><span>Summary</span><span>{palworldServerHealthSummary.summary}</span></li>
+                    </ul>
+                  ) : (
+                    <ul className="list compact">
+                      <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span></li>
+                      <li><span>Reported</span><span>{selectedServerSummary.reportedState}</span></li>
+                      <li><span>Active Players</span><span>{selectedServerSummary.activePlayers}</span></li>
+                      <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
+                      <li><span>Summary</span><span>{selectedWarningSummary[0]?.snippet ?? 'Server status looks stable.'}</span></li>
+                    </ul>
+                  )}
+                </article>
 
-                <section className="card-grid">
-                  <article className="card">
-                    <h2>Active Players</h2>
-                    <ul className="list">
-                      {selectedServerSummary.activePlayers === 0 ? <li>None online</li> : null}
-                      {selectedServerSummary.recentEvents
-                        .filter((event) => event.eventType === 'PLAYER_JOIN')
-                        .slice(0, 8)
-                        .map((event, index) => (
-                          <li key={`${event.playerName ?? 'unknown'}:${index}`}>
-                            <button
-                              type="button"
-                              className="inline-player-link"
-                              onClick={() => setSelectedValheimPlayerLookupKey(normalizePlayerKey(event.playerName ?? ''))}
-                            >
-                              {event.playerName ?? 'Unknown player'}
-                            </button>
-                            <span className="subtle">{formatClock(event.occurredAt)}</span>
+                <article className="card">
+                  <h2>Community Pulse</h2>
+                  <ul className="list compact">
+                    <li><span>Pulse</span><span>{activeCommunityPulse.state}</span></li>
+                    {selectedServer.game === 'palworld' ? (
+                      <>
+                        <li><span>Online Players</span><span>{palworldLatestPlayers.filter((player) => player.isOnline).length}</span></li>
+                        <li><span>Active Guilds</span><span>{palworldGuildSummary.activeGuildsTwoPlus}</span></li>
+                        <li><span>Core Players</span><span>{palworldCorePlayers.length}</span></li>
+                      </>
+                    ) : (
+                      <>
+                        <li><span>Active Sessions</span><span>{selectedServerSummary.activePlayers}</span></li>
+                        <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
+                        <li><span>Recent Warnings</span><span>{selectedServerSummary.recentWarnings.length}</span></li>
+                      </>
+                    )}
+                    <li><span>Interpretation</span><span>{activeCommunityPulse.summary}</span></li>
+                  </ul>
+                </article>
+
+                <article className="card">
+                  <h2>Highlights</h2>
+                  <ul className="list compact">
+                    {homepageHighlights.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </article>
+
+                <article className="card">
+                  <h2>Action Center</h2>
+                  <div className="review-button-row">
+                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab('highlights')}>View Highlights</button>
+                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab(selectedServer.game === 'palworld' ? 'guilds' : 'activity')}>{selectedServer.game === 'palworld' ? 'Explore Guilds' : 'Explore Activity'}</button>
+                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab('players')}>Explore Players</button>
+                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab('diagnostics')}>View Alerts</button>
+                  </div>
+                </article>
+              </section>
+
+              <section className="card-grid">
+                <article className="card">
+                  <h2>World Capacity Summary</h2>
+                  <ul className="list compact">
+                    <li><span>Likely Real Guilds</span><span>{activeWorldCapacitySummary.likelyRealGuilds}</span></li>
+                    <li><span>Active Guilds</span><span>{activeWorldCapacitySummary.activeGuilds}</span></li>
+                    <li><span>Estimated Bases</span><span>{activeWorldCapacitySummary.estimatedBases ?? 'N/A'}</span></li>
+                    <li><span>Remaining Base Slots</span><span>{activeWorldCapacitySummary.remainingBaseSlots ?? 'N/A'}</span></li>
+                    <li><span>Pressure Status</span><span>{activeWorldCapacitySummary.pressureStatus}</span></li>
+                  </ul>
+                </article>
+
+                <article className="card">
+                  <h2>Core Players</h2>
+                  {selectedServer.game === 'palworld' ? (
+                    <>
+                      {palworldPlayerProfilesLoading ? <p className="subtle">Loading core player rankings...</p> : null}
+                      <ul className="list review-list">
+                        {!palworldPlayerProfilesLoading && palworldCorePlayers.length === 0 ? <li>No core players identified.</li> : null}
+                        {palworldCorePlayers.slice(0, 5).map((profile) => (
+                          <li key={profile.playerId} className="review-row">
+                            <div className="review-main">
+                              <div className="review-header">
+                                <span className="review-id">{profile.playerName ?? profile.accountName ?? profile.playerId}</span>
+                                <span className="confidence-badge confidence-high">{profile.playerIntelligence.impactLevel}</span>
+                              </div>
+                              <div className="subtle">score {profile.playerIntelligence.engagementScore} • lvl {profile.level ?? 'N/A'}</div>
+                            </div>
                           </li>
                         ))}
-                    </ul>
-                  </article>
-
-                  <article className="card">
-                    <h2>Known Players</h2>
-                    <ul className="list">
-                      {selectedServerSummary.knownPlayers.length === 0 ? <li>None tracked yet</li> : null}
-                      {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
-                        <li
-                          key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
-                          className={`clickable-row ${selectedValheimPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
-                          onClick={() => setSelectedValheimPlayerLookupKey(player.normalizedPlayerKey)}
-                        >
-                          <span>{player.displayName}</span>
-                          <span className="known-meta">
-                            <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
-                            <span className="subtle">obs {player.observationCount}</span>
-                          </span>
+                      </ul>
+                    </>
+                  ) : (
+                    <ul className="list review-list">
+                      {valheimCorePlayers.length === 0 ? <li>Player intelligence not available for Valheim yet.</li> : null}
+                      {valheimCorePlayers.map((player) => (
+                        <li key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`} className="review-row">
+                          <div className="review-main">
+                            <div className="review-header">
+                              <span className="review-id">{player.displayName}</span>
+                              <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
+                            </div>
+                            <div className="subtle">observations {player.observationCount}</div>
+                          </div>
                         </li>
                       ))}
                     </ul>
-                  </article>
+                  )}
+                </article>
 
-                  <article className="card">
-                    <h2>Player Detail</h2>
-                    {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a known player to inspect session and identity data.</p> : null}
-                    {selectedValheimPlayerProfile?.player ? (
-                      <div className="detail-grid">
-                        <div className="detail-block">
-                          <h3>Identity</h3>
-                          <ul className="list compact">
-                            <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
-                            <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
-                            <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
-                            <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
-                          </ul>
-                        </div>
-                        <div className="detail-block">
-                          <h3>Sessions</h3>
-                          <ul className="list compact">
-                            <li>
-                              <span>Status</span>
-                              <span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span>
-                            </li>
-                            {selectedValheimPlayerProfile.recentSessions.slice(0, 4).map((session, index) => (
-                              <li key={`${session.startedAt}:${index}`}>
-                                <span>{formatTimestamp(session.startedAt)}</span>
-                                <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                <article className="card">
+                  <h2>Alerts Snapshot</h2>
+                  {selectedServer.game === 'palworld' ? (
+                    <ul className="list compact">
+                      <li><span>Pressure Status</span><span>{palworldAlertsSnapshot.pressureStatus}</span></li>
+                      <li><span>Growth Alert</span><span>{palworldAlertsSnapshot.growthState}</span></li>
+                      <li><span>Alert Active</span><span>{palworldAlertsSnapshot.alertState}</span></li>
+                    </ul>
+                  ) : (
+                    <ul className="list compact">
+                      <li><span>Alert Active</span><span>{selectedAlertCount > 0 ? 'Active' : 'Clear'}</span></li>
+                      <li><span>Warning Groups</span><span>{selectedWarningSummary.length}</span></li>
+                      <li><span>Top Warning</span><span>{selectedWarningSummary[0]?.snippet ?? 'None'}</span></li>
+                    </ul>
+                  )}
+                </article>
+              </section>
+
+              <section className="card-grid">
+                <article className="card">
+                  <h2>Navigation</h2>
+                  <div className="review-button-row">
+                    {detailTabs.map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        className={`review-button ${selectedDashboardTab === tab.key ? 'approve-button' : 'reject-button'}`}
+                        onClick={() => setSelectedDashboardTab(tab.key)}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              </section>
+
+              <section className="card-grid">
+                {selectedServer.game === 'valheim' ? (
+                  <>
+                    {selectedDashboardTab === 'overview' ? (
+                      <article className="card">
+                        <h2>Overview</h2>
+                        <p className="subtle">Command center summary is now carried by the rows above. Use the tabs to open player, activity, ops, and diagnostics detail.</p>
+                      </article>
+                    ) : null}
+
+                    {selectedDashboardTab === 'highlights' ? (
+                      <article className="card">
+                        <h2>Highlights</h2>
+                        <ul className="list review-list">
+                          {activeHighlights.map((item) => (
+                            <li key={item} className="review-row"><div className="review-main">{item}</div></li>
+                          ))}
+                        </ul>
+                      </article>
+                    ) : null}
+
+                    {selectedDashboardTab === 'players' ? (
+                      <>
+                        <article className="card">
+                          <h2>Known Players</h2>
+                          <ul className="list">
+                            {selectedServerSummary.knownPlayers.length === 0 ? <li>None tracked yet</li> : null}
+                            {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
+                              <li
+                                key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
+                                className={`clickable-row ${selectedValheimPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
+                                onClick={() => setSelectedValheimPlayerLookupKey(player.normalizedPlayerKey)}
+                              >
+                                <span>{player.displayName}</span>
+                                <span className="known-meta">
+                                  <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
+                                  <span className="subtle">obs {player.observationCount}</span>
+                                </span>
                               </li>
                             ))}
                           </ul>
-                        </div>
-                      </div>
-                    ) : null}
-                  </article>
-                </section>
-              </section>
-            ) : null}
+                        </article>
 
-            {selectedServer.game === 'palworld' ? (
-              <section className="game-section">
-                <div className="section-heading">
-                  <h2>Palworld Panels</h2>
-                  <p className="subtle">Latest players, per-player detail/history, and recent metrics.</p>
-                </div>
-
-                <section className="card-grid">
-                  <article className="card">
-                      <h2>Player Telemetry</h2>
-                    <ul className="list telemetry-list">
-                      {palworldLatestPlayers.length === 0 ? <li>No player telemetry yet</li> : null}
-                      {palworldPlayerList.map(({ player, identityState }) => (
-                        <li
-                          key={`${player.lookupKey}:${player.lastSeenAt}`}
-                          className={`clickable-row telemetry-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
-                          onClick={() => setSelectedPalworldPlayerKey(player.lookupKey)}
-                        >
-                          <div className="telemetry-main">
-                            <div className="telemetry-heading">
-                              <span className="telemetry-player-name">{player.playerName ?? player.accountName ?? player.lookupKey}</span>
-                              <div className="telemetry-badges">
-                                <span className={`identity-badge identity-${identityState}`}>
-                                  {identityState}
-                                </span>
-                                <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>
-                                  {player.isOnline ? 'online' : 'offline'}
-                                </span>
+                        <article className="card">
+                          <h2>Player Detail</h2>
+                          {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a known player to inspect session and identity data.</p> : null}
+                          {selectedValheimPlayerProfile?.player ? (
+                            <div className="detail-grid">
+                              <div className="detail-block">
+                                <h3>Identity</h3>
+                                <ul className="list compact">
+                                  <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
+                                  <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
+                                  <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
+                                  <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
+                                </ul>
+                              </div>
+                              <div className="detail-block">
+                                <h3>Sessions</h3>
+                                <ul className="list compact">
+                                  <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                  {selectedValheimPlayerProfile.recentSessions.slice(0, 4).map((session, index) => (
+                                    <li key={`${session.startedAt}:${index}`}>
+                                      <span>{formatTimestamp(session.startedAt)}</span>
+                                      <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             </div>
-                            <div className="telemetry-stats">
-                              <span>lvl {player.level ?? 'N/A'}</span>
-                              <span>{player.region ?? 'unknown region'}</span>
-                              <span>ping {formatMetric(player.ping)}</span>
-                              <span>avg {formatMetric(player.avgPing)}</span>
-                              <span>max {formatMetric(player.maxPing)}</span>
-                              <span>sd {formatMetric(player.pingStdDev)}</span>
-                              <span>session {formatDurationMaybe(player.currentSessionDurationSeconds)}</span>
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
+                          ) : null}
+                        </article>
+                      </>
+                    ) : null}
 
-                  <article className="card">
-                    <h2>Core Players</h2>
-                    {palworldPlayerProfilesLoading ? <p className="subtle">Loading core player rankings...</p> : null}
-                    <ul className="list review-list">
-                      {!palworldPlayerProfilesLoading && palworldCorePlayers.length === 0 ? <li>No core players identified.</li> : null}
-                      {palworldCorePlayers.map((profile) => (
-                        <li key={profile.playerId} className="review-row">
-                          <div className="review-main">
-                            <div className="review-header">
-                              <span className="review-id">{profile.playerName ?? profile.accountName ?? profile.playerId}</span>
-                              <span className="confidence-badge confidence-high">{profile.playerIntelligence.classification}</span>
-                            </div>
-                            <div className="subtle">
-                              score {profile.playerIntelligence.engagementScore} • lvl {profile.level ?? 'N/A'}
-                            </div>
-                            <div className="subtle">
-                              impact {profile.playerIntelligence.impactLevel}
-                            </div>
-                            <div className="subtle">
-                              guild {profile.playerIntelligence.likelyGuildName ?? 'N/A'}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="card">
-                    <h2>Player Profile / History</h2>
-                    {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect the unified live/save identity profile and recent snapshots.</p> : null}
-                    {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
-                    {selectedPalworldPlayerProfile ? (
+                    {selectedDashboardTab === 'activity' ? (
                       <>
-                        <div className="detail-grid">
+                        <article className="card">
+                          <h2>Recent Events</h2>
+                          <ul className="list activity-list">
+                            {selectedServerSummary.recentEvents.length === 0 ? <li>No recent events</li> : null}
+                            {selectedServerSummary.recentEvents.map((event, index) => (
+                              <li key={`${event.eventType}:${event.occurredAt}:${index}`} className="activity-row">
+                                <span className="activity-main">
+                                  <span className={`activity-badge ${getEventBadgeClass(event.eventType)}`}>{formatEventLabel(event.eventType)}</span>
+                                  <span>{event.message ?? event.playerName ?? 'Event'}</span>
+                                </span>
+                                <span className="subtle activity-time">{formatClock(event.occurredAt)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+
+                        <article className="card">
+                          <h2>Active Players</h2>
+                          <ul className="list">
+                            {selectedServerSummary.activePlayers === 0 ? <li>None online</li> : null}
+                            {selectedServerSummary.recentEvents
+                              .filter((event) => event.eventType === 'PLAYER_JOIN')
+                              .slice(0, 8)
+                              .map((event, index) => (
+                                <li key={`${event.playerName ?? 'unknown'}:${index}`}>
+                                  <button
+                                    type="button"
+                                    className="inline-player-link"
+                                    onClick={() => {
+                                      setSelectedValheimPlayerLookupKey(normalizePlayerKey(event.playerName ?? ''));
+                                      setSelectedDashboardTab('players');
+                                    }}
+                                  >
+                                    {event.playerName ?? 'Unknown player'}
+                                  </button>
+                                  <span className="subtle">{formatClock(event.occurredAt)}</span>
+                                </li>
+                              ))}
+                          </ul>
+                        </article>
+                      </>
+                    ) : null}
+
+                    {selectedDashboardTab === 'metrics' ? (
+                      <article className="card">
+                        <h2>Metrics</h2>
+                        <p className="subtle">Valheim metrics surface is still lightweight. Use fleet state, activity, and player detail while richer metrics are added.</p>
+                      </article>
+                    ) : null}
+
+                    {selectedDashboardTab === 'ops' ? (
+                      <article className="card">
+                        <h2>Ops</h2>
+                        <p className="subtle">Ops workflows for Valheim remain unchanged. This tab is reserved for future command-center actions.</p>
+                      </article>
+                    ) : null}
+
+                    {selectedDashboardTab === 'diagnostics' ? (
+                      <>
+                        <article className="card">
+                          <h2>Server Summary</h2>
+                          <ul className="list compact">
+                            <li><span>Server</span><span>{selectedServerSummary.displayName}</span></li>
+                            <li><span>Game</span><span>{selectedServerSummary.game}</span></li>
+                            <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span></li>
+                            <li><span>Reported</span><span className="subtle">{selectedServerSummary.reportedState}</span></li>
+                            <li><span>Active Players</span><span>{selectedServerSummary.activePlayers}</span></li>
+                            <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
+                          </ul>
+                        </article>
+
+                        <article className="card">
+                          <h2>Recent Warnings</h2>
+                          <ul className="list">
+                            {selectedWarningSummary.length === 0 ? <li>No recent warnings</li> : null}
+                            {selectedWarningSummary.map((warning, index) => (
+                              <li key={`${warning.signature}:${index}`}>
+                                <span className="warning-main">
+                                  <span className={`warning-badge warning-${warning.category}`}>{formatWarningCategoryLabel(warning.category)}</span>
+                                  {warning.snippet}
+                                </span>
+                                <span className="subtle">{formatClock(warning.latestAt)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {selectedDashboardTab === 'overview' ? (
+                      <article className="card">
+                        <h2>Overview</h2>
+                        <p className="subtle">Command center summary is now carried by the rows above. Use the tabs to open detailed players, guilds, metrics, ops, and diagnostics views.</p>
+                      </article>
+                    ) : null}
+
+                    {selectedDashboardTab === 'highlights' ? (
+                      <>
+                        <article className="card">
+                          <h2>Highlights</h2>
+                          <ul className="list review-list">
+                            {activeHighlights.map((item) => (
+                              <li key={item} className="review-row"><div className="review-main">{item}</div></li>
+                            ))}
+                          </ul>
+                        </article>
+
+                        <article className="card">
+                          <h2>Current Milestone Feed</h2>
+                          <ul className="list review-list">
+                            {palworldMilestoneFeed.length === 0 ? <li>No active milestone signals.</li> : null}
+                            {palworldMilestoneFeed.map((entry) => (
+                              <li key={`${entry.playerId}:${entry.signalKey}`} className="review-row">
+                                <div className="review-main">
+                                  <div className="review-header">
+                                    <span className="review-id">{entry.playerName ?? entry.accountName ?? entry.playerId}</span>
+                                    <span className={`milestone-badge milestone-${entry.signalStrength}`}>{entry.signalStrength}</span>
+                                  </div>
+                                  <div><strong>{entry.signalLabel}</strong></div>
+                                  <div className="subtle">{entry.signalReason}</div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+                      </>
+                    ) : null}
+
+                    {selectedDashboardTab === 'players' ? (
+                      <>
+                        <article className="card">
+                          <h2>Player Telemetry</h2>
+                          <ul className="list telemetry-list">
+                            {palworldLatestPlayers.length === 0 ? <li>No player telemetry yet</li> : null}
+                            {palworldPlayerList.map(({ player, identityState }) => (
+                              <li
+                                key={`${player.lookupKey}:${player.lastSeenAt}`}
+                                className={`clickable-row telemetry-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
+                                onClick={() => setSelectedPalworldPlayerKey(player.lookupKey)}
+                              >
+                                <div className="telemetry-main">
+                                  <div className="telemetry-heading">
+                                    <span className="telemetry-player-name">{player.playerName ?? player.accountName ?? player.lookupKey}</span>
+                                    <div className="telemetry-badges">
+                                      <span className={`identity-badge identity-${identityState}`}>{identityState}</span>
+                                      <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>{player.isOnline ? 'online' : 'offline'}</span>
+                                    </div>
+                                  </div>
+                                  <div className="telemetry-stats">
+                                    <span>lvl {player.level ?? 'N/A'}</span>
+                                    <span>{player.region ?? 'unknown region'}</span>
+                                    <span>ping {formatMetric(player.ping)}</span>
+                                    <span>session {formatDurationMaybe(player.currentSessionDurationSeconds)}</span>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+
+                        <article className="card">
+                          <h2>Player Profile / History</h2>
+                          {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect the unified live/save identity profile and recent snapshots.</p> : null}
+                          {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
+                          {selectedPalworldPlayerProfile ? (
+                            <div className="detail-grid">
+                              <div className="detail-block">
+                                <h3>Unified Profile</h3>
+                                <ul className="list compact">
+                                  <li><span>Name</span><span>{selectedPalworldPlayerProfile.playerName ?? 'Unknown'}</span></li>
+                                  <li><span>Account</span><span>{selectedPalworldPlayerProfile.accountName ?? 'Unknown'}</span></li>
+                                  <li><span>Player ID</span><span>{selectedPalworldPlayerProfile.playerId}</span></li>
+                                  <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
+                                  <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
+                                  <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
+                                  <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping)}</span></li>
+                                  <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds)}</span></li>
+                                  <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.sessionTier ?? 'N/A'}</span></li>
+                                  <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                  <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.levelTier ?? 'N/A'}</span></li>
+                                  <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
+                                  <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
+                                  <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>
+                                  <li><span>Save File</span><span>{selectedPalworldPlayerProfile.saveArtifact.present ? (selectedPalworldPlayerProfile.saveArtifact.savePlayerFileName ?? 'present') : 'Not found'}</span></li>
+                                  <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
+                                </ul>
+                                <div className="milestone-block">
+                                  <h4>Player Intelligence</h4>
+                                  <ul className="list compact">
+                                    <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
+                                    <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
+                                    <li><span>Identity State</span><span>{selectedPalworldPlayerProfile.playerIntelligence.identityState}</span></li>
+                                    <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
+                                    <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
+                                    <li><span>Engagement Score</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
+                                    <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
+                                    <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
+                                  </ul>
+                                </div>
+                              </div>
+                              <div className="detail-block">
+                                <h3>History</h3>
+                                <ul className="list compact">
+                                  {selectedPalworldHistory.length === 0 ? <li>No snapshots</li> : null}
+                                  {selectedPalworldHistory.map((snapshot) => (
+                                    <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
+                                      <div className="history-entry">
+                                        <span>{formatTimestamp(snapshot.observedAt)}</span>
+                                        <span className="subtle">lvl {snapshot.level ?? 'N/A'} • {snapshot.region ?? 'unknown region'} • ping {formatMetric(snapshot.ping)}</span>
+                                        <span className="subtle">x {formatCoordinate(snapshot.locationX)} • y {formatCoordinate(snapshot.locationY)}</span>
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          ) : null}
+                        </article>
+                      </>
+                    ) : null}
+
+                    {selectedDashboardTab === 'guilds' ? (
+                      <article className="card">
+                        <h2>Guild Hints</h2>
+                        {palworldGuildsError ? <p className="error">{palworldGuildsError}</p> : null}
+                        {!palworldGuildsError ? (
                           <div className="detail-block">
-                            <h3>Unified Profile</h3>
                             <ul className="list compact">
-                              <li><span>Name</span><span>{selectedPalworldPlayerProfile.playerName ?? 'Unknown'}</span></li>
-                              <li><span>Account</span><span>{selectedPalworldPlayerProfile.accountName ?? 'Unknown'}</span></li>
-                              <li><span>Player ID</span><span>{selectedPalworldPlayerProfile.playerId}</span></li>
-                              <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
-                              <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
-                              <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
-                              <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping)}</span></li>
-                              <li><span>Avg Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.avgPing)}</span></li>
-                              <li><span>Max Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.maxPing)}</span></li>
-                              <li><span>Ping Std Dev</span><span>{formatMetric(selectedPalworldPlayerProfile.pingStdDev)}</span></li>
-                              <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds)}</span></li>
-                              <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.sessionTier ?? 'N/A'}</span></li>
-                              <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                              <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.levelTier ?? 'N/A'}</span></li>
-                              <li><span>Online Rank by Level</span><span>{selectedPalworldPlayerProfile.onlineRankByLevel ?? 'N/A'}</span></li>
-                              <li><span>Online Rank by Session</span><span>{selectedPalworldPlayerProfile.onlineRankBySessionDuration ?? 'N/A'}</span></li>
-                              <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
-                              <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
-                              <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>
-                              <li><span>Review Notes</span><span>{selectedPalworldPlayerProfile.review.notes || 'None'}</span></li>
-                              <li><span>Save File</span><span>{selectedPalworldPlayerProfile.saveArtifact.present ? (selectedPalworldPlayerProfile.saveArtifact.savePlayerFileName ?? 'present') : 'Not found'}</span></li>
-                              <li><span>Save Path</span><span>{selectedPalworldPlayerProfile.saveArtifact.path ?? 'N/A'}</span></li>
-                              <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
-                              <li><span>Save MTime</span><span>{selectedPalworldPlayerProfile.saveArtifact.modifiedAt ? formatTimestamp(selectedPalworldPlayerProfile.saveArtifact.modifiedAt) : 'N/A'}</span></li>
+                              <li><span>Total Guild Hints</span><span>{palworldGuildSummary.totalGuildHints}</span></li>
+                              <li><span>Likely Real Guilds</span><span>{palworldGuildSummary.likelyRealGuilds}</span></li>
+                              <li><span>Active Guilds (2+)</span><span>{palworldGuildSummary.activeGuildsTwoPlus}</span></li>
+                              <li><span>Active Guilds (3+)</span><span>{palworldGuildSummary.activeGuildsThreePlus}</span></li>
                             </ul>
-                            <div className="milestone-block">
-                              <h4>Player Intelligence</h4>
-                              <ul className="list compact">
-                                <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
-                                <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
-                                <li><span>Identity State</span><span>{selectedPalworldPlayerProfile.playerIntelligence.identityState}</span></li>
-                                <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
-                                <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
-                                <li><span>Engagement Score</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
-                                <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
-                                <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
-                              </ul>
-                            </div>
-                            <div className="milestone-block">
-                              <h4>Milestone Signals</h4>
-                              <ul className="list compact">
-                                {selectedPalworldPlayerProfile.milestoneSignals.length === 0 ? <li>No current milestone signals.</li> : null}
-                                {selectedPalworldPlayerProfile.milestoneSignals.map((signal) => (
-                                  <li key={signal.key}>
-                                    <span className={`milestone-badge milestone-${signal.strength}`}>{signal.label}</span>
-                                    <span className="subtle">{signal.reason}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div className="milestone-block">
-                              <h4>Manual Identity Link</h4>
+                          </div>
+                        ) : null}
+                        <ul className="list review-list">
+                          {!palworldGuildsError && palworldGuilds.length === 0 ? <li>No guild hints available.</li> : null}
+                          {palworldGuilds.map((guild, index) => (
+                            <li key={`${guild.guildId ?? guild.guildName ?? 'guild'}:${index}`} className="review-row">
+                              <div className="review-main">
+                                <div><strong>{guild.guildName?.trim() || 'Unknown Guild'}</strong></div>
+                                <div className="subtle">guildId {guild.guildId?.trim() || 'N/A'}</div>
+                                <div className="subtle">memberCount {guild.memberCount ?? guild.members?.length ?? 0}</div>
+                                <div className="subtle">members {guild.members && guild.members.length > 0 ? guild.members.join(', ') : 'None'}</div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    ) : null}
+
+                    {selectedDashboardTab === 'metrics' ? (
+                      <>
+                        <article className="card">
+                          <h2>Base Capacity</h2>
+                          {palworldBaseSignal !== null && palworldBaseCapacity !== null ? (
+                            <>
+                              <div><strong>Raw Signal:</strong> {palworldBaseSignal}</div>
+                              <div><strong>Estimated Bases:</strong> {palworldBaseCapacity.estimatedBases} / 240</div>
+                              <div><strong>Usage:</strong> {palworldBaseCapacity.usagePercent}%</div>
+                              <div><strong>Remaining Capacity:</strong> {palworldBaseCapacity.remainingCapacity}</div>
+                              <div className="subtle"><strong>Status:</strong> {palworldBaseCapacity.statusLabel}</div>
+                              <div className="subtle">{palworldBaseCapacity.summary}</div>
+                              <div className="subtle"><strong>Last 5 Values:</strong> {palworldBaseSignalTrend.recentValues.length > 0 ? palworldBaseSignalTrend.recentValues.join(', ') : 'No history'}</div>
+                              <div className="subtle"><strong>Trend:</strong> {palworldBaseSignalTrend.indicator} {palworldBaseSignalTrend.direction}</div>
+                            </>
+                          ) : <p className="subtle">No base capacity signal available.</p>}
+                        </article>
+
+                        <article className="card">
+                          <h2>Recent Metrics</h2>
+                          <ul className="list">
+                            {palworldMetrics.length === 0 ? <li>No metrics snapshots</li> : null}
+                            {palworldMetrics.map((metric) => (
+                              <li key={metric.observedAt}>
+                                <span>{formatTimestamp(metric.observedAt)}</span>
+                                <span className="subtle">fps {metric.serverFps ?? 'N/A'} • players {metric.currentPlayerCount ?? 'N/A'} • uptime {metric.currentUptimeHours ?? 'N/A'}h</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+                      </>
+                    ) : null}
+
+                    {selectedDashboardTab === 'ops' ? (
+                      <>
+                        <article className="card">
+                          <h2>Identity Review Candidates</h2>
+                          {palworldIdentityLoading ? <p className="subtle">Loading identity link candidates...</p> : null}
+                          {palworldIdentityError ? <p className="error">{palworldIdentityError}</p> : null}
+                          <div className="review-actions-form">
+                            <label className="review-field">
+                              <span>Reviewed By</span>
+                              <input type="text" value={palworldReviewActor} onChange={(event) => setPalworldReviewActor(event.target.value)} placeholder="your name" />
+                            </label>
+                            <label className="review-field">
+                              <span>Notes</span>
+                              <input type="text" value={palworldReviewNotes} onChange={(event) => setPalworldReviewNotes(event.target.value)} placeholder="optional review note" />
+                            </label>
+                          </div>
+                          {palworldReviewActionError ? <p className="error">{palworldReviewActionError}</p> : null}
+                          <ul className="list review-list">
+                            {!palworldIdentityLoading && palworldIdentityCandidates.length === 0 ? <li>No candidate links found.</li> : null}
+                            {palworldIdentityCandidates.map((candidate) => (
+                              <li key={`${candidate.savePlayerFileName}:${candidate.telemetryLookupKey ?? 'none'}`} className="review-row">
+                                <div className="review-main">
+                                  <div className="review-header">
+                                    <span className="review-id">{candidate.savePlayerSaveId}</span>
+                                    <span className={`confidence-badge confidence-${candidate.confidence}`}>{candidate.confidence}</span>
+                                  </div>
+                                  <div className="subtle">save file {candidate.savePlayerFileName}</div>
+                                  <div><strong>live:</strong> {candidate.candidate.playerName ?? candidate.candidate.accountName ?? candidate.telemetryLookupKey ?? 'unknown'}</div>
+                                  <div className="subtle">score {candidate.score} • matched {candidate.matchedOn.join(', ') || 'none'}</div>
+                                  <div className="subtle">{candidate.notes.join(' • ') || 'no additional notes'}</div>
+                                  <div className="review-button-row">
+                                    <button type="button" className="review-button approve-button" onClick={() => void submitPalworldReviewAction('approve', candidate.savePlayerSaveId)} disabled={palworldReviewSubmittingKey !== null}>
+                                      {palworldReviewSubmittingKey === `approve:${candidate.savePlayerSaveId}` ? 'Approving...' : 'Approve'}
+                                    </button>
+                                    <button type="button" className="review-button reject-button" onClick={() => void submitPalworldReviewAction('reject', candidate.savePlayerSaveId)} disabled={palworldReviewSubmittingKey !== null}>
+                                      {palworldReviewSubmittingKey === `reject:${candidate.savePlayerSaveId}` ? 'Rejecting...' : 'Reject'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+
+                        <article className="card">
+                          <h2>Manual Identity Link</h2>
+                          {!selectedPalworldPlayerProfile ? <p className="subtle">Select a player in the Players tab to create a manual identity link.</p> : null}
+                          {selectedPalworldPlayerProfile ? (
+                            <>
                               <div className="review-actions-form">
                                 <label className="review-field">
                                   <span>Save Player ID</span>
-                                  <input
-                                    type="text"
-                                    value={palworldManualSavePlayerSaveId}
-                                    onChange={(event) => setPalworldManualSavePlayerSaveId(event.target.value)}
-                                    placeholder="save player id"
-                                  />
+                                  <input type="text" value={palworldManualSavePlayerSaveId} onChange={(event) => setPalworldManualSavePlayerSaveId(event.target.value)} placeholder="save player id" />
                                 </label>
                                 <label className="review-field">
                                   <span>Save File Name</span>
-                                  <input
-                                    type="text"
-                                    value={palworldManualSavePlayerFileName}
-                                    onChange={(event) => setPalworldManualSavePlayerFileName(event.target.value)}
-                                    placeholder="optional .sav file name"
-                                  />
+                                  <input type="text" value={palworldManualSavePlayerFileName} onChange={(event) => setPalworldManualSavePlayerFileName(event.target.value)} placeholder="optional .sav file name" />
                                 </label>
                               </div>
                               <div className="manual-link-summary">
-                                <div className="subtle">
-                                  telemetry target {selectedPalworldPlayerProfile.playerName ?? selectedPalworldPlayerProfile.accountName ?? selectedPalworldPlayerProfile.playerId}
-                                </div>
-                                <div className="subtle">
-                                  playerId {selectedPalworldPlayerProfile.playerId} • userId {selectedPalworldPlayerProfile.userId ?? 'N/A'} • lookup {selectedPalworldPlayerProfile.lookupKey ?? 'N/A'}
-                                </div>
+                                <div className="subtle">telemetry target {selectedPalworldPlayerProfile.playerName ?? selectedPalworldPlayerProfile.accountName ?? selectedPalworldPlayerProfile.playerId}</div>
+                                <div className="subtle">playerId {selectedPalworldPlayerProfile.playerId} • userId {selectedPalworldPlayerProfile.userId ?? 'N/A'} • lookup {selectedPalworldPlayerProfile.lookupKey ?? 'N/A'}</div>
                               </div>
-                              <p className="subtle">
-                                Creates an approved identity record directly for the selected live player without requiring an existing candidate link.
-                              </p>
                               {palworldManualLinkError ? <p className="error">{palworldManualLinkError}</p> : null}
                               {palworldManualLinkSuccess ? <p className="success-message">{palworldManualLinkSuccess}</p> : null}
                               <div className="review-button-row">
-                                <button
-                                  type="button"
-                                  className="review-button approve-button"
-                                  onClick={() => void submitPalworldManualLink()}
-                                  disabled={palworldReviewSubmittingKey !== null}
-                                >
+                                <button type="button" className="review-button approve-button" onClick={() => void submitPalworldManualLink()} disabled={palworldReviewSubmittingKey !== null}>
                                   {palworldReviewSubmittingKey?.startsWith('manual:') ? 'Linking...' : 'Manual Link'}
                                 </button>
                               </div>
-                            </div>
-                          </div>
-                          <div className="detail-block">
-                            <h3>History</h3>
-                            <ul className="list compact">
-                              {selectedPalworldHistory.length === 0 ? <li>No snapshots</li> : null}
-                              {selectedPalworldHistory.map((snapshot) => (
-                                <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
-                                  <div className="history-entry">
-                                    <span>{formatTimestamp(snapshot.observedAt)}</span>
-                                    <span className="subtle">
-                                      lvl {snapshot.level ?? 'N/A'} • {snapshot.region ?? 'unknown region'} • ping {formatMetric(snapshot.ping)}
-                                    </span>
-                                    <span className="subtle">
-                                      x {formatCoordinate(snapshot.locationX)} • y {formatCoordinate(snapshot.locationY)}
-                                    </span>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
+                            </>
+                          ) : null}
+                        </article>
                       </>
                     ) : null}
-                  </article>
 
-                  <article className="card">
-                    <h2>Base Capacity</h2>
-
-                    {palworldBaseSignal !== null && palworldBaseCapacity !== null && (
+                    {selectedDashboardTab === 'diagnostics' ? (
                       <>
-                        <div><strong>Raw Signal:</strong> {palworldBaseSignal}</div>
+                        <article className="card">
+                          <h2>Recent Transition Events</h2>
+                          <ul className="list review-list">
+                            {palworldTransitionEvents.length === 0 ? <li>No recent transition events.</li> : null}
+                            {palworldTransitionEvents.map((event) => (
+                              <li key={getTransitionEventKey(event)} className="review-row">
+                                <div className="review-main">
+                                  <div className="review-header">
+                                    <span className="review-id">{event.playerName ?? event.accountName ?? event.playerId}</span>
+                                    <span className={`confidence-badge confidence-${event.identityState === 'approved' ? 'high' : event.identityState === 'rejected' ? 'low' : 'medium'}`}>{event.identityState}</span>
+                                  </div>
+                                  <div><strong>{event.eventType}</strong></div>
+                                  <div>{event.previewMessage}</div>
+                                  <div className="subtle">{event.fromValue ?? 'N/A'} → {event.toValue ?? 'N/A'}</div>
+                                  <div className="subtle">{formatTimestamp(event.occurredAt)}</div>
+                                  <div className="review-button-row">
+                                    <button type="button" className="review-button approve-button" onClick={() => void postPalworldTransitionEvent(event)} disabled={palworldTransitionPostSubmittingKey !== null}>
+                                      {palworldTransitionPostSubmittingKey === getTransitionEventKey(event) ? 'Posting...' : 'Post to #palworld-activity'}
+                                    </button>
+                                  </div>
+                                  {palworldTransitionPostSuccessKey === getTransitionEventKey(event) ? <p className="success-message">Posted to the configured Palworld activity channel.</p> : null}
+                                  {palworldTransitionPostErrorKey === getTransitionEventKey(event) && palworldTransitionPostError ? <p className="error">{palworldTransitionPostError}</p> : null}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
 
-                        <div>
-                          <strong>Estimated Bases:</strong> {palworldBaseCapacity.estimatedBases} / 240
-                        </div>
-
-                        <div>
-                          <strong>Usage:</strong> {palworldBaseCapacity.usagePercent}%
-                        </div>
-
-                        <div>
-                          <strong>Remaining Capacity:</strong> {palworldBaseCapacity.remainingCapacity}
-                        </div>
-
-                        <div className="subtle">
-                          <strong>Status:</strong> {palworldBaseCapacity.statusLabel}
-                        </div>
-
-                        <div className="subtle">{palworldBaseCapacity.summary}</div>
-
-                        <div className="subtle">
-                          <strong>Last 5 Values:</strong> {palworldBaseSignalTrend.recentValues.length > 0 ? palworldBaseSignalTrend.recentValues.join(', ') : 'No history'}
-                        </div>
-
-                        <div className="subtle">
-                          <strong>Trend:</strong> {palworldBaseSignalTrend.indicator} {palworldBaseSignalTrend.direction}
-                        </div>
-
-                        {palworldBaseCapacityAlerts ? (
-                          <>
-                            <div className="subtle">
-                              <strong>Alert:</strong> {palworldBaseCapacityAlerts.severity} - {palworldBaseCapacityAlerts.alertMessage}
-                            </div>
-
-                            {palworldBaseCapacityAlerts.growthAlert ? (
-                              <div className="subtle">
-                                <strong>Growth Alert:</strong> {palworldBaseCapacityAlerts.growthAlert}
-                              </div>
-                            ) : null}
-                          </>
-                        ) : null}
+                        <article className="card">
+                          <h2>Identity Review Failures</h2>
+                          <ul className="list review-list">
+                            {!palworldIdentityLoading && palworldIdentityFailures.length === 0 ? <li>No unmatched save players recorded.</li> : null}
+                            {palworldIdentityFailures.map((failure) => (
+                              <li key={`${failure.savePlayerFileName}:${failure.status}`} className="review-row">
+                                <div className="review-main">
+                                  <div className="review-header">
+                                    <span className="review-id">{failure.savePlayerSaveId}</span>
+                                    <span className="warning-badge warning-general">{failure.status}</span>
+                                  </div>
+                                  <div className="subtle">save file {failure.savePlayerFileName}</div>
+                                  <div className="subtle">{failure.message}</div>
+                                  <div className="review-button-row">
+                                    <button type="button" className="review-button reject-button" onClick={() => void submitPalworldReviewAction('reject', failure.savePlayerSaveId)} disabled={palworldReviewSubmittingKey !== null}>
+                                      {palworldReviewSubmittingKey === `reject:${failure.savePlayerSaveId}` ? 'Rejecting...' : 'Reject'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
                       </>
-                    )}
-                  </article>
-
-                  <article className="card">
-                    <h2>Guild Hints</h2>
-                    {palworldGuildsError ? <p className="error">{palworldGuildsError}</p> : null}
-                    {!palworldGuildsError ? (
-                      <div className="detail-block">
-                        <ul className="list compact">
-                          <li><span>Total Guild Hints</span><span>{palworldGuildSummary.totalGuildHints}</span></li>
-                          <li><span>Named Guilds</span><span>{palworldGuildSummary.namedGuilds}</span></li>
-                          <li><span>Unnamed / Unknown</span><span>{palworldGuildSummary.unnamedGuilds}</span></li>
-                          <li><span>Guilds With 2+ Members</span><span>{palworldGuildSummary.guildsWithTwoPlusMembers}</span></li>
-                          <li><span>Guilds With 3+ Members</span><span>{palworldGuildSummary.guildsWithThreePlusMembers}</span></li>
-                        </ul>
-                      </div>
                     ) : null}
-                    <ul className="list review-list">
-                      {!palworldGuildsError && palworldGuilds.length === 0 ? <li>No guild hints available.</li> : null}
-                      {palworldGuilds.map((guild, index) => (
-                        <li key={`${guild.guildId ?? guild.guildName ?? 'guild'}:${index}`} className="review-row">
-                          <div className="review-main">
-                            <div><strong>{guild.guildName?.trim() || 'Unknown Guild'}</strong></div>
-                            <div className="subtle">guildId {guild.guildId?.trim() || 'N/A'}</div>
-                            <div className="subtle">memberCount {guild.memberCount ?? guild.members?.length ?? 0}</div>
-                            <div className="subtle">
-                              members {guild.members && guild.members.length > 0 ? guild.members.join(', ') : 'None'}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="card">
-                    <h2>Current Milestone Feed</h2>
-                    <ul className="list review-list">
-                      {palworldMilestoneFeed.length === 0 ? <li>No active milestone signals.</li> : null}
-                      {palworldMilestoneFeed.map((entry) => (
-                        <li key={`${entry.playerId}:${entry.signalKey}`} className="review-row">
-                          <div className="review-main">
-                            <div className="review-header">
-                              <span className="review-id">{entry.playerName ?? entry.accountName ?? entry.playerId}</span>
-                              <span className={`milestone-badge milestone-${entry.signalStrength}`}>{entry.signalStrength}</span>
-                            </div>
-                            <div>
-                              <strong>{entry.signalLabel}</strong>
-                            </div>
-                            <div className="subtle">{entry.signalReason}</div>
-                            <div className="subtle">
-                              identity {entry.identityState} • lvl {entry.level ?? 'N/A'} • session {entry.sessionTier ?? 'N/A'} • tier {entry.levelTier ?? 'N/A'}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="card">
-                    <h2>Recent Transition Events</h2>
-                    <ul className="list review-list">
-                      {palworldTransitionEvents.length === 0 ? <li>No recent transition events.</li> : null}
-                      {palworldTransitionEvents.map((event) => (
-                        <li key={getTransitionEventKey(event)} className="review-row">
-                          <div className="review-main">
-                            <div className="review-header">
-                              <span className="review-id">{event.playerName ?? event.accountName ?? event.playerId}</span>
-                              <span className={`confidence-badge confidence-${event.identityState === 'approved' ? 'high' : event.identityState === 'rejected' ? 'low' : 'medium'}`}>
-                                {event.identityState}
-                              </span>
-                            </div>
-                            <div><strong>{event.eventType}</strong></div>
-                            <div>{event.previewMessage}</div>
-                            <div className="subtle">
-                              {event.fromValue ?? 'N/A'} → {event.toValue ?? 'N/A'}
-                            </div>
-                            <div className="subtle">
-                              {formatTimestamp(event.occurredAt)}
-                            </div>
-                            <div className="review-button-row">
-                              <button
-                                type="button"
-                                className="review-button approve-button"
-                                onClick={() => void postPalworldTransitionEvent(event)}
-                                disabled={palworldTransitionPostSubmittingKey !== null}
-                              >
-                                {palworldTransitionPostSubmittingKey === getTransitionEventKey(event)
-                                  ? 'Posting...'
-                                  : 'Post to #palworld-activity'}
-                              </button>
-                            </div>
-                            {palworldTransitionPostSuccessKey === getTransitionEventKey(event) ? (
-                              <p className="success-message">Posted to the configured Palworld activity channel.</p>
-                            ) : null}
-                            {palworldTransitionPostErrorKey === getTransitionEventKey(event) && palworldTransitionPostError ? (
-                              <p className="error">{palworldTransitionPostError}</p>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="card">
-                    <h2>Recent Metrics</h2>
-                    <ul className="list">
-                      {palworldMetrics.length === 0 ? <li>No metrics snapshots</li> : null}
-                      {palworldMetrics.map((metric) => (
-                        <li key={metric.observedAt}>
-                          <span>{formatTimestamp(metric.observedAt)}</span>
-                          <span className="subtle">
-                            fps {metric.serverFps ?? 'N/A'} • players {metric.currentPlayerCount ?? 'N/A'} • uptime {metric.currentUptimeHours ?? 'N/A'}h
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="card">
-                    <h2>Identity Review Candidates</h2>
-                    {palworldIdentityLoading ? <p className="subtle">Loading identity link candidates...</p> : null}
-                    {palworldIdentityError ? <p className="error">{palworldIdentityError}</p> : null}
-                    <div className="review-actions-form">
-                      <label className="review-field">
-                        <span>Reviewed By</span>
-                        <input
-                          type="text"
-                          value={palworldReviewActor}
-                          onChange={(event) => setPalworldReviewActor(event.target.value)}
-                          placeholder="your name"
-                        />
-                      </label>
-                      <label className="review-field">
-                        <span>Notes</span>
-                        <input
-                          type="text"
-                          value={palworldReviewNotes}
-                          onChange={(event) => setPalworldReviewNotes(event.target.value)}
-                          placeholder="optional review note"
-                        />
-                      </label>
-                    </div>
-                    {palworldReviewActionError ? <p className="error">{palworldReviewActionError}</p> : null}
-                    <ul className="list review-list">
-                      {!palworldIdentityLoading && palworldIdentityCandidates.length === 0 ? <li>No candidate links found.</li> : null}
-                      {palworldIdentityCandidates.map((candidate) => (
-                        <li key={`${candidate.savePlayerFileName}:${candidate.telemetryLookupKey ?? 'none'}`} className="review-row">
-                          <div className="review-main">
-                            <div className="review-header">
-                              <span className="review-id">{candidate.savePlayerSaveId}</span>
-                              <span className={`confidence-badge confidence-${candidate.confidence}`}>{candidate.confidence}</span>
-                            </div>
-                            <div className="subtle">
-                              save file {candidate.savePlayerFileName}
-                            </div>
-                            <div>
-                              <strong>live:</strong> {candidate.candidate.playerName ?? candidate.candidate.accountName ?? candidate.telemetryLookupKey ?? 'unknown'}
-                            </div>
-                            <div className="subtle">
-                              score {candidate.score} • matched {candidate.matchedOn.join(', ') || 'none'}
-                            </div>
-                            <div className="subtle">
-                              {candidate.notes.join(' • ') || 'no additional notes'}
-                            </div>
-                            <div className="review-button-row">
-                              <button
-                                type="button"
-                                className="review-button approve-button"
-                                onClick={() => void submitPalworldReviewAction('approve', candidate.savePlayerSaveId)}
-                                disabled={palworldReviewSubmittingKey !== null}
-                              >
-                                {palworldReviewSubmittingKey === `approve:${candidate.savePlayerSaveId}` ? 'Approving...' : 'Approve'}
-                              </button>
-                              <button
-                                type="button"
-                                className="review-button reject-button"
-                                onClick={() => void submitPalworldReviewAction('reject', candidate.savePlayerSaveId)}
-                                disabled={palworldReviewSubmittingKey !== null}
-                              >
-                                {palworldReviewSubmittingKey === `reject:${candidate.savePlayerSaveId}` ? 'Rejecting...' : 'Reject'}
-                              </button>
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-
-                  <article className="card">
-                    <h2>Identity Review Failures</h2>
-                    <ul className="list review-list">
-                      {!palworldIdentityLoading && palworldIdentityFailures.length === 0 ? <li>No unmatched save players recorded.</li> : null}
-                      {palworldIdentityFailures.map((failure) => (
-                        <li key={`${failure.savePlayerFileName}:${failure.status}`} className="review-row">
-                          <div className="review-main">
-                            <div className="review-header">
-                              <span className="review-id">{failure.savePlayerSaveId}</span>
-                              <span className="warning-badge warning-general">{failure.status}</span>
-                            </div>
-                            <div className="subtle">save file {failure.savePlayerFileName}</div>
-                            <div className="subtle">{failure.message}</div>
-                            <div className="review-button-row">
-                              <button
-                                type="button"
-                                className="review-button reject-button"
-                                onClick={() => void submitPalworldReviewAction('reject', failure.savePlayerSaveId)}
-                                disabled={palworldReviewSubmittingKey !== null}
-                              >
-                                {palworldReviewSubmittingKey === `reject:${failure.savePlayerSaveId}` ? 'Rejecting...' : 'Reject'}
-                              </button>
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-                </section>
+                  </>
+                )}
               </section>
-            ) : null}
+            </section>
           </>
         )}
       </section>
