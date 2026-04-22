@@ -1314,32 +1314,32 @@ function App() {
     };
 
     if (palworldBaseCapacity) {
-      pushHighlight(`Base pressure is ${palworldBaseCapacity.statusLabel.toLowerCase()} at ${palworldBaseCapacity.usagePercent}% capacity`);
-      pushHighlight(`Estimated bases at ${palworldBaseCapacity.estimatedBases} / 240 with ${palworldBaseCapacity.remainingCapacity} slots left`);
+      pushHighlight(`Base pressure ${palworldBaseCapacity.statusLabel.toLowerCase()} at ${palworldBaseCapacity.usagePercent}%`);
+      pushHighlight(`${palworldBaseCapacity.estimatedBases} / 240 bases, ${palworldBaseCapacity.remainingCapacity} slots left`);
     }
 
     if (palworldBaseCapacityAlerts?.growthAlert) {
       pushHighlight(palworldBaseCapacityAlerts.growthAlert);
     } else if (palworldBaseSignalTrend.direction === 'increasing') {
-      pushHighlight(`Base trend is ${palworldBaseSignalTrend.indicator} increasing`);
+      pushHighlight(`Base trend ${palworldBaseSignalTrend.indicator} increasing`);
     }
 
     if (palworldGuildSummary.activeGuildsThreePlus > 0) {
       pushHighlight(`${palworldGuildSummary.activeGuildsThreePlus} guilds have 3+ active members`);
     } else if (palworldGuildSummary.activeGuildsTwoPlus > 0) {
-      pushHighlight(`${palworldGuildSummary.activeGuildsTwoPlus} guilds have at least 2 active members`);
+      pushHighlight(`${palworldGuildSummary.activeGuildsTwoPlus} guilds have 2+ active members`);
     } else if (palworldGuildSummary.likelyRealGuilds > 0) {
       pushHighlight(`${palworldGuildSummary.likelyRealGuilds} likely real guilds detected`);
     }
 
     if (palworldCorePlayers[0]) {
       const player = palworldCorePlayers[0];
-      pushHighlight(`Core player online: ${player.playerName ?? player.accountName ?? player.playerId}`);
+      pushHighlight(`Core player: ${player.playerName ?? player.accountName ?? player.playerId}`);
     }
 
     if (palworldMilestoneFeed[0]) {
       const entry = palworldMilestoneFeed[0];
-      pushHighlight(`${entry.playerName ?? entry.accountName ?? entry.playerId} reached ${entry.signalLabel}`);
+      pushHighlight(`${entry.playerName ?? entry.accountName ?? entry.playerId} hit ${entry.signalLabel}`);
     }
 
     if (palworldTransitionEvents[0]) {
@@ -1589,6 +1589,23 @@ function App() {
         </div>
       </header>
 
+      {selectedServer && selectedServerSummary ? (
+        <section className="dashboard-tab-shell">
+          <div className="dashboard-tab-row">
+            {detailTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={`review-button ${selectedDashboardTab === tab.key ? 'approve-button' : 'reject-button'}`}
+                onClick={() => setSelectedDashboardTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="fleet-section">
         <div className="section-heading">
           <h2>Fleet Overview</h2>
@@ -1677,17 +1694,27 @@ function App() {
           </article>
         ) : (
           <>
-            <section className="card-grid">
-              <article className="card">
-                <h2>Top Status Rail</h2>
-                <ul className="list compact">
-                  <li><span>Selected Server</span><span>{selectedServerSummary.displayName}</span></li>
-                  <li><span>Game</span><span>{selectedServerSummary.game}</span></li>
-                  <li><span>API / Connection</span><span>{health?.ok ? `${apiHealthLabel} / ${selectedServerSummary.state}` : selectedServerSummary.state}</span></li>
-                  <li><span>Current Alerts</span><span>{selectedAlertCount}</span></li>
-                  <li><span>Last Updated</span><span>{lastUpdatedLabel}</span></li>
-                </ul>
-              </article>
+            <section className="top-status-rail">
+              <div className="top-status-chip">
+                <span className="top-status-key">Server</span>
+                <span className="top-status-value">{selectedServerSummary.displayName}</span>
+              </div>
+              <div className="top-status-chip">
+                <span className="top-status-key">Game</span>
+                <span className="top-status-value">{selectedServerSummary.game}</span>
+              </div>
+              <div className="top-status-chip">
+                <span className="top-status-key">Connection</span>
+                <span className="top-status-value">{health?.ok ? `${apiHealthLabel} / ${selectedServerSummary.state}` : selectedServerSummary.state}</span>
+              </div>
+              <div className="top-status-chip">
+                <span className="top-status-key">Alerts</span>
+                <span className="top-status-value">{selectedAlertCount}</span>
+              </div>
+              <div className="top-status-chip">
+                <span className="top-status-key">Updated</span>
+                <span className="top-status-value">{lastUpdatedLabel}</span>
+              </div>
             </section>
 
             {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
@@ -1695,51 +1722,73 @@ function App() {
 
             <section className="game-section">
               <section className="card-grid">
-                <article className="card">
+                <article className="card summary-card signal-card">
                   <h2>Server Health</h2>
                   {selectedServer.game === 'palworld' && palworldServerHealthSummary ? (
-                    <ul className="list compact">
-                      <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{palworldServerHealthSummary.status}</span></li>
-                      <li><span>Estimated Bases</span><span>{palworldServerHealthSummary.estimatedBasesLabel}</span></li>
-                      <li><span>Remaining Slots</span><span>{palworldServerHealthSummary.remainingSlotsLabel}</span></li>
-                      <li><span>Trend</span><span>{palworldServerHealthSummary.trendLabel}</span></li>
-                      <li><span>Summary</span><span>{palworldServerHealthSummary.summary}</span></li>
-                    </ul>
+                    <>
+                      <div className="signal-main">
+                        <div className="signal-value">{palworldServerHealthSummary.status}</div>
+                        <div className="signal-caption">{palworldServerHealthSummary.summary}</div>
+                      </div>
+                      <div className="signal-metric-row">
+                        <div className="signal-metric">
+                          <span className="signal-metric-value">{palworldServerHealthSummary.estimatedBasesLabel}</span>
+                          <span className="signal-metric-label">bases</span>
+                        </div>
+                        <div className="signal-metric">
+                          <span className="signal-metric-value">{palworldServerHealthSummary.remainingSlotsLabel}</span>
+                          <span className="signal-metric-label">slots left</span>
+                        </div>
+                      </div>
+                      <div className="signal-inline-meta">{palworldServerHealthSummary.trendLabel}</div>
+                    </>
                   ) : (
-                    <ul className="list compact">
-                      <li><span>Status</span><span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span></li>
-                      <li><span>Reported</span><span>{selectedServerSummary.reportedState}</span></li>
-                      <li><span>Active Players</span><span>{selectedServerSummary.activePlayers}</span></li>
-                      <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
-                      <li><span>Summary</span><span>{selectedWarningSummary[0]?.snippet ?? 'Server status looks stable.'}</span></li>
-                    </ul>
+                    <>
+                      <div className="signal-main">
+                        <div className="signal-value">{selectedServerSummary.state}</div>
+                        <div className="signal-caption">{selectedWarningSummary[0]?.snippet ?? 'Server status looks stable.'}</div>
+                      </div>
+                      <div className="signal-metric-row">
+                        <div className="signal-metric">
+                          <span className="signal-metric-value">{selectedServerSummary.activePlayers}</span>
+                          <span className="signal-metric-label">active</span>
+                        </div>
+                        <div className="signal-metric">
+                          <span className="signal-metric-value">{selectedServerSummary.knownPlayerCount}</span>
+                          <span className="signal-metric-label">known</span>
+                        </div>
+                      </div>
+                      <div className="signal-inline-meta">{selectedServerSummary.reportedState}</div>
+                    </>
                   )}
                 </article>
 
-                <article className="card">
+                <article className="card summary-card signal-card">
                   <h2>Community Pulse</h2>
-                  <ul className="list compact">
-                    <li><span>Pulse</span><span>{activeCommunityPulse.state}</span></li>
+                  <div className="signal-main">
+                    <div className="signal-value">{activeCommunityPulse.state}</div>
+                    <div className="signal-caption">{activeCommunityPulse.summary}</div>
+                  </div>
+                  <div className="signal-inline-stats">
                     {selectedServer.game === 'palworld' ? (
                       <>
-                        <li><span>Online Players</span><span>{palworldLatestPlayers.filter((player) => player.isOnline).length}</span></li>
-                        <li><span>Active Guilds</span><span>{palworldGuildSummary.activeGuildsTwoPlus}</span></li>
-                        <li><span>Core Players</span><span>{palworldCorePlayers.length}</span></li>
+                        <span>{palworldLatestPlayers.filter((player) => player.isOnline).length} online</span>
+                        <span>{palworldGuildSummary.activeGuildsTwoPlus} active guilds</span>
+                        <span>{palworldCorePlayers.length} core players</span>
                       </>
                     ) : (
                       <>
-                        <li><span>Active Sessions</span><span>{selectedServerSummary.activePlayers}</span></li>
-                        <li><span>Known Players</span><span>{selectedServerSummary.knownPlayerCount}</span></li>
-                        <li><span>Recent Warnings</span><span>{selectedServerSummary.recentWarnings.length}</span></li>
+                        <span>{selectedServerSummary.activePlayers} active</span>
+                        <span>{selectedServerSummary.knownPlayerCount} known</span>
+                        <span>{selectedServerSummary.recentWarnings.length} warnings</span>
                       </>
                     )}
-                    <li><span>Interpretation</span><span>{activeCommunityPulse.summary}</span></li>
-                  </ul>
+                  </div>
                 </article>
 
-                <article className="card">
+                <article className="card summary-card">
                   <h2>Highlights</h2>
-                  <ul className="list compact">
+                  <ul className="list compact summary-bullets">
                     {homepageHighlights.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
@@ -1807,39 +1856,30 @@ function App() {
                   )}
                 </article>
 
-                <article className="card">
+                <article className="card summary-card signal-card">
                   <h2>Alerts Snapshot</h2>
                   {selectedServer.game === 'palworld' ? (
-                    <ul className="list compact">
-                      <li><span>Pressure Status</span><span>{palworldAlertsSnapshot.pressureStatus}</span></li>
-                      <li><span>Growth Alert</span><span>{palworldAlertsSnapshot.growthState}</span></li>
-                      <li><span>Alert Active</span><span>{palworldAlertsSnapshot.alertState}</span></li>
-                    </ul>
+                    <>
+                      <div className="signal-main">
+                        <div className="signal-value">{palworldAlertsSnapshot.alertState}</div>
+                        <div className="signal-caption">{palworldAlertsSnapshot.pressureStatus}</div>
+                      </div>
+                      <div className="signal-inline-stats">
+                        <span>growth {palworldAlertsSnapshot.growthState}</span>
+                        <span>pressure {palworldAlertsSnapshot.pressureStatus}</span>
+                      </div>
+                    </>
                   ) : (
-                    <ul className="list compact">
-                      <li><span>Alert Active</span><span>{selectedAlertCount > 0 ? 'Active' : 'Clear'}</span></li>
-                      <li><span>Warning Groups</span><span>{selectedWarningSummary.length}</span></li>
-                      <li><span>Top Warning</span><span>{selectedWarningSummary[0]?.snippet ?? 'None'}</span></li>
-                    </ul>
+                    <>
+                      <div className="signal-main">
+                        <div className="signal-value">{selectedAlertCount > 0 ? 'Active' : 'Clear'}</div>
+                        <div className="signal-caption">{selectedWarningSummary[0]?.snippet ?? 'No current alerts.'}</div>
+                      </div>
+                      <div className="signal-inline-stats">
+                        <span>{selectedWarningSummary.length} warning groups</span>
+                      </div>
+                    </>
                   )}
-                </article>
-              </section>
-
-              <section className="card-grid">
-                <article className="card">
-                  <h2>Navigation</h2>
-                  <div className="review-button-row">
-                    {detailTabs.map((tab) => (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        className={`review-button ${selectedDashboardTab === tab.key ? 'approve-button' : 'reject-button'}`}
-                        onClick={() => setSelectedDashboardTab(tab.key)}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
                 </article>
               </section>
 
