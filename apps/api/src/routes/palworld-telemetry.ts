@@ -4,6 +4,7 @@ import {
   palworldManualTransitionPostResponseSchema,
   palworldMilestoneFeedResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
+  palworldPlayerProfileSessionSummariesResponseSchema,
   palworldTransitionMilestoneEventsResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerTelemetryProfileResponseSchema,
@@ -15,6 +16,7 @@ import {
   type PalworldManualTransitionPostResponse,
   type PalworldMilestoneFeedResponse,
   type PalworldPlayerSnapshotsResponse,
+  type PalworldPlayerProfileSessionSummariesResponse,
   type PalworldTransitionMilestoneEventsResponse,
   type PalworldMetricsSummariesResponse,
   type PalworldPlayerTelemetryProfileResponse,
@@ -30,7 +32,12 @@ import {
   getRecentPalworldPlayerSnapshotsForServer,
   getRecentPalworldMetricsForServer
 } from '../services/palworld-telemetry-store.js';
-import { getPalworldMilestoneFeedForServer, getPalworldUnifiedPlayerProfile, getPalworldUnifiedProfilesForServer } from '../services/palworld-player-profile.js';
+import {
+  getPalworldMilestoneFeedForServer,
+  getPalworldPlayerProfileSessionSummariesForServer,
+  getPalworldUnifiedPlayerProfile,
+  getPalworldUnifiedProfilesForServer
+} from '../services/palworld-player-profile.js';
 import { generatePalworldHighlights } from '../services/palworld-highlight-generator.js';
 import {
   evaluatePalworldMilestoneTransitionsForServer,
@@ -671,6 +678,26 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       return palworldLatestPlayersResponseSchema.parse({
         serverId,
         players: getLatestPalworldPlayersForServer(serverId, limit)
+      });
+    }
+  );
+
+  app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>(
+    '/servers/:serverId/palworld/players/profiles',
+    async (request, reply): Promise<PalworldPlayerProfileSessionSummariesResponse | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      const parsedLimit = Number(request.query.limit);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 100;
+
+      return palworldPlayerProfileSessionSummariesResponseSchema.parse({
+        serverId,
+        profiles: getPalworldPlayerProfileSessionSummariesForServer(serverId, limit)
       });
     }
   );

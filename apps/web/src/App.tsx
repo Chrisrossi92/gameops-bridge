@@ -9,6 +9,7 @@ import {
   palworldMilestoneFeedResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
+  palworldPlayerProfileSessionSummariesResponseSchema,
   palworldTransitionMilestoneEventsResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   recentEventsResponseSchema,
@@ -23,6 +24,7 @@ import {
   type PalworldManualTransitionPostResponse,
   type PalworldMilestoneFeedEntry,
   type PalworldMetricsSummary,
+  type PalworldPlayerProfileSessionSummary,
   type PalworldPlayerSnapshot,
   type PalworldRejectedIdentity,
   type PalworldTransitionMilestoneEvent,
@@ -93,6 +95,74 @@ interface PalworldGuildHint {
   members?: string[] | null;
 }
 
+interface PlayerProfileCardProps {
+  profile: PalworldPlayerProfileSessionSummary;
+}
+
+function PlayerProfileCard({ profile }: PlayerProfileCardProps) {
+  return (
+    <li className="review-row">
+      <div className="review-main">
+        <div className="review-header">
+          <span className="review-id">{profile.playerName ?? profile.accountName ?? profile.playerId}</span>
+          <span className={`state-pill state-${profile.isOnline ? 'online' : 'offline'}`}>
+            {profile.isOnline ? 'online' : 'offline'}
+          </span>
+        </div>
+        <div className="telemetry-stats">
+          <span>session {formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)}</span>
+          <span>recent {formatDurationFromSeconds(profile.recentTrackedSeconds)}</span>
+          <span>guild {profile.inferredGuildName ?? 'N/A'}</span>
+          <span>save {profile.saveArtifact.present ? 'present' : 'missing'}</span>
+          {profile.profile.level !== null ? <span>lvl {profile.profile.level}</span> : null}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function OnlinePlayerRow({ profile }: PlayerProfileCardProps) {
+  return (
+    <li className="homepage-player-row">
+      <div className="homepage-player-main">
+        <div className="homepage-player-title">
+          <span className="homepage-player-name">{profile.playerName ?? profile.accountName ?? profile.playerId}</span>
+          <span className="homepage-online-badge">online</span>
+        </div>
+        <div className="homepage-player-meta">
+          <span>session {formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)}</span>
+          <span>{profile.inferredGuildName ?? 'No guild'}</span>
+        </div>
+      </div>
+      {profile.profile.level !== null ? <span className="homepage-player-level">lvl {profile.profile.level}</span> : null}
+    </li>
+  );
+}
+
+interface TopPlayerRowProps {
+  profile: PalworldPlayerProfileSessionSummary;
+  rank: number;
+}
+
+function TopPlayerRow({ profile, rank }: TopPlayerRowProps) {
+  return (
+    <li className="homepage-player-row">
+      <span className="homepage-player-rank">{rank}</span>
+      <div className="homepage-player-main">
+        <div className="homepage-player-title">
+          <span className="homepage-player-name">{profile.playerName ?? profile.accountName ?? profile.playerId}</span>
+          {profile.profile.level !== null ? <span className="homepage-player-level">lvl {profile.profile.level}</span> : null}
+        </div>
+        <div className="homepage-player-meta">
+          <span>{formatDurationFromSeconds(profile.recentTrackedSeconds)} recent</span>
+          <span>{profile.inferredGuildName ?? 'No guild'}</span>
+          <span>save {profile.saveArtifact.present ? 'present' : 'missing'}</span>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 interface PalworldBaseSignalHistoryEntry {
   timestamp: string;
   baseSignal: number;
@@ -136,6 +206,7 @@ function App() {
   const [selectedPalworldPlayerKey, setSelectedPalworldPlayerKey] = useState<string | null>(null);
   const [selectedPalworldPlayerProfile, setSelectedPalworldPlayerProfile] = useState<PalworldUnifiedPlayerProfile | null>(null);
   const [selectedPalworldHistory, setSelectedPalworldHistory] = useState<PalworldPlayerSnapshot[]>([]);
+  const [playerProfiles, setPlayerProfiles] = useState<PalworldPlayerProfileSessionSummary[]>([]);
   const [palworldPlayerProfiles, setPalworldPlayerProfiles] = useState<PalworldUnifiedPlayerProfile[]>([]);
   const [palworldPlayerProfilesLoading, setPalworldPlayerProfilesLoading] = useState(false);
   const [palworldPlayerDetailLoading, setPalworldPlayerDetailLoading] = useState(false);
@@ -178,6 +249,7 @@ function App() {
     setSelectedPalworldPlayerKey(null);
     setSelectedPalworldPlayerProfile(null);
     setSelectedPalworldHistory([]);
+    setPlayerProfiles([]);
     setPalworldPlayerProfiles([]);
     setPalworldPlayerProfilesLoading(false);
     setPalworldPlayerDetailLoading(false);
@@ -472,6 +544,7 @@ function App() {
         setPalworldBaseSignal(null);
         setPalworldRefinedEstimatedBases(null);
         setPalworldBaseSignalHistory([]);
+        setPlayerProfiles([]);
         setPalworldGuilds([]);
         setPalworldGuildsError(null);
         setDetailLoading(false);
@@ -483,8 +556,9 @@ function App() {
         setDetailLoading(true);
         setDetailError(null);
 
-        const [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse, guildsResult] = await Promise.all([
+        const [latestPlayersResponse, profilesResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse, guildsResult] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest?limit=40`),
+          fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/profiles?limit=100`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/current?limit=24`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/milestones/transitions/recent?limit=24`),
@@ -498,24 +572,26 @@ function App() {
             }))
         ]);
 
-        if (!latestPlayersResponse.ok || !metricsResponse.ok || !milestonesResponse.ok || !transitionsResponse.ok || !baseSignalResponse.ok || !baseSignalHistoryResponse.ok) {
-          const statusCode = [latestPlayersResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse].find((response) => !response.ok)?.status;
+        if (!latestPlayersResponse.ok || !profilesResponse.ok || !metricsResponse.ok || !milestonesResponse.ok || !transitionsResponse.ok || !baseSignalResponse.ok || !baseSignalHistoryResponse.ok) {
+          const statusCode = [latestPlayersResponse, profilesResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse].find((response) => !response.ok)?.status;
           throw new Error(`Palworld detail fetch failed with status ${statusCode ?? 'unknown'}`);
         }
 
-        const [latestPlayersPayload, metricsPayload, milestonesPayload, transitionsPayload] = await Promise.all([
+        const [latestPlayersPayload, profilesPayload, metricsPayload, milestonesPayload, transitionsPayload] = await Promise.all([
           latestPlayersResponse.json(),
+          profilesResponse.json(),
           metricsResponse.json(),
           milestonesResponse.json(),
           transitionsResponse.json()
         ]);
 
         const latestPlayersParsed = palworldLatestPlayersResponseSchema.safeParse(latestPlayersPayload);
+        const profilesParsed = palworldPlayerProfileSessionSummariesResponseSchema.safeParse(profilesPayload);
         const metricsParsed = palworldMetricsSummariesResponseSchema.safeParse(metricsPayload);
         const milestonesParsed = palworldMilestoneFeedResponseSchema.safeParse(milestonesPayload);
         const transitionsParsed = palworldTransitionMilestoneEventsResponseSchema.safeParse(transitionsPayload);
 
-        if (!latestPlayersParsed.success || !metricsParsed.success || !milestonesParsed.success || !transitionsParsed.success) {
+        if (!latestPlayersParsed.success || !profilesParsed.success || !metricsParsed.success || !milestonesParsed.success || !transitionsParsed.success) {
           throw new Error('Palworld detail payload validation failed.');
         }
 
@@ -524,6 +600,7 @@ function App() {
         }
 
         setPalworldLatestPlayers(latestPlayersParsed.data.players);
+        setPlayerProfiles(profilesParsed.data.profiles);
         setPalworldMetrics(metricsParsed.data.metrics);
         setPalworldMilestoneFeed(milestonesParsed.data.milestones);
         setPalworldTransitionEvents(transitionsParsed.data.events);
@@ -537,6 +614,7 @@ function App() {
         if (isMounted) {
           setDetailError(message);
           setPalworldLatestPlayers([]);
+          setPlayerProfiles([]);
           setPalworldMetrics([]);
           setPalworldMilestoneFeed([]);
           setPalworldTransitionEvents([]);
@@ -1037,6 +1115,28 @@ function App() {
     palworldRejectedIdentities
   ]);
 
+  const sortedPlayerProfiles = useMemo(() => {
+    return [...playerProfiles].sort((left, right) => {
+      if (Number(right.isOnline) !== Number(left.isOnline)) {
+        return Number(right.isOnline) - Number(left.isOnline);
+      }
+
+      return right.recentTrackedSeconds - left.recentTrackedSeconds;
+    });
+  }, [playerProfiles]);
+
+  const nowOnlinePlayerProfiles = useMemo(() => {
+    return sortedPlayerProfiles
+      .filter((profile) => profile.isOnline)
+      .slice(0, 5);
+  }, [sortedPlayerProfiles]);
+
+  const topPlayerProfiles = useMemo(() => {
+    return [...playerProfiles]
+      .sort((left, right) => right.recentTrackedSeconds - left.recentTrackedSeconds)
+      .slice(0, 5);
+  }, [playerProfiles]);
+
   const palworldBaseCapacity = useMemo(() => {
     if (palworldBaseSignal === null) {
       return null;
@@ -1426,7 +1526,6 @@ function App() {
   const activeHighlights = selectedServer?.game === 'palworld'
     ? palworldOverviewHighlights
     : valheimOverviewHighlights;
-  const homepageHighlights = activeHighlights.slice(0, 4);
   const palworldCommunityPulse = useMemo(() => {
     const onlinePlayers = palworldLatestPlayers.filter((player) => player.isOnline).length;
     const activeGuilds = palworldGuildSummary.activeGuildsTwoPlus;
@@ -1524,6 +1623,40 @@ function App() {
     };
   }, [palworldBaseCapacity?.statusLabel, palworldBaseCapacityAlerts]);
 
+  const serverHealthTone = useMemo(() => {
+    if (selectedServer?.game === 'palworld' && palworldServerHealthSummary) {
+      const normalized = palworldServerHealthSummary.status.toLowerCase();
+
+      if (normalized === 'safe') {
+        return 'safe';
+      }
+
+      if (normalized === 'critical') {
+        return 'critical';
+      }
+
+      if (normalized === 'high') {
+        return 'high';
+      }
+
+      return 'warning';
+    }
+
+    if (selectedServerSummary?.state === 'online') {
+      return 'safe';
+    }
+
+    if (selectedServerSummary?.state === 'degraded') {
+      return 'warning';
+    }
+
+    if (selectedServerSummary?.state === 'offline') {
+      return 'critical';
+    }
+
+    return 'high';
+  }, [palworldServerHealthSummary, selectedServer?.game, selectedServerSummary?.state]);
+
   return (
     <main className="dashboard">
       <header className="dashboard-header">
@@ -1608,8 +1741,7 @@ function App() {
 
       <section className="fleet-section">
         <div className="section-heading">
-          <h2>Fleet Overview</h2>
-          <p className="subtle">All configured servers in one view, filterable by game.</p>
+          <h2>Fleet</h2>
         </div>
 
         {fleetLoading ? <p className="subtle">Loading fleet telemetry...</p> : null}
@@ -1617,7 +1749,6 @@ function App() {
         <div className="fleet-grid">
           {filteredServers.map((server) => {
             const summary = fleetByServerId[server.id];
-            const warnings = summarizeWarnings(summary?.recentWarnings ?? []);
 
             return (
               <article
@@ -1667,15 +1798,6 @@ function App() {
                     </>
                   )}
                 </div>
-                <ul className="list compact">
-                  {warnings.length === 0 ? <li>No recent warnings</li> : null}
-                  {warnings.slice(0, 2).map((warning) => (
-                    <li key={`${warning.signature}:${warning.latestAt}`}>
-                      <span className={`warning-badge warning-${warning.category}`}>{formatWarningCategoryLabel(warning.category)}</span>
-                      <span className="subtle">{warning.snippet}</span>
-                    </li>
-                  ))}
-                </ul>
               </article>
             );
           })}
@@ -1721,8 +1843,8 @@ function App() {
             {detailError ? <p className="error">{detailError}</p> : null}
 
             <section className="game-section">
-              <section className="card-grid">
-                <article className="card summary-card signal-card">
+              <section className="card-grid command-card-grid">
+                <article className={`card summary-card signal-card server-health-card server-health-${serverHealthTone}`}>
                   <h2>Server Health</h2>
                   {selectedServer.game === 'palworld' && palworldServerHealthSummary ? (
                     <>
@@ -1763,50 +1885,45 @@ function App() {
                   )}
                 </article>
 
-                <article className="card summary-card signal-card">
-                  <h2>Community Pulse</h2>
-                  <div className="signal-main">
-                    <div className="signal-value">{activeCommunityPulse.state}</div>
-                    <div className="signal-caption">{activeCommunityPulse.summary}</div>
-                  </div>
-                  <div className="signal-inline-stats">
-                    {selectedServer.game === 'palworld' ? (
-                      <>
-                        <span>{palworldLatestPlayers.filter((player) => player.isOnline).length} online</span>
-                        <span>{palworldGuildSummary.activeGuildsTwoPlus} active guilds</span>
-                        <span>{palworldCorePlayers.length} core players</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>{selectedServerSummary.activePlayers} active</span>
-                        <span>{selectedServerSummary.knownPlayerCount} known</span>
-                        <span>{selectedServerSummary.recentWarnings.length} warnings</span>
-                      </>
-                    )}
-                  </div>
-                </article>
+                {selectedServer.game === 'palworld' ? (
+                  <>
+                    <article className="card">
+                      <h2>Now Online</h2>
+                      <ul className="list review-list">
+                        {nowOnlinePlayerProfiles.length === 0 ? <li>No players online</li> : null}
+                        {nowOnlinePlayerProfiles.map((profile) => (
+                          <OnlinePlayerRow key={`online:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} profile={profile} />
+                        ))}
+                      </ul>
+                    </article>
 
-                <article className="card summary-card">
-                  <h2>Highlights</h2>
-                  <ul className="list compact summary-bullets">
-                    {homepageHighlights.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </article>
-
-                <article className="card">
-                  <h2>Action Center</h2>
-                  <div className="review-button-row">
-                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab('highlights')}>View Highlights</button>
-                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab(selectedServer.game === 'palworld' ? 'guilds' : 'activity')}>{selectedServer.game === 'palworld' ? 'Explore Guilds' : 'Explore Activity'}</button>
-                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab('players')}>Explore Players</button>
-                    <button type="button" className="review-button approve-button" onClick={() => setSelectedDashboardTab('diagnostics')}>View Alerts</button>
-                  </div>
-                </article>
+                    <article className="card">
+                      <h2>Top Players</h2>
+                      <ul className="list review-list">
+                        {topPlayerProfiles.length === 0 ? <li>No tracked playtime yet</li> : null}
+                        {topPlayerProfiles.map((profile, index) => (
+                          <TopPlayerRow key={`top:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} profile={profile} rank={index + 1} />
+                        ))}
+                      </ul>
+                    </article>
+                  </>
+                ) : (
+                  <article className="card summary-card signal-card">
+                    <h2>Community Pulse</h2>
+                    <div className="signal-main">
+                      <div className="signal-value">{activeCommunityPulse.state}</div>
+                      <div className="signal-caption">{activeCommunityPulse.summary}</div>
+                    </div>
+                    <div className="signal-inline-stats">
+                      <span>{selectedServerSummary.activePlayers} active</span>
+                      <span>{selectedServerSummary.knownPlayerCount} known</span>
+                      <span>{selectedServerSummary.recentWarnings.length} warnings</span>
+                    </div>
+                  </article>
+                )}
               </section>
 
-              <section className="card-grid">
+              <section className="card-grid secondary-card-grid">
                 <article className="card">
                   <h2>World Capacity Summary</h2>
                   <ul className="list compact">
@@ -1887,9 +2004,9 @@ function App() {
                 {selectedServer.game === 'valheim' ? (
                   <>
                     {selectedDashboardTab === 'overview' ? (
-                      <article className="card">
+                      <article className="card overview-note-card">
                         <h2>Overview</h2>
-                        <p className="subtle">Command center summary is now carried by the rows above. Use the tabs to open player, activity, ops, and diagnostics detail.</p>
+                        <p className="subtle">Use tabs for player, activity, ops, and diagnostics detail.</p>
                       </article>
                     ) : null}
 
@@ -2052,9 +2169,9 @@ function App() {
                 ) : (
                   <>
                     {selectedDashboardTab === 'overview' ? (
-                      <article className="card">
+                      <article className="card overview-note-card">
                         <h2>Overview</h2>
-                        <p className="subtle">Command center summary is now carried by the rows above. Use the tabs to open detailed players, guilds, metrics, ops, and diagnostics views.</p>
+                        <p className="subtle">Use tabs for detailed players, guilds, metrics, ops, and diagnostics.</p>
                       </article>
                     ) : null}
 

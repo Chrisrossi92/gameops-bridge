@@ -1,7 +1,7 @@
 .dashboard {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 1.25rem 1rem 2rem;
+  padding: 1rem 1rem 1.6rem;
 }
 
 .dashboard-header h1,
@@ -12,13 +12,13 @@
 
 .dashboard-header p,
 .section-heading p {
-  margin-top: 0.4rem;
-  margin-bottom: 0.65rem;
+  margin-top: 0.28rem;
+  margin-bottom: 0.5rem;
   color: #64748b;
 }
 
 .dashboard-tab-shell {
-  margin-top: 0.55rem;
+  margin-top: 0.45rem;
 }
 
 .dashboard-tab-row {
@@ -32,7 +32,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.6rem;
 }
 
 .toolbar-wide {
@@ -99,43 +99,54 @@
 .fleet-section,
 .detail-section,
 .game-section {
-  margin-top: 0.9rem;
+  margin-top: 0.7rem;
 }
 
 .section-heading {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.4rem;
 }
 
 .fleet-grid,
 .card-grid {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
 .fleet-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .card-grid {
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+}
+
+.command-card-grid {
+  grid-template-columns: minmax(300px, 1.1fr) repeat(2, minmax(260px, 0.95fr));
+  align-items: stretch;
+}
+
+.secondary-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
 .card {
   border: 1px solid #d8e1ec;
   border-radius: 0.75rem;
-  padding: 0.8rem 0.85rem;
+  padding: 0.7rem 0.75rem;
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-  min-height: 220px;
+  min-height: 176px;
 }
 
 .card h2 {
   margin-top: 0;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.35rem;
   font-size: 0.98rem;
 }
 
 .fleet-card {
   cursor: pointer;
+  min-height: 0;
+  padding: 0.55rem 0.6rem;
   transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 
@@ -150,8 +161,12 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.8rem;
-  margin-bottom: 0.65rem;
+  gap: 0.6rem;
+  margin-bottom: 0.38rem;
+}
+
+.fleet-card-top .subtle {
+  margin: 0.12rem 0 0;
 }
 
 .fleet-metrics,
@@ -163,7 +178,8 @@
 
 .fleet-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-bottom: 0.75rem;
+  gap: 0.38rem;
+  margin-bottom: 0;
 }
 
 .detail-grid {
@@ -175,11 +191,25 @@
 .detail-block {
   border: 1px solid #dbe4ee;
   border-radius: 0.55rem;
-  padding: 0.55rem 0.65rem;
+  padding: 0.45rem 0.55rem;
   background: #f8fbff;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
+}
+
+.fleet-card .summary-item {
+  border-radius: 0.45rem;
+  padding: 0.34rem 0.42rem;
+  gap: 0.14rem;
+}
+
+.fleet-card .summary-label {
+  font-size: 0.68rem;
+}
+
+.fleet-card .kpi-small {
+  font-size: 1rem;
 }
 
 .detail-block {
@@ -193,7 +223,68 @@
 .signal-card {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.45rem;
+}
+
+.server-health-card {
+  min-height: 206px;
+  position: relative;
+  border-top-width: 3px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.server-health-card .signal-value {
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.server-health-card .signal-caption {
+  font-size: 0.86rem;
+}
+
+.server-health-card .signal-metric {
+  background: #ffffff;
+}
+
+.server-health-card .signal-inline-meta {
+  font-size: 0.82rem;
+}
+
+.server-health-safe {
+  border-top-color: #22c55e;
+  box-shadow: 0 10px 28px rgba(34, 197, 94, 0.12);
+}
+
+.server-health-safe .signal-value {
+  color: #15803d;
+}
+
+.server-health-warning {
+  border-top-color: #f59e0b;
+  box-shadow: 0 10px 28px rgba(245, 158, 11, 0.14);
+}
+
+.server-health-warning .signal-value {
+  color: #b45309;
+}
+
+.server-health-high {
+  border-top-color: #f97316;
+  box-shadow: 0 10px 28px rgba(249, 115, 22, 0.16);
+}
+
+.server-health-high .signal-value {
+  color: #c2410c;
+}
+
+.server-health-critical {
+  border-top-color: #ef4444;
+  box-shadow: 0 10px 28px rgba(239, 68, 68, 0.16);
+}
+
+.server-health-critical .signal-value {
+  color: #b91c1c;
 }
 
 .signal-main {
@@ -219,13 +310,13 @@
 .signal-metric-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: 0.42rem;
 }
 
 .signal-metric {
   border: 1px solid #dbe4ee;
   border-radius: 0.55rem;
-  padding: 0.5rem 0.55rem;
+  padding: 0.42rem 0.48rem;
   background: #f8fbff;
   display: flex;
   flex-direction: column;
@@ -276,15 +367,15 @@
 .top-status-rail {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-top: 0.15rem;
+  gap: 0.35rem;
+  margin-top: 0.05rem;
 }
 
 .top-status-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.3rem 0.55rem;
+  padding: 0.24rem 0.5rem;
   border: 1px solid #dbe4ee;
   border-radius: 999px;
   background: #f8fbff;
@@ -504,6 +595,99 @@
   font-size: 0.84rem;
 }
 
+.homepage-player-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #e5eaf2;
+  border-radius: 0.5rem;
+  padding: 0.42rem 0.5rem;
+  background: #fff;
+}
+
+.command-card-grid .card:not(.server-health-card) {
+  min-height: 0;
+}
+
+.homepage-player-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.homepage-player-title,
+.homepage-player-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+  min-width: 0;
+}
+
+.homepage-player-title {
+  justify-content: space-between;
+}
+
+.homepage-player-meta {
+  flex-wrap: wrap;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.homepage-player-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.homepage-online-badge,
+.homepage-player-level,
+.homepage-player-rank {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.overview-note-card {
+  min-height: 0;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.overview-note-card p {
+  margin: 0;
+}
+
+.homepage-online-badge {
+  border-radius: 999px;
+  padding: 0.16rem 0.42rem;
+  background: #dcfce7;
+  color: #166534;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.homepage-player-level {
+  color: #334155;
+}
+
+.homepage-player-rank {
+  width: 1.45rem;
+  height: 1.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1d4ed8;
+}
+
 .history-entry {
   display: flex;
   flex-direction: column;
@@ -678,7 +862,17 @@
   margin-top: 1rem;
 }
 
+@media (max-width: 920px) {
+  .command-card-grid {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+}
+
 @media (max-width: 720px) {
+  .command-card-grid {
+    grid-template-columns: 1fr;
+  }
+
   .toolbar-wide {
     justify-content: flex-start;
   }

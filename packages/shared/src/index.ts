@@ -550,6 +550,29 @@ export const palworldUnifiedPlayerProfileSchema = z.object({
 });
 export type PalworldUnifiedPlayerProfile = z.infer<typeof palworldUnifiedPlayerProfileSchema>;
 
+export const palworldPlayerProfileSessionSummarySchema = z.object({
+  serverId: z.string().min(1),
+  playerId: z.string().min(1),
+  lookupKey: z.string().nullable(),
+  playerName: z.string().nullable(),
+  accountName: z.string().nullable(),
+  isOnline: z.boolean(),
+  activeSessionStartedAt: z.string().datetime().nullable(),
+  currentSessionDurationSeconds: z.number().int().min(0).nullable(),
+  recentTrackedSeconds: z.number().int().min(0),
+  recentSessions: z.array(sessionRecordSchema),
+  saveArtifact: palworldPlayerSaveArtifactSchema,
+  inferredGuildName: z.string().nullable(),
+  profile: palworldUnifiedPlayerProfileSchema
+});
+export type PalworldPlayerProfileSessionSummary = z.infer<typeof palworldPlayerProfileSessionSummarySchema>;
+
+export const palworldPlayerProfileSessionSummariesResponseSchema = z.object({
+  serverId: z.string().min(1),
+  profiles: z.array(palworldPlayerProfileSessionSummarySchema)
+});
+export type PalworldPlayerProfileSessionSummariesResponse = z.infer<typeof palworldPlayerProfileSessionSummariesResponseSchema>;
+
 const workspaceConfigSchema = z.object({
   workspaceId: z.string().min(1),
   workspaceName: z.string().min(1),

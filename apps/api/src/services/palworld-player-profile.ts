@@ -5,10 +5,12 @@ import {
   type PalworldMilestoneSignal,
   type PalworldPlayerClassification,
   type PalworldPlayerImpactLevel,
+  palworldPlayerProfileSessionSummarySchema,
   palworldUnifiedPlayerProfileSchema,
   type PalworldApprovedIdentity,
   type PalworldLatestPlayerTelemetry,
   type PalworldLevelTier,
+  type PalworldPlayerProfileSessionSummary,
   type PalworldRejectedIdentity,
   type PalworldSessionTier,
   type PalworldUnifiedPlayerProfile
@@ -16,6 +18,7 @@ import {
 import { z } from 'zod';
 import { listPalworldIdentityApprovals } from './palworld-identity-approvals.js';
 import { getLatestPalworldPlayerForServer, getLatestPalworldPlayersForServer } from './palworld-telemetry-store.js';
+import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from './event-store.js';
 
 const rawPlayerFileSchema = z.object({
   path: z.string().min(1),
@@ -50,6 +53,36 @@ function resolvePlayersSummaryPath(): string {
 
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getProfileSessionMatchKeys(profile: PalworldUnifiedPlayerProfile): string[] {
+  return [
+    profile.lookupKey ?? '',
+    profile.playerId,
+    profile.userId ?? '',
+    profile.accountName ?? '',
+    profile.playerName ?? ''
+  ].map(normalize).filter(Boolean);
+}
+
+function isSessionForProfile(sessionPlayerName: string, profile: PalworldUnifiedPlayerProfile): boolean {
+  const normalizedSessionPlayerName = normalize(sessionPlayerName);
+
+  if (!normalizedSessionPlayerName) {
+    return false;
+  }
+
+  return getProfileSessionMatchKeys(profile).includes(normalizedSessionPlayerName);
+}
+
+function getDurationSecondsSince(startedAt: string): number | null {
+  const startedAtMs = new Date(startedAt).getTime();
+
+  if (!Number.isFinite(startedAtMs)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
 }
 
 function isPlaceholderGuildName(value: string | null | undefined): boolean {
@@ -556,4 +589,39 @@ export function getPalworldMilestoneFeedForServer(serverId: string, limit = 50):
         .localeCompare(right.playerName ?? right.accountName ?? right.playerId);
     })
     .slice(0, Math.max(1, limit));
+}
+
+export function getPalworldPlayerProfileSessionSummariesForServer(
+  serverId: string,
+  limit = 100
+): PalworldPlayerProfileSessionSummary[] {
+  const activeSessions = getActiveSessionsForServer(serverId);
+  const recentClosedSessions = getRecentClosedSessionsForServer(serverId, 500);
+
+  return getPalworldUnifiedProfilesForServer(serverId, limit)
+    .map((profile) => {
+      const activeSession = activeSessions.find((session) => isSessionForProfile(session.playerName, profile)) ?? null;
+      const recentSessions = recentClosedSessions
+        .filter((session) => isSessionForProfile(session.playerName, profile))
+        .slice(0, 10);
+      const currentSessionDurationSeconds = activeSession
+        ? getDurationSecondsSince(activeSession.startedAt)
+        : profile.currentSessionDurationSeconds;
+
+      return palworldPlayerProfileSessionSummarySchema.parse({
+        serverId: profile.serverId,
+        playerId: profile.playerId,
+        lookupKey: profile.lookupKey,
+        playerName: profile.playerName,
+        accountName: profile.accountName,
+        isOnline: profile.isOnline,
+        activeSessionStartedAt: activeSession?.startedAt ?? null,
+        currentSessionDurationSeconds,
+        recentTrackedSeconds: recentSessions.reduce((sum, session) => sum + (session.durationSeconds ?? 0), 0),
+        recentSessions,
+        saveArtifact: profile.saveArtifact,
+        inferredGuildName: profile.playerIntelligence.likelyGuildName,
+        profile
+      });
+    });
 }
