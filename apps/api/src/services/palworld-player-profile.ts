@@ -13,7 +13,8 @@ import {
   type PalworldPlayerProfileSessionSummary,
   type PalworldRejectedIdentity,
   type PalworldSessionTier,
-  type PalworldUnifiedPlayerProfile
+  type PalworldUnifiedPlayerProfile,
+  type SessionRecord
 } from '@gameops/shared';
 import { z } from 'zod';
 import { listPalworldIdentityApprovals } from './palworld-identity-approvals.js';
@@ -84,6 +85,88 @@ function getDurationSecondsSince(startedAt: string): number | null {
   }
 
   return Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+}
+
+function getProfileIdentityKey(profile: PalworldPlayerProfileSessionSummary): string {
+  return [
+    profile.profile.userId,
+    profile.accountName,
+    profile.playerName,
+    profile.playerId
+  ].map((value) => normalize(value ?? '')).find(Boolean) ?? normalize(profile.playerId);
+}
+
+function compareProfileQuality(
+  left: PalworldPlayerProfileSessionSummary,
+  right: PalworldPlayerProfileSessionSummary
+): number {
+  const trackedDelta = right.recentTrackedSeconds - left.recentTrackedSeconds;
+
+  if (trackedDelta !== 0) {
+    return trackedDelta;
+  }
+
+  return (right.profile.level ?? -1) - (left.profile.level ?? -1);
+}
+
+function getSessionMergeKey(session: SessionRecord): string {
+  return [
+    session.serverId,
+    normalize(session.playerName),
+    session.startedAt,
+    session.endedAt ?? '',
+    String(session.durationSeconds ?? 0)
+  ].join('::');
+}
+
+function getSessionSortTimestamp(session: SessionRecord): string {
+  return session.endedAt ?? session.startedAt;
+}
+
+function mergeRecentSessions(profiles: PalworldPlayerProfileSessionSummary[]): SessionRecord[] {
+  const sessionsByKey = new Map<string, SessionRecord>();
+
+  for (const profile of profiles) {
+    for (const session of profile.recentSessions) {
+      sessionsByKey.set(getSessionMergeKey(session), session);
+    }
+  }
+
+  return Array.from(sessionsByKey.values())
+    .sort((left, right) => getSessionSortTimestamp(right).localeCompare(getSessionSortTimestamp(left)));
+}
+
+function consolidateProfileSessionSummaries(
+  profiles: PalworldPlayerProfileSessionSummary[]
+): PalworldPlayerProfileSessionSummary[] {
+  const profilesByIdentity = new Map<string, PalworldPlayerProfileSessionSummary[]>();
+
+  for (const profile of profiles) {
+    const identityKey = getProfileIdentityKey(profile);
+    const existing = profilesByIdentity.get(identityKey) ?? [];
+    existing.push(profile);
+    profilesByIdentity.set(identityKey, existing);
+  }
+
+  return Array.from(profilesByIdentity.values()).map((group) => {
+    const primary = [...group].sort(compareProfileQuality)[0]!;
+    const mergedSessions = mergeRecentSessions(group);
+    const inferredGuildName = primary.inferredGuildName ?? group.find((profile) => profile.inferredGuildName)?.inferredGuildName ?? null;
+    const currentSessionDurations = group
+      .map((profile) => profile.currentSessionDurationSeconds)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+    return palworldPlayerProfileSessionSummarySchema.parse({
+      ...primary,
+      isOnline: group.some((profile) => profile.isOnline),
+      activeSessionStartedAt: primary.activeSessionStartedAt ?? group.find((profile) => profile.activeSessionStartedAt)?.activeSessionStartedAt ?? null,
+      currentSessionDurationSeconds: currentSessionDurations.length > 0 ? Math.max(...currentSessionDurations) : null,
+      recentTrackedSeconds: mergedSessions.reduce((sum, session) => sum + (session.durationSeconds ?? 0), 0),
+      recentSessions: mergedSessions.slice(0, 10),
+      saveArtifact: primary.saveArtifact,
+      inferredGuildName
+    });
+  });
 }
 
 function isPlaceholderGuildName(value: string | null | undefined): boolean {
@@ -599,7 +682,7 @@ export function getPalworldPlayerProfileSessionSummariesForServer(
   const activeSessions = getActiveSessionsForServer(serverId);
   const recentClosedSessions = getRecentClosedSessionsForServer(serverId, 500);
 
-  return getPalworldUnifiedProfilesForServer(serverId, limit)
+  const profileSummaries = getPalworldUnifiedProfilesForServer(serverId, limit)
     .map((profile) => {
       const activeSession = activeSessions.find((session) => isSessionForProfile(session.playerName, profile)) ?? null;
       const recentSessions = recentClosedSessions
@@ -628,4 +711,6 @@ export function getPalworldPlayerProfileSessionSummariesForServer(
         profile
       });
     });
+
+  return consolidateProfileSessionSummaries(profileSummaries);
 }
