@@ -275,6 +275,52 @@ function loadGuildsSummary(): z.infer<typeof rawGuildsSummarySchema> {
   }
 }
 
+function getGuildMemberKeys(guild: z.infer<typeof rawGuildSummarySchema>): string[] {
+  return Array.from(new Set(guild.members.map(normalize).filter(Boolean)));
+}
+
+function getGuildMatchKey(guild: z.infer<typeof rawGuildSummarySchema>): string {
+  const guildName = normalize(guild.guildName ?? '');
+  const guildId = normalize(guild.guildId ?? '');
+  return guildId || guildName || getGuildMemberKeys(guild).join('|');
+}
+
+function selectBestGuildMatch(
+  guilds: Array<z.infer<typeof rawGuildSummarySchema>>
+): z.infer<typeof rawGuildSummarySchema> | null {
+  const uniqueGuilds = Array.from(
+    new Map(guilds.map((guild) => [getGuildMatchKey(guild), guild])).values()
+  );
+
+  return uniqueGuilds
+    .sort((left, right) => {
+      const memberDelta = (right.memberCount ?? right.members.length) - (left.memberCount ?? left.members.length);
+
+      if (memberDelta !== 0) {
+        return memberDelta;
+      }
+
+      return (left.guildName ?? '').localeCompare(right.guildName ?? '');
+    })[0] ?? null;
+}
+
+function toGuildIntelligence(guild: z.infer<typeof rawGuildSummarySchema> | null): {
+  likelyGuildName: string | null;
+  guildMemberCount: number | null;
+} {
+  if (!guild) {
+    return {
+      likelyGuildName: null,
+      guildMemberCount: null
+    };
+  }
+
+  return {
+    likelyGuildName: isPlaceholderGuildName(guild.guildName ?? null) ? null : (guild.guildName ?? null),
+    guildMemberCount: guild.memberCount ?? guild.members.length
+  };
+}
+
 function findMatchingReviewRecord(
   serverId: string,
   telemetry: PalworldLatestPlayerTelemetry
@@ -451,6 +497,24 @@ function findLikelyGuildForPlayer(telemetry: PalworldLatestPlayerTelemetry): {
   likelyGuildName: string | null;
   guildMemberCount: number | null;
 } {
+  const guilds = loadGuildsSummary();
+  const playerNameKeys = [
+    telemetry.playerName ?? '',
+    telemetry.accountName ?? ''
+  ].map(normalize).filter(Boolean);
+
+  if (playerNameKeys.length > 0) {
+    const directNameMatches = guilds.filter((guild) => {
+      const memberKeys = getGuildMemberKeys(guild);
+      return memberKeys.some((memberKey) => playerNameKeys.includes(memberKey));
+    });
+    const directMatch = selectBestGuildMatch(directNameMatches);
+
+    if (directMatch) {
+      return toGuildIntelligence(directMatch);
+    }
+  }
+
   const playerKeys = [
     telemetry.lookupKey,
     telemetry.playerId ?? '',
@@ -459,22 +523,12 @@ function findLikelyGuildForPlayer(telemetry: PalworldLatestPlayerTelemetry): {
     telemetry.playerName ?? ''
   ].map(normalize).filter(Boolean);
 
-  const matchingGuild = loadGuildsSummary().find((guild) => {
-    const memberKeys = guild.members.map(normalize).filter(Boolean);
+  const matchingGuild = selectBestGuildMatch(guilds.filter((guild) => {
+    const memberKeys = getGuildMemberKeys(guild);
     return memberKeys.some((memberKey) => playerKeys.includes(memberKey));
-  });
+  }));
 
-  if (!matchingGuild) {
-    return {
-      likelyGuildName: null,
-      guildMemberCount: null
-    };
-  }
-
-  return {
-    likelyGuildName: isPlaceholderGuildName(matchingGuild.guildName ?? null) ? null : (matchingGuild.guildName ?? null),
-    guildMemberCount: matchingGuild.memberCount ?? matchingGuild.members.length
-  };
+  return toGuildIntelligence(matchingGuild);
 }
 
 function classifyPalworldPlayer(input: {
