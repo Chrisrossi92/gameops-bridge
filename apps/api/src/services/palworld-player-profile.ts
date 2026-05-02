@@ -321,6 +321,20 @@ function toGuildIntelligence(guild: z.infer<typeof rawGuildSummarySchema> | null
   };
 }
 
+function getTelemetryGuildMatchKeys(telemetry: PalworldLatestPlayerTelemetry): string[] {
+  return [
+    telemetry.playerName ?? '',
+    telemetry.accountName ?? '',
+    telemetry.playerId ?? '',
+    telemetry.lookupKey,
+    telemetry.userId ?? ''
+  ].map(normalize).filter(Boolean);
+}
+
+function isGuildMemberMatch(memberKey: string, playerKeys: string[]): boolean {
+  return playerKeys.some((playerKey) => memberKey.includes(playerKey) || playerKey.includes(memberKey));
+}
+
 function findMatchingReviewRecord(
   serverId: string,
   telemetry: PalworldLatestPlayerTelemetry
@@ -498,39 +512,20 @@ function findLikelyGuildForPlayer(telemetry: PalworldLatestPlayerTelemetry): {
   guildMemberCount: number | null;
 } {
   const guilds = loadGuildsSummary();
-  const playerNameKeys = [
-    telemetry.playerName ?? '',
-    telemetry.accountName ?? ''
-  ].map(normalize).filter(Boolean);
+  const playerKeys = getTelemetryGuildMatchKeys(telemetry);
 
-  if (playerNameKeys.length > 0) {
-    const directNameMatches = guilds.filter((guild) => {
+  if (playerKeys.length > 0) {
+    const matchingGuild = selectBestGuildMatch(guilds.filter((guild) => {
       const memberKeys = getGuildMemberKeys(guild);
-      return memberKeys.some((memberKey) =>
-        playerNameKeys.some((playerKey) => memberKey.includes(playerKey) || playerKey.includes(memberKey))
-      );
-    });
-    const directMatch = selectBestGuildMatch(directNameMatches);
+      return memberKeys.some((memberKey) => isGuildMemberMatch(memberKey, playerKeys));
+    }));
 
-    if (directMatch) {
-      return toGuildIntelligence(directMatch);
+    if (matchingGuild) {
+      return toGuildIntelligence(matchingGuild);
     }
   }
 
-  const playerKeys = [
-    telemetry.lookupKey,
-    telemetry.playerId ?? '',
-    telemetry.userId ?? '',
-    telemetry.accountName ?? '',
-    telemetry.playerName ?? ''
-  ].map(normalize).filter(Boolean);
-
-  const matchingGuild = selectBestGuildMatch(guilds.filter((guild) => {
-    const memberKeys = getGuildMemberKeys(guild);
-    return memberKeys.some((memberKey) => playerKeys.includes(memberKey));
-  }));
-
-  return toGuildIntelligence(matchingGuild);
+  return toGuildIntelligence(null);
 }
 
 function classifyPalworldPlayer(input: {
