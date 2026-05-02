@@ -183,18 +183,19 @@ function GuildRiskRow({ guild }: GuildRiskRowProps) {
     ? `${guild.daysInactive}d inactive`
     : guild.daysUntilPalboxRisk !== null
       ? `${guild.daysUntilPalboxRisk}d to risk`
-      : 'No activity';
+      : null;
+  const riskLabel = guild.riskLevel === 'unknown' ? 'No activity data' : guild.riskLevel;
 
   return (
     <li className="homepage-player-row">
       <div className="homepage-player-main">
         <div className="homepage-player-title">
           <span className="homepage-player-name">{guild.guildName}</span>
-          <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{guild.riskLevel}</span>
+          <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{riskLabel}</span>
         </div>
         <div className="homepage-player-meta">
+          {riskText ? <span>{riskText}</span> : null}
           <span>{guild.memberCount} members</span>
-          <span>{riskText}</span>
         </div>
       </div>
     </li>
