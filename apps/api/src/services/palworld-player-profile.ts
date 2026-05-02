@@ -47,6 +47,9 @@ const rawGuildSummarySchema = z.object({
 const rawGuildsSummarySchema = z.array(rawGuildSummarySchema);
 const GUILDS_SUMMARY_PATH = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
 const MIN_MEANINGFUL_SESSION_DURATION_SECONDS = 60;
+const PLAYTIME_WINDOW_24H_MS = 24 * 60 * 60 * 1000;
+const PLAYTIME_WINDOW_7D_MS = 7 * PLAYTIME_WINDOW_24H_MS;
+const PLAYTIME_WINDOW_30D_MS = 30 * PLAYTIME_WINDOW_24H_MS;
 
 function resolvePlayersSummaryPath(): string {
   const rawPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH ?? '../players-summary.json';
@@ -123,6 +126,70 @@ function getSessionSortTimestamp(session: SessionRecord): string {
   return session.endedAt ?? session.startedAt;
 }
 
+function getSessionDurationSeconds(session: SessionRecord): number {
+  if (typeof session.durationSeconds === 'number' && Number.isFinite(session.durationSeconds)) {
+    return Math.max(0, Math.floor(session.durationSeconds));
+  }
+
+  const startedAtMs = Date.parse(session.startedAt);
+  const endedAtMs = session.endedAt ? Date.parse(session.endedAt) : Number.NaN;
+
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(endedAtMs) || endedAtMs <= startedAtMs) {
+    return 0;
+  }
+
+  return Math.floor((endedAtMs - startedAtMs) / 1000);
+}
+
+function getSessionWindowSeconds(session: SessionRecord, windowStartMs: number, nowMs: number): number {
+  const durationSeconds = getSessionDurationSeconds(session);
+
+  if (durationSeconds <= 0) {
+    return 0;
+  }
+
+  const startedAtMs = Date.parse(session.startedAt);
+  const endedAtMs = session.endedAt
+    ? Date.parse(session.endedAt)
+    : Number.isFinite(startedAtMs)
+      ? startedAtMs + durationSeconds * 1000
+      : Number.NaN;
+
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(endedAtMs) || endedAtMs <= windowStartMs) {
+    return 0;
+  }
+
+  const overlapStartMs = Math.max(startedAtMs, windowStartMs);
+  const overlapEndMs = Math.min(endedAtMs, nowMs);
+
+  if (overlapEndMs <= overlapStartMs) {
+    return 0;
+  }
+
+  return Math.min(durationSeconds, Math.floor((overlapEndMs - overlapStartMs) / 1000));
+}
+
+function getTrackedSecondsForWindow(sessions: SessionRecord[], nowMs: number, windowMs: number): number {
+  const windowStartMs = nowMs - windowMs;
+  return sessions.reduce((sum, session) => sum + getSessionWindowSeconds(session, windowStartMs, nowMs), 0);
+}
+
+function getLastSession(sessions: SessionRecord[]): SessionRecord | null {
+  return [...sessions].sort((left, right) => getSessionSortTimestamp(right).localeCompare(getSessionSortTimestamp(left)))[0] ?? null;
+}
+
+function getSessionPlaytimeWindows(sessions: SessionRecord[], nowMs: number) {
+  const lastSession = getLastSession(sessions);
+
+  return {
+    trackedSeconds24h: getTrackedSecondsForWindow(sessions, nowMs, PLAYTIME_WINDOW_24H_MS),
+    trackedSeconds7d: getTrackedSecondsForWindow(sessions, nowMs, PLAYTIME_WINDOW_7D_MS),
+    trackedSeconds30d: getTrackedSecondsForWindow(sessions, nowMs, PLAYTIME_WINDOW_30D_MS),
+    lastSessionDurationSeconds: lastSession ? getSessionDurationSeconds(lastSession) : null,
+    lastSessionEndedAt: lastSession?.endedAt ?? null
+  };
+}
+
 function mergeRecentSessions(profiles: PalworldPlayerProfileSessionSummary[]): SessionRecord[] {
   const sessionsByKey = new Map<string, SessionRecord>();
 
@@ -151,6 +218,7 @@ function consolidateProfileSessionSummaries(
   return Array.from(profilesByIdentity.values()).map((group) => {
     const primary = [...group].sort(compareProfileQuality)[0]!;
     const mergedSessions = mergeRecentSessions(group);
+    const playtimeWindows = getSessionPlaytimeWindows(mergedSessions, Date.now());
     const inferredGuildName = primary.inferredGuildName ?? group.find((profile) => profile.inferredGuildName)?.inferredGuildName ?? null;
     const currentSessionDurations = group
       .map((profile) => profile.currentSessionDurationSeconds)
@@ -162,6 +230,7 @@ function consolidateProfileSessionSummaries(
       activeSessionStartedAt: primary.activeSessionStartedAt ?? group.find((profile) => profile.activeSessionStartedAt)?.activeSessionStartedAt ?? null,
       currentSessionDurationSeconds: currentSessionDurations.length > 0 ? Math.max(...currentSessionDurations) : null,
       recentTrackedSeconds: mergedSessions.reduce((sum, session) => sum + (session.durationSeconds ?? 0), 0),
+      ...playtimeWindows,
       recentSessions: mergedSessions.slice(0, 10),
       saveArtifact: primary.saveArtifact,
       inferredGuildName
@@ -732,16 +801,18 @@ export function getPalworldPlayerProfileSessionSummariesForServer(
 ): PalworldPlayerProfileSessionSummary[] {
   const activeSessions = getActiveSessionsForServer(serverId);
   const recentClosedSessions = getRecentClosedSessionsForServer(serverId, 500);
+  const nowMs = Date.now();
 
   const profileSummaries = getPalworldUnifiedProfilesForServer(serverId, limit)
     .map((profile) => {
       const activeSession = activeSessions.find((session) => isSessionForProfile(session.playerName, profile)) ?? null;
-      const recentSessions = recentClosedSessions
+      const meaningfulSessions = recentClosedSessions
         .filter((session) => (
           isSessionForProfile(session.playerName, profile)
           && (session.durationSeconds ?? 0) >= MIN_MEANINGFUL_SESSION_DURATION_SECONDS
-        ))
-        .slice(0, 10);
+        ));
+      const recentSessions = meaningfulSessions.slice(0, 10);
+      const playtimeWindows = getSessionPlaytimeWindows(meaningfulSessions, nowMs);
       const currentSessionDurationSeconds = activeSession
         ? getDurationSecondsSince(activeSession.startedAt)
         : profile.currentSessionDurationSeconds;
@@ -756,6 +827,7 @@ export function getPalworldPlayerProfileSessionSummariesForServer(
         activeSessionStartedAt: activeSession?.startedAt ?? null,
         currentSessionDurationSeconds,
         recentTrackedSeconds: recentSessions.reduce((sum, session) => sum + (session.durationSeconds ?? 0), 0),
+        ...playtimeWindows,
         recentSessions,
         saveArtifact: profile.saveArtifact,
         inferredGuildName: profile.playerIntelligence.likelyGuildName,
