@@ -30,7 +30,7 @@ import {
   type PalworldTransitionMilestoneEvent,
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
-import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 
 interface HealthResponse {
@@ -123,17 +123,6 @@ function formatSaveLinkLabel(isPresent: boolean): string {
   return isPresent ? 'Save linked' : 'Save link needed';
 }
 
-function getProfileExpansionKey(profile: PalworldPlayerProfileSessionSummary): string {
-  return profile.lookupKey ?? profile.playerId;
-}
-
-function handlePlayerRowKeyDown(event: KeyboardEvent<HTMLLIElement>, onToggle: () => void): void {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    onToggle();
-  }
-}
-
 function PlayerProfileCard({ profile }: PlayerProfileCardProps) {
   return (
     <li className="review-row">
@@ -156,82 +145,25 @@ function PlayerProfileCard({ profile }: PlayerProfileCardProps) {
   );
 }
 
-interface ExpandablePlayerRowProps extends PlayerProfileCardProps {
-  isExpanded: boolean;
-  onToggle: () => void;
+interface PlayerRowProps extends PlayerProfileCardProps {
+  onDetails: () => void;
 }
 
-function ExpandedPlayerDetail({ profile }: PlayerProfileCardProps) {
-  const recentSessionDurations = profile.recentSessions
-    .slice(0, 3)
-    .map((session) => formatDurationMaybe(session.durationSeconds));
-  const lastSessionDuration = formatDurationMaybe(profile.recentSessions[0]?.durationSeconds);
-  const primarySessionLabel = profile.isOnline ? 'current session' : 'last session';
-  const primarySessionDuration = profile.isOnline
-    ? formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)
-    : lastSessionDuration;
-  const summaryText = profile.inferredGuildName
-    ? `${getProfileDisplayName(profile)} — ${primarySessionLabel} ${primarySessionDuration} — ${profile.inferredGuildName}`
-    : `${getProfileDisplayName(profile)} — ${primarySessionLabel} ${primarySessionDuration}`;
-
+function OnlinePlayerRow({ profile, onDetails }: PlayerRowProps) {
   return (
-    <div className="homepage-player-detail">
-      <div className="homepage-player-detail-title">{summaryText}</div>
-      <dl className="homepage-player-detail-grid">
-        <dt>{primarySessionLabel}</dt>
-        <dd>{primarySessionDuration}</dd>
-        <dt>recent playtime</dt>
-        <dd>{formatDurationFromSeconds(profile.recentTrackedSeconds)}</dd>
-        <dt>level</dt>
-        <dd>{profile.profile.level ?? 'N/A'}</dd>
-        {profile.inferredGuildName ? (
-          <>
-            <dt>guild</dt>
-            <dd>{profile.inferredGuildName}</dd>
-          </>
-        ) : null}
-        <dt>save</dt>
-        <dd>{formatSaveLinkLabel(profile.saveArtifact.present)}</dd>
-        <dt>last seen</dt>
-        <dd>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'N/A'}</dd>
-        <dt>recent sessions</dt>
-        <dd>{profile.recentSessions.length}</dd>
-      </dl>
-      {recentSessionDurations.length > 0 ? (
-        <div className="homepage-player-sessions">
-          <span>recent durations</span>
-          <span>{recentSessionDurations.join(' / ')}</span>
+    <li className="homepage-player-row homepage-player-row-interactive">
+      <div className="homepage-player-main">
+        <div className="homepage-player-title">
+          <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
+          <span className="homepage-online-badge">online</span>
         </div>
-      ) : null}
-    </div>
-  );
-}
-
-function OnlinePlayerRow({ profile, isExpanded, onToggle }: ExpandablePlayerRowProps) {
-  return (
-    <li
-      className={`homepage-player-row homepage-player-row-interactive ${isExpanded ? 'homepage-player-row-expanded' : ''}`}
-      role="button"
-      tabIndex={0}
-      aria-expanded={isExpanded}
-      onClick={onToggle}
-      onKeyDown={(event) => handlePlayerRowKeyDown(event, onToggle)}
-    >
-      <div className="homepage-player-button">
-        <div className="homepage-player-main">
-          <div className="homepage-player-title">
-            <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
-            <span className="homepage-online-badge">online</span>
-          </div>
-          <div className="homepage-player-meta">
-            <span>current session {formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)}</span>
-            {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
-          </div>
+        <div className="homepage-player-meta">
+          <span>current session {formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)}</span>
+          {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
         </div>
-        {profile.profile.level !== null ? <span className="homepage-player-level">lvl {profile.profile.level}</span> : null}
-        <span className="homepage-player-toggle">{isExpanded ? 'Hide' : 'Details'}</span>
       </div>
-      {isExpanded ? <ExpandedPlayerDetail profile={profile} /> : null}
+      {profile.profile.level !== null ? <span className="homepage-player-level">lvl {profile.profile.level}</span> : null}
+      <button type="button" className="homepage-player-detail-button" onClick={onDetails}>Details</button>
     </li>
   );
 }
@@ -241,37 +173,26 @@ interface TopPlayerRowProps {
   rank: number;
 }
 
-interface ExpandableTopPlayerRowProps extends TopPlayerRowProps {
-  isExpanded: boolean;
-  onToggle: () => void;
+interface TopPlayerRowWithDetailsProps extends TopPlayerRowProps {
+  onDetails: () => void;
 }
 
-function TopPlayerRow({ profile, rank, isExpanded, onToggle }: ExpandableTopPlayerRowProps) {
+function TopPlayerRow({ profile, rank, onDetails }: TopPlayerRowWithDetailsProps) {
   return (
-    <li
-      className={`homepage-player-row homepage-player-row-interactive ${isExpanded ? 'homepage-player-row-expanded' : ''}`}
-      role="button"
-      tabIndex={0}
-      aria-expanded={isExpanded}
-      onClick={onToggle}
-      onKeyDown={(event) => handlePlayerRowKeyDown(event, onToggle)}
-    >
-      <div className="homepage-player-button">
-        <span className="homepage-player-rank">{rank}</span>
-        <div className="homepage-player-main">
-          <div className="homepage-player-title">
-            <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
-            {profile.profile.level !== null ? <span className="homepage-player-level">lvl {profile.profile.level}</span> : null}
+    <li className="homepage-player-row homepage-player-row-interactive">
+      <span className="homepage-player-rank">{rank}</span>
+      <div className="homepage-player-main">
+        <div className="homepage-player-title">
+          <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
+          {profile.profile.level !== null ? <span className="homepage-player-level">lvl {profile.profile.level}</span> : null}
         </div>
         <div className="homepage-player-meta">
           <span>{formatDurationFromSeconds(profile.trackedSeconds7d)} recent playtime</span>
           {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
           <span>{formatSaveLinkLabel(profile.saveArtifact.present)}</span>
         </div>
-        </div>
-        <span className="homepage-player-toggle">{isExpanded ? 'Hide' : 'Details'}</span>
       </div>
-      {isExpanded ? <ExpandedPlayerDetail profile={profile} /> : null}
+      <button type="button" className="homepage-player-detail-button" onClick={onDetails}>Details</button>
     </li>
   );
 }
@@ -287,6 +208,73 @@ function SaveLinkNeededRow({ profile }: PlayerProfileCardProps) {
         </span>
       </div>
     </li>
+  );
+}
+
+interface PlayerDetailDrawerProps {
+  profile: PalworldPlayerProfileSessionSummary;
+  onClose: () => void;
+}
+
+function PlayerDetailDrawer({ profile, onClose }: PlayerDetailDrawerProps) {
+  const lastSessionEndedAt = profile.lastSessionEndedAt ?? profile.recentSessions[0]?.endedAt ?? null;
+  const lastSessionDurationSeconds = profile.lastSessionDurationSeconds ?? profile.recentSessions[0]?.durationSeconds;
+  const recentSessions = profile.recentSessions.slice(0, 5);
+
+  return (
+    <div className="player-drawer-shell" role="presentation">
+      <button type="button" className="player-drawer-backdrop" aria-label="Close player details" onClick={onClose} />
+      <aside className="player-drawer" aria-label="Player details">
+        <div className="player-drawer-header">
+          <div>
+            <span className={`state-pill state-${profile.isOnline ? 'online' : 'offline'}`}>
+              {profile.isOnline ? 'online' : 'offline'}
+            </span>
+            <h2>{getProfileDisplayName(profile)}</h2>
+            {profile.inferredGuildName ? <p>{profile.inferredGuildName}</p> : null}
+          </div>
+          <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
+        </div>
+
+        <dl className="player-drawer-grid">
+          <dt>Level</dt>
+          <dd>{profile.profile.level ?? 'N/A'}</dd>
+          <dt>Save</dt>
+          <dd>{formatSaveLinkLabel(profile.saveArtifact.present)}</dd>
+          {profile.isOnline ? (
+            <>
+              <dt>Current session</dt>
+              <dd>{formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)}</dd>
+            </>
+          ) : null}
+          <dt>Last session</dt>
+          <dd>{formatDurationMaybe(lastSessionDurationSeconds)}</dd>
+          <dt>Last ended</dt>
+          <dd>{lastSessionEndedAt ? formatTimestamp(lastSessionEndedAt) : 'N/A'}</dd>
+          <dt>24h playtime</dt>
+          <dd>{formatDurationFromSeconds(profile.trackedSeconds24h)}</dd>
+          <dt>7d playtime</dt>
+          <dd>{formatDurationFromSeconds(profile.trackedSeconds7d)}</dd>
+          <dt>30d playtime</dt>
+          <dd>{formatDurationFromSeconds(profile.trackedSeconds30d)}</dd>
+          <dt>Last seen</dt>
+          <dd>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'N/A'}</dd>
+        </dl>
+
+        <section className="player-drawer-sessions">
+          <h3>Recent Sessions</h3>
+          <ul>
+            {recentSessions.length === 0 ? <li className="empty-line">No recent sessions</li> : null}
+            {recentSessions.map((session, index) => (
+              <li key={`${session.startedAt}:${session.endedAt ?? 'open'}:${index}`}>
+                <span>{formatDurationMaybe(session.durationSeconds)}</span>
+                <span>{session.endedAt ? formatTimestamp(session.endedAt) : 'In progress'}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </aside>
+    </div>
   );
 }
 
@@ -432,7 +420,7 @@ function App() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [selectedDashboardTab, setSelectedDashboardTab] = useState<DashboardTab>('overview');
-  const [expandedPlayerKey, setExpandedPlayerKey] = useState<string | null>(null);
+  const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<PalworldPlayerProfileSessionSummary | null>(null);
   const [isFleetExpanded, setIsFleetExpanded] = useState(false);
 
   useEffect(() => {
@@ -473,9 +461,27 @@ function App() {
     setPalworldManualLinkError(null);
     setPalworldManualLinkSuccess(null);
     setDetailError(null);
-    setExpandedPlayerKey(null);
+    setSelectedPlayerProfile(null);
     setSelectedDashboardTab('overview');
   }, [selectedServerId]);
+
+  useEffect(() => {
+    if (!selectedPlayerProfile) {
+      return;
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setSelectedPlayerProfile(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedPlayerProfile]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1684,11 +1690,6 @@ function App() {
     return count;
   }, [palworldBaseCapacityAlerts, selectedServer?.game, selectedServerSummary]);
 
-  function toggleExpandedPlayer(profile: PalworldPlayerProfileSessionSummary): void {
-    const nextKey = getProfileExpansionKey(profile);
-    setExpandedPlayerKey((current) => current === nextKey ? null : nextKey);
-  }
-
   const palworldOverviewHighlights = useMemo(() => {
     const items: string[] = [];
     const pushHighlight = (value: string | null | undefined): void => {
@@ -2146,8 +2147,7 @@ function App() {
                             <OnlinePlayerRow
                               key={`online:${profile.playerId}:${profile.lookupKey ?? 'profile'}`}
                               profile={profile}
-                              isExpanded={expandedPlayerKey === getProfileExpansionKey(profile)}
-                              onToggle={() => toggleExpandedPlayer(profile)}
+                              onDetails={() => setSelectedPlayerProfile(profile)}
                             />
                           ))}
                         </ul>
@@ -2162,8 +2162,7 @@ function App() {
                               key={`top:${profile.playerId}:${profile.lookupKey ?? 'profile'}`}
                               profile={profile}
                               rank={index + 1}
-                              isExpanded={expandedPlayerKey === getProfileExpansionKey(profile)}
-                              onToggle={() => toggleExpandedPlayer(profile)}
+                              onDetails={() => setSelectedPlayerProfile(profile)}
                             />
                           ))}
                         </ul>
@@ -2792,6 +2791,9 @@ function App() {
           </>
         )}
       </section>
+      {selectedPlayerProfile ? (
+        <PlayerDetailDrawer profile={selectedPlayerProfile} onClose={() => setSelectedPlayerProfile(null)} />
+      ) : null}
     </main>
   );
 }
