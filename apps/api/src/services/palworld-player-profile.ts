@@ -506,7 +506,9 @@ function findLikelyGuildForPlayer(telemetry: PalworldLatestPlayerTelemetry): {
   if (playerNameKeys.length > 0) {
     const directNameMatches = guilds.filter((guild) => {
       const memberKeys = getGuildMemberKeys(guild);
-      return memberKeys.some((memberKey) => playerNameKeys.includes(memberKey));
+      return memberKeys.some((memberKey) =>
+        playerNameKeys.some((playerKey) => memberKey.includes(playerKey) || playerKey.includes(memberKey))
+      );
     });
     const directMatch = selectBestGuildMatch(directNameMatches);
 
