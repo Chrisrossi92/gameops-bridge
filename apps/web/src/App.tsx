@@ -95,6 +95,17 @@ interface PalworldGuildHint {
   members?: string[] | null;
 }
 
+type GuildRiskLevel = 'active' | 'watch' | 'risk' | 'expired' | 'unknown';
+
+interface GuildActivityEntry {
+  guildName: string;
+  memberCount: number;
+  lastMemberSeenAt: string | null;
+  daysInactive: number | null;
+  daysUntilPalboxRisk: number | null;
+  riskLevel: GuildRiskLevel;
+}
+
 interface PlayerProfileCardProps {
   profile: PalworldPlayerProfileSessionSummary;
 }
@@ -163,6 +174,33 @@ function TopPlayerRow({ profile, rank }: TopPlayerRowProps) {
   );
 }
 
+interface GuildRiskRowProps {
+  guild: GuildActivityEntry;
+}
+
+function GuildRiskRow({ guild }: GuildRiskRowProps) {
+  const riskText = guild.daysInactive !== null
+    ? `${guild.daysInactive}d inactive`
+    : guild.daysUntilPalboxRisk !== null
+      ? `${guild.daysUntilPalboxRisk}d to risk`
+      : 'No activity';
+
+  return (
+    <li className="homepage-player-row">
+      <div className="homepage-player-main">
+        <div className="homepage-player-title">
+          <span className="homepage-player-name">{guild.guildName}</span>
+          <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{guild.riskLevel}</span>
+        </div>
+        <div className="homepage-player-meta">
+          <span>{guild.memberCount} members</span>
+          <span>{riskText}</span>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 interface PalworldBaseSignalHistoryEntry {
   timestamp: string;
   baseSignal: number;
@@ -189,6 +227,40 @@ async function loadPalworldGuilds(serverId: string): Promise<PalworldGuildHint[]
   }
 
   return payload.guilds.filter((guild): guild is PalworldGuildHint => typeof guild === 'object' && guild !== null);
+}
+
+function isGuildActivityEntry(value: unknown): value is GuildActivityEntry {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const entry = value as Partial<GuildActivityEntry>;
+  return typeof entry.guildName === 'string'
+    && typeof entry.memberCount === 'number'
+    && (typeof entry.lastMemberSeenAt === 'string' || entry.lastMemberSeenAt === null)
+    && (typeof entry.daysInactive === 'number' || entry.daysInactive === null)
+    && (typeof entry.daysUntilPalboxRisk === 'number' || entry.daysUntilPalboxRisk === null)
+    && (entry.riskLevel === 'active'
+      || entry.riskLevel === 'watch'
+      || entry.riskLevel === 'risk'
+      || entry.riskLevel === 'expired'
+      || entry.riskLevel === 'unknown');
+}
+
+async function loadPalworldGuildActivity(serverId: string): Promise<GuildActivityEntry[]> {
+  const response = await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/guild-activity`);
+
+  if (!response.ok) {
+    throw new Error(`Palworld guild activity fetch failed with status ${response.status}`);
+  }
+
+  const payload = await response.json() as { guilds?: unknown };
+
+  if (!Array.isArray(payload.guilds)) {
+    throw new Error('Palworld guild activity payload validation failed.');
+  }
+
+  return payload.guilds.filter(isGuildActivityEntry);
 }
 
 function App() {
@@ -218,6 +290,7 @@ function App() {
   const [palworldRefinedEstimatedBases, setPalworldRefinedEstimatedBases] = useState<number | null>(null);
   const [palworldBaseSignalHistory, setPalworldBaseSignalHistory] = useState<PalworldBaseSignalHistoryEntry[]>([]);
   const [palworldGuilds, setPalworldGuilds] = useState<PalworldGuildHint[]>([]);
+  const [guildActivity, setGuildActivity] = useState<GuildActivityEntry[]>([]);
   const [palworldGuildsError, setPalworldGuildsError] = useState<string | null>(null);
   const [palworldTransitionPostSubmittingKey, setPalworldTransitionPostSubmittingKey] = useState<string | null>(null);
   const [palworldTransitionPostSuccessKey, setPalworldTransitionPostSuccessKey] = useState<string | null>(null);
@@ -261,6 +334,7 @@ function App() {
     setPalworldRefinedEstimatedBases(null);
     setPalworldBaseSignalHistory([]);
     setPalworldGuilds([]);
+    setGuildActivity([]);
     setPalworldGuildsError(null);
     setPalworldTransitionPostSubmittingKey(null);
     setPalworldTransitionPostSuccessKey(null);
@@ -546,6 +620,7 @@ function App() {
         setPalworldBaseSignalHistory([]);
         setPlayerProfiles([]);
         setPalworldGuilds([]);
+        setGuildActivity([]);
         setPalworldGuildsError(null);
         setDetailLoading(false);
         setDetailError(null);
@@ -556,7 +631,7 @@ function App() {
         setDetailLoading(true);
         setDetailError(null);
 
-        const [latestPlayersResponse, profilesResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse, guildsResult] = await Promise.all([
+        const [latestPlayersResponse, profilesResponse, metricsResponse, milestonesResponse, transitionsResponse, baseSignalResponse, baseSignalHistoryResponse, guildsResult, guildActivityResult] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/latest?limit=40`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/players/profiles?limit=100`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/metrics/recent?limit=16`),
@@ -565,6 +640,12 @@ function App() {
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/base-signal`),
           fetch(`${apiBaseUrl}/servers/${selectedServer.id}/palworld/base-signal/history`),
           loadPalworldGuilds(selectedServer.id)
+            .then((guilds) => ({ guilds, error: null }))
+            .catch((error: unknown) => ({
+              guilds: [],
+              error: error instanceof Error ? error.message : 'Unknown error'
+            })),
+          loadPalworldGuildActivity(selectedServer.id)
             .then((guilds) => ({ guilds, error: null }))
             .catch((error: unknown) => ({
               guilds: [],
@@ -607,7 +688,8 @@ function App() {
         await loadBaseSignal(selectedServer.id, baseSignalResponse);
         await loadBaseSignalHistory(selectedServer.id, baseSignalHistoryResponse);
         setPalworldGuilds(guildsResult.guilds);
-        setPalworldGuildsError(guildsResult.error);
+        setGuildActivity(guildActivityResult.guilds);
+        setPalworldGuildsError(guildsResult.error ?? guildActivityResult.error);
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
 
@@ -622,6 +704,7 @@ function App() {
           setPalworldRefinedEstimatedBases(null);
           setPalworldBaseSignalHistory([]);
           setPalworldGuilds([]);
+          setGuildActivity([]);
           setPalworldGuildsError(null);
         }
       } finally {
@@ -1136,6 +1219,28 @@ function App() {
       .sort((left, right) => right.recentTrackedSeconds - left.recentTrackedSeconds)
       .slice(0, 5);
   }, [playerProfiles]);
+
+  const topRiskGuilds = useMemo(() => {
+    const riskRank: Record<GuildRiskLevel, number> = {
+      expired: 0,
+      risk: 1,
+      watch: 2,
+      unknown: 3,
+      active: 4
+    };
+
+    return [...guildActivity]
+      .sort((left, right) => {
+        const riskDelta = riskRank[left.riskLevel] - riskRank[right.riskLevel];
+
+        if (riskDelta !== 0) {
+          return riskDelta;
+        }
+
+        return (right.daysInactive ?? -1) - (left.daysInactive ?? -1);
+      })
+      .slice(0, 5);
+  }, [guildActivity]);
 
   const palworldBaseCapacity = useMemo(() => {
     if (palworldBaseSignal === null) {
@@ -1903,6 +2008,16 @@ function App() {
                         {topPlayerProfiles.length === 0 ? <li>No tracked playtime yet</li> : null}
                         {topPlayerProfiles.map((profile, index) => (
                           <TopPlayerRow key={`top:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} profile={profile} rank={index + 1} />
+                        ))}
+                      </ul>
+                    </article>
+
+                    <article className="card">
+                      <h2>Guilds At Risk</h2>
+                      <ul className="list review-list">
+                        {topRiskGuilds.length === 0 ? <li>No guild risk data yet</li> : null}
+                        {topRiskGuilds.map((guild) => (
+                          <GuildRiskRow key={guild.guildName} guild={guild} />
                         ))}
                       </ul>
                     </article>

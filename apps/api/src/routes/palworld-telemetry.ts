@@ -15,6 +15,7 @@ import {
   type PalworldManualTransitionPostAction,
   type PalworldManualTransitionPostResponse,
   type PalworldMilestoneFeedResponse,
+  type PalworldPlayerProfileSessionSummary,
   type PalworldPlayerSnapshotsResponse,
   type PalworldPlayerProfileSessionSummariesResponse,
   type PalworldTransitionMilestoneEventsResponse,
@@ -78,6 +79,22 @@ interface PalworldBaseAlertResponse {
   growthAlertMessage: string | null;
 }
 
+type PalworldGuildActivityRiskLevel = 'active' | 'watch' | 'risk' | 'expired' | 'unknown';
+
+interface PalworldGuildActivityEntry {
+  guildName: string;
+  memberCount: number;
+  lastMemberSeenAt: string | null;
+  daysInactive: number | null;
+  daysUntilPalboxRisk: number | null;
+  riskLevel: PalworldGuildActivityRiskLevel;
+}
+
+interface PalworldGuildActivityResponse {
+  serverId: string;
+  guilds: PalworldGuildActivityEntry[];
+}
+
 const PALWORLD_GUILD_PLACEHOLDERS = new Set(['unknown', 'unknown guild', 'unnamed guild', 'none', 'null']);
 const PALWORLD_GUILD_MEMBER_FALSE_POSITIVES = new Set([
   'epalgrouptype',
@@ -112,6 +129,8 @@ const PALWORLD_BASE_SIGNAL_HISTORY_PATH = '/var/backups/gameops/palworld-parse-o
 const PALWORLD_BASE_ALERT_STATE_PATH = '/var/backups/gameops/palworld-parse-output/latest/base-alert-state.json';
 const PALWORLD_LEVEL_STRINGS_PATH = '/tmp/level.strings.txt';
 const PALWORLD_GUID_PATTERN = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})\b/gi;
+const PALWORLD_PALBOX_RISK_DAYS = 30;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function normalizeGuildText(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
@@ -360,6 +379,140 @@ function sanitizePalworldGuilds(guilds: unknown[]): PalworldGuildSummary[] {
       memberCount: finalMembers.length
     };
   });
+}
+
+function getGuildActivityRiskLevel(daysInactive: number | null): PalworldGuildActivityRiskLevel {
+  if (daysInactive === null) {
+    return 'unknown';
+  }
+
+  if (daysInactive >= PALWORLD_PALBOX_RISK_DAYS) {
+    return 'expired';
+  }
+
+  if (daysInactive >= 27) {
+    return 'risk';
+  }
+
+  if (daysInactive >= 21) {
+    return 'watch';
+  }
+
+  return 'active';
+}
+
+function getDaysInactive(lastSeenAt: string | null): number | null {
+  if (!lastSeenAt) {
+    return null;
+  }
+
+  const lastSeenAtMs = new Date(lastSeenAt).getTime();
+
+  if (!Number.isFinite(lastSeenAtMs)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor((Date.now() - lastSeenAtMs) / MS_PER_DAY));
+}
+
+function getGuildActivitySortRank(riskLevel: PalworldGuildActivityRiskLevel): number {
+  switch (riskLevel) {
+    case 'expired': return 0;
+    case 'risk': return 1;
+    case 'watch': return 2;
+    case 'unknown': return 3;
+    case 'active': return 4;
+  }
+}
+
+function getNormalizedGuildKey(value: string | null | undefined): string {
+  return normalizeGuildText(value ?? '').toLowerCase();
+}
+
+function isTrackableGuildName(value: string | null | undefined): value is string {
+  const normalized = normalizeGuildText(value ?? '');
+  return Boolean(normalized) && !isPlaceholderGuildLabel(normalized);
+}
+
+function buildPalworldGuildActivityResponse(
+  serverId: string,
+  guilds: PalworldGuildSummary[],
+  profiles: PalworldPlayerProfileSessionSummary[]
+): PalworldGuildActivityResponse {
+  const guildsByKey = new Map<string, { guildName: string; memberCount: number }>();
+  const profilesByGuildKey = new Map<string, PalworldPlayerProfileSessionSummary[]>();
+
+  for (const guild of guilds) {
+    if (!isTrackableGuildName(guild.guildName)) {
+      continue;
+    }
+
+    const guildName = normalizeGuildText(guild.guildName);
+    const guildKey = getNormalizedGuildKey(guildName);
+    const memberCount = Math.max(
+      guild.memberCount ?? 0,
+      Array.isArray(guild.members) ? guild.members.length : 0
+    );
+
+    guildsByKey.set(guildKey, {
+      guildName,
+      memberCount
+    });
+  }
+
+  for (const profile of profiles) {
+    if (!isTrackableGuildName(profile.inferredGuildName)) {
+      continue;
+    }
+
+    const guildName = normalizeGuildText(profile.inferredGuildName);
+    const guildKey = getNormalizedGuildKey(guildName);
+    const existingProfiles = profilesByGuildKey.get(guildKey) ?? [];
+    existingProfiles.push(profile);
+    profilesByGuildKey.set(guildKey, existingProfiles);
+
+    if (!guildsByKey.has(guildKey)) {
+      guildsByKey.set(guildKey, {
+        guildName,
+        memberCount: 0
+      });
+    }
+  }
+
+  const activity = Array.from(guildsByKey.entries()).map(([guildKey, guild]) => {
+    const matchedProfiles = profilesByGuildKey.get(guildKey) ?? [];
+    const lastMemberSeenAt = matchedProfiles
+      .map((profile) => profile.profile.lastSeenAt)
+      .filter((value): value is string => typeof value === 'string' && Boolean(value))
+      .sort((left, right) => right.localeCompare(left))[0] ?? null;
+    const daysInactive = getDaysInactive(lastMemberSeenAt);
+
+    return {
+      guildName: guild.guildName,
+      memberCount: Math.max(guild.memberCount, matchedProfiles.length),
+      lastMemberSeenAt,
+      daysInactive,
+      daysUntilPalboxRisk: daysInactive === null ? null : Math.max(0, PALWORLD_PALBOX_RISK_DAYS - daysInactive),
+      riskLevel: getGuildActivityRiskLevel(daysInactive)
+    } satisfies PalworldGuildActivityEntry;
+  });
+
+  return {
+    serverId,
+    guilds: activity.sort((left, right) => {
+      const riskDelta = getGuildActivitySortRank(left.riskLevel) - getGuildActivitySortRank(right.riskLevel);
+
+      if (riskDelta !== 0) {
+        return riskDelta;
+      }
+
+      if ((right.daysInactive ?? -1) !== (left.daysInactive ?? -1)) {
+        return (right.daysInactive ?? -1) - (left.daysInactive ?? -1);
+      }
+
+      return left.guildName.localeCompare(right.guildName);
+    })
+  };
 }
 
 function readPalworldBaseSignalHistory(): PalworldBaseSignalHistoryEntry[] {
@@ -808,6 +961,29 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
         const path = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
         const guilds = sanitizePalworldGuilds(JSON.parse(readFileSync(path, 'utf8')) as unknown[]);
         return { serverId, guilds };
+      } catch (error) {
+        reply.code(500);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  app.get<{ Params: { serverId: string } }>(
+    '/servers/:serverId/palworld/guild-activity',
+    async (request, reply): Promise<PalworldGuildActivityResponse | { error: string }> => {
+      const serverId = request.params.serverId.trim();
+
+      if (!serverId) {
+        reply.code(400);
+        return { error: 'Invalid serverId' };
+      }
+
+      try {
+        const path = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
+        const guilds = sanitizePalworldGuilds(JSON.parse(readFileSync(path, 'utf8')) as unknown[]);
+        const profiles = getPalworldPlayerProfileSessionSummariesForServer(serverId, 10_000);
+
+        return buildPalworldGuildActivityResponse(serverId, guilds, profiles);
       } catch (error) {
         reply.code(500);
         return { error: error instanceof Error ? error.message : String(error) };
