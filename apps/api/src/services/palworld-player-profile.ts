@@ -45,6 +45,7 @@ const rawGuildSummarySchema = z.object({
 
 const rawGuildsSummarySchema = z.array(rawGuildSummarySchema);
 const GUILDS_SUMMARY_PATH = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
+const MIN_MEANINGFUL_SESSION_DURATION_SECONDS = 60;
 
 function resolvePlayersSummaryPath(): string {
   const rawPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH ?? '../players-summary.json';
@@ -602,7 +603,10 @@ export function getPalworldPlayerProfileSessionSummariesForServer(
     .map((profile) => {
       const activeSession = activeSessions.find((session) => isSessionForProfile(session.playerName, profile)) ?? null;
       const recentSessions = recentClosedSessions
-        .filter((session) => isSessionForProfile(session.playerName, profile))
+        .filter((session) => (
+          isSessionForProfile(session.playerName, profile)
+          && (session.durationSeconds ?? 0) >= MIN_MEANINGFUL_SESSION_DURATION_SECONDS
+        ))
         .slice(0, 10);
       const currentSessionDurationSeconds = activeSession
         ? getDurationSecondsSince(activeSession.startedAt)
