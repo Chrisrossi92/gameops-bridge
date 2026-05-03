@@ -96,6 +96,14 @@
   color: #166534;
 }
 
+.state-warning {
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .fleet-section,
 .detail-section,
 .game-section {
@@ -829,6 +837,54 @@
   font-size: 0.72rem;
 }
 
+.review-saves-card {
+  grid-column: 1 / -1;
+}
+
+.review-saves-list {
+  margin-top: 0.65rem;
+}
+
+.review-save-item {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.review-save-row {
+  width: 100%;
+  border: 1px solid #e5eaf2;
+  border-radius: 0.5rem;
+  padding: 0.52rem 0.6rem;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.review-save-row:hover {
+  border-color: #cbd5e1;
+  background: #f8fbff;
+}
+
+.review-save-row:focus-visible {
+  outline: none;
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.18);
+}
+
+.review-save-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.16rem;
+}
+
 .next-action-list {
   margin: 0.55rem 0 0;
   padding: 0;
@@ -841,7 +897,8 @@
   display: block;
 }
 
-.next-action-list button {
+.next-action-list button,
+.player-drawer-actions button {
   width: 100%;
   border: 1px solid #e5eaf2;
   border-radius: 0.5rem;
@@ -860,16 +917,24 @@
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
 }
 
-.next-action-list button:hover {
+.next-action-list button:hover,
+.player-drawer-actions button:hover {
   border-color: #cbd5e1;
   background: #f8fbff;
   transform: translateY(-1px);
 }
 
-.next-action-list button:focus-visible {
+.next-action-list button:focus-visible,
+.player-drawer-actions button:focus-visible {
   outline: none;
   border-color: #94a3b8;
   box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.18);
+}
+
+.player-drawer-actions button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
 }
 
 .next-action-list button small {
@@ -977,6 +1042,83 @@
   font-size: 0.88rem;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.player-drawer-actions {
+  border-top: 1px solid #e5eaf2;
+  padding-top: 0.75rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.player-drawer-actions h3 {
+  margin: 0;
+  color: #334155;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.player-drawer-action-status {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0.16rem 0.45rem;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.player-drawer-action-form {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.player-drawer-field {
+  display: grid;
+  gap: 0.18rem;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.player-drawer-field input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dbe4ee;
+  border-radius: 0.48rem;
+  padding: 0.38rem 0.48rem;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.player-drawer-field input:focus {
+  outline: none;
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.16);
+}
+
+.player-drawer-error,
+.player-drawer-success {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.player-drawer-error {
+  color: #b91c1c;
+}
+
+.player-drawer-success {
+  color: #166534;
 }
 
 .player-drawer-sessions {

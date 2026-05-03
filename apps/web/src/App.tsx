@@ -214,12 +214,36 @@ function SaveLinkNeededRow({ profile }: PlayerProfileCardProps) {
 interface PlayerDetailDrawerProps {
   profile: PalworldPlayerProfileSessionSummary;
   onClose: () => void;
+  savePlayerSaveId: string;
+  savePlayerFileName: string;
+  notes: string;
+  error: string | null;
+  success: string | null;
+  submitting: boolean;
+  onSavePlayerSaveIdChange: (value: string) => void;
+  onSavePlayerFileNameChange: (value: string) => void;
+  onNotesChange: (value: string) => void;
+  onSubmit: () => void;
 }
 
-function PlayerDetailDrawer({ profile, onClose }: PlayerDetailDrawerProps) {
+function PlayerDetailDrawer({
+  profile,
+  onClose,
+  savePlayerSaveId,
+  savePlayerFileName,
+  notes,
+  error,
+  success,
+  submitting,
+  onSavePlayerSaveIdChange,
+  onSavePlayerFileNameChange,
+  onNotesChange,
+  onSubmit
+}: PlayerDetailDrawerProps) {
   const lastSessionEndedAt = profile.lastSessionEndedAt ?? profile.recentSessions[0]?.endedAt ?? null;
   const lastSessionDurationSeconds = profile.lastSessionDurationSeconds ?? profile.recentSessions[0]?.durationSeconds;
   const recentSessions = profile.recentSessions.slice(0, 5);
+  const playerDisplayName = getProfileDisplayName(profile);
 
   return (
     <div className="player-drawer-shell" role="presentation">
@@ -230,7 +254,7 @@ function PlayerDetailDrawer({ profile, onClose }: PlayerDetailDrawerProps) {
             <span className={`state-pill state-${profile.isOnline ? 'online' : 'offline'}`}>
               {profile.isOnline ? 'online' : 'offline'}
             </span>
-            <h2>{getProfileDisplayName(profile)}</h2>
+            <h2>{playerDisplayName}</h2>
             {profile.inferredGuildName ? <p>{profile.inferredGuildName}</p> : null}
           </div>
           <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
@@ -260,6 +284,49 @@ function PlayerDetailDrawer({ profile, onClose }: PlayerDetailDrawerProps) {
           <dt>Last seen</dt>
           <dd>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'N/A'}</dd>
         </dl>
+
+        <section className="player-drawer-actions">
+          <h3>Actions</h3>
+          {profile.saveArtifact.present ? (
+            <span className="player-drawer-action-status">Save linked</span>
+          ) : (
+            <div className="player-drawer-action-form">
+              <label className="player-drawer-field">
+                <span>Save Player ID</span>
+                <input
+                  type="text"
+                  value={savePlayerSaveId}
+                  onChange={(event) => onSavePlayerSaveIdChange(event.target.value)}
+                  placeholder="required"
+                  required
+                />
+              </label>
+              <label className="player-drawer-field">
+                <span>Save File Name</span>
+                <input
+                  type="text"
+                  value={savePlayerFileName}
+                  onChange={(event) => onSavePlayerFileNameChange(event.target.value)}
+                  placeholder="optional"
+                />
+              </label>
+              <label className="player-drawer-field">
+                <span>Notes</span>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(event) => onNotesChange(event.target.value)}
+                  placeholder="optional"
+                />
+              </label>
+              {error ? <p className="player-drawer-error">{error}</p> : null}
+              {success ? <p className="player-drawer-success">{success}</p> : null}
+              <button type="button" onClick={onSubmit} disabled={submitting}>
+                {submitting ? 'Linking...' : 'Link Save'}
+              </button>
+            </div>
+          )}
+        </section>
 
         <section className="player-drawer-sessions">
           <h3>Recent Sessions</h3>
@@ -311,7 +378,7 @@ interface PalworldBaseSignalHistoryEntry {
   baseSignal: number;
 }
 
-type DashboardTab = 'overview' | 'highlights' | 'players' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
+type DashboardTab = 'overview' | 'highlights' | 'players' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
@@ -421,6 +488,12 @@ function App() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [selectedDashboardTab, setSelectedDashboardTab] = useState<DashboardTab>('overview');
   const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<PalworldPlayerProfileSessionSummary | null>(null);
+  const [drawerSavePlayerSaveId, setDrawerSavePlayerSaveId] = useState('');
+  const [drawerSavePlayerFileName, setDrawerSavePlayerFileName] = useState('');
+  const [drawerLinkNotes, setDrawerLinkNotes] = useState('');
+  const [drawerLinkError, setDrawerLinkError] = useState<string | null>(null);
+  const [drawerLinkSuccess, setDrawerLinkSuccess] = useState<string | null>(null);
+  const [drawerLinkSubmitting, setDrawerLinkSubmitting] = useState(false);
   const [isFleetExpanded, setIsFleetExpanded] = useState(false);
 
   useEffect(() => {
@@ -464,6 +537,15 @@ function App() {
     setSelectedPlayerProfile(null);
     setSelectedDashboardTab('overview');
   }, [selectedServerId]);
+
+  useEffect(() => {
+    setDrawerSavePlayerSaveId('');
+    setDrawerSavePlayerFileName('');
+    setDrawerLinkNotes('');
+    setDrawerLinkError(null);
+    setDrawerLinkSuccess(null);
+    setDrawerLinkSubmitting(false);
+  }, [selectedPlayerProfile]);
 
   useEffect(() => {
     if (!selectedPlayerProfile) {
@@ -1194,6 +1276,67 @@ function App() {
     }
   }
 
+  async function submitDrawerManualLink(profile: PalworldPlayerProfileSessionSummary): Promise<void> {
+    const savePlayerSaveId = drawerSavePlayerSaveId.trim();
+    const savePlayerFileName = drawerSavePlayerFileName.trim();
+    const notes = drawerLinkNotes.trim();
+    const reviewedBy = palworldReviewActor.trim() || 'Dashboard';
+
+    if (!savePlayerSaveId) {
+      setDrawerLinkError('Save Player ID is required.');
+      setDrawerLinkSuccess(null);
+      return;
+    }
+
+    if (!profile.playerId) {
+      setDrawerLinkError('This player is missing telemetry identity data, so a save cannot be linked here.');
+      setDrawerLinkSuccess(null);
+      return;
+    }
+
+    try {
+      setDrawerLinkSubmitting(true);
+      setDrawerLinkError(null);
+      setDrawerLinkSuccess(null);
+
+      const payload = {
+        serverId: profile.serverId,
+        savePlayerSaveId,
+        ...(savePlayerFileName ? { savePlayerFileName } : {}),
+        ...(profile.lookupKey ? { telemetryLookupKey: profile.lookupKey } : {}),
+        playerId: profile.playerId,
+        ...(profile.profile.userId ? { userId: profile.profile.userId } : {}),
+        ...(profile.accountName ? { accountName: profile.accountName } : {}),
+        ...(profile.playerName ? { playerName: profile.playerName } : {}),
+        reviewedBy,
+        ...(notes ? { notes } : {})
+      };
+
+      const response = await fetch(`${apiBaseUrl}/palworld/identity-approvals/manual-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Manual link failed with status ${response.status}`);
+      }
+
+      setDrawerSavePlayerSaveId('');
+      setDrawerSavePlayerFileName('');
+      setDrawerLinkNotes('');
+      setDrawerLinkSuccess(`Save link saved for ${getProfileDisplayName(profile)}.`);
+      setPalworldReviewRefreshToken((current) => current + 1);
+    } catch (caughtError) {
+      setDrawerLinkError(caughtError instanceof Error ? caughtError.message : 'Unknown manual link error');
+    } finally {
+      setDrawerLinkSubmitting(false);
+    }
+  }
+
   function getTransitionEventKey(event: PalworldTransitionMilestoneEvent): string {
     return `${event.playerId}:${event.eventType}:${event.occurredAt}:${event.fromValue ?? ''}:${event.toValue ?? ''}`;
   }
@@ -1353,9 +1496,15 @@ function App() {
       .slice(0, 3);
   }, [playerProfiles]);
 
-  const activeSaveLinkNeededCount = useMemo(() => {
-    return playerProfiles.filter((profile) => !profile.saveArtifact.present && profile.recentTrackedSeconds > 0).length;
+  const reviewSavePlayerProfiles = useMemo(() => {
+    return [...playerProfiles]
+      .filter((profile) => !profile.saveArtifact.present && profile.trackedSeconds7d > 0)
+      .sort((left, right) => right.trackedSeconds7d - left.trackedSeconds7d);
   }, [playerProfiles]);
+
+  const activeSaveLinkNeededCount = useMemo(() => {
+    return reviewSavePlayerProfiles.length;
+  }, [reviewSavePlayerProfiles]);
 
   const palworldActionableGuildRisks = useMemo(() => {
     const riskRank: Record<GuildRiskLevel, number> = {
@@ -1650,6 +1799,7 @@ function App() {
         { key: 'overview', label: 'Overview' },
         { key: 'highlights', label: 'Highlights' },
         { key: 'players', label: 'Players' },
+        { key: 'review-saves', label: 'Review Saves' },
         { key: 'guilds', label: 'Guilds' },
         { key: 'metrics', label: 'Metrics' },
         { key: 'ops', label: 'Ops' },
@@ -2205,7 +2355,16 @@ function App() {
                       <ul className="next-action-list">
                         {palworldNextActions.map((action) => (
                           <li key={action.label}>
-                            <button type="button">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (action.destination === 'Review Saves') {
+                                  setSelectedDashboardTab('review-saves');
+                                } else if (action.destination === 'View Players') {
+                                  setSelectedDashboardTab('players');
+                                }
+                              }}
+                            >
                               <span>{action.label}</span>
                               {action.destination ? <small>{action.destination}</small> : null}
                             </button>
@@ -2590,6 +2749,41 @@ function App() {
                       </>
                     ) : null}
 
+                    {selectedDashboardTab === 'review-saves' ? (
+                      <article className="card review-saves-card">
+                        <div className="command-panel-heading">
+                          <div>
+                            <h2>Review Saves</h2>
+                            <p className="subtle">Active 7-day players without linked saves.</p>
+                          </div>
+                          <span className="state-pill state-warning">{reviewSavePlayerProfiles.length} needed</span>
+                        </div>
+                        <ul className="list review-list review-saves-list">
+                          {reviewSavePlayerProfiles.length === 0 ? <li className="empty-line">No active players need save links.</li> : null}
+                          {reviewSavePlayerProfiles.map((profile) => (
+                            <li key={`review-save:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} className="review-save-item">
+                              <button
+                                type="button"
+                                className="review-save-row"
+                                onClick={() => setSelectedPlayerProfile(profile)}
+                              >
+                                <span className="review-save-main">
+                                  <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
+                                  <span className="homepage-player-meta">
+                                    {profile.profile.level !== null ? <span>lvl {profile.profile.level}</span> : null}
+                                    {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
+                                    <span>{formatDurationFromSeconds(profile.trackedSeconds7d)} 7d playtime</span>
+                                    <span>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'last seen N/A'}</span>
+                                  </span>
+                                </span>
+                                <span className="homepage-player-detail-button" aria-hidden="true">Details</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    ) : null}
+
                     {selectedDashboardTab === 'guilds' ? (
                       <article className="card">
                         <h2>Guild Hints</h2>
@@ -2792,7 +2986,20 @@ function App() {
         )}
       </section>
       {selectedPlayerProfile ? (
-        <PlayerDetailDrawer profile={selectedPlayerProfile} onClose={() => setSelectedPlayerProfile(null)} />
+        <PlayerDetailDrawer
+          profile={selectedPlayerProfile}
+          onClose={() => setSelectedPlayerProfile(null)}
+          savePlayerSaveId={drawerSavePlayerSaveId}
+          savePlayerFileName={drawerSavePlayerFileName}
+          notes={drawerLinkNotes}
+          error={drawerLinkError}
+          success={drawerLinkSuccess}
+          submitting={drawerLinkSubmitting}
+          onSavePlayerSaveIdChange={setDrawerSavePlayerSaveId}
+          onSavePlayerFileNameChange={setDrawerSavePlayerFileName}
+          onNotesChange={setDrawerLinkNotes}
+          onSubmit={() => void submitDrawerManualLink(selectedPlayerProfile)}
+        />
       ) : null}
     </main>
   );
