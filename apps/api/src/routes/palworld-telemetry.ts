@@ -503,6 +503,7 @@ function buildPalworldGuildActivityResponse(
         return {
           memberName,
           matched: false,
+          status: 'never_seen',
           matchedPlayerName: null,
           lastSeenAt: null,
           daysSinceSeen: null,

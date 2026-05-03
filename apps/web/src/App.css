@@ -1,76 +1,103 @@
 .dashboard {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 1rem 1rem 1.6rem;
+  padding: 0.55rem 0.8rem 1.2rem;
 }
 
 .dashboard-header h1,
-.section-heading h2,
 .fleet-card h3 {
   margin: 0;
 }
 
-.dashboard-header p,
-.section-heading p {
-  margin-top: 0.28rem;
-  margin-bottom: 0.5rem;
-  color: #64748b;
+.dashboard-header {
+  display: grid;
+  gap: 0.42rem;
 }
 
-.dashboard-tab-shell {
-  margin-top: 0.45rem;
+.dashboard-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dashboard-title-row h1 {
+  font-size: 1.28rem;
+  line-height: 1.1;
+}
+
+.dashboard-kicker {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.dashboard-control-rail {
+  display: grid;
+  gap: 0.38rem;
 }
 
 .dashboard-tab-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.28rem;
+}
+
+.dashboard-tab-row .review-button {
+  padding: 0.22rem 0.48rem;
+  font-size: 0.78rem;
+}
+
+.dashboard-message {
+  margin: 0;
 }
 
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.6rem;
+  gap: 0.45rem;
+  margin: 0;
 }
 
 .toolbar-wide {
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 
 .toolbar-group {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.38rem;
 }
 
 .toolbar label {
   color: #475569;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .toolbar select {
   border: 1px solid #cbd5e1;
   border-radius: 0.5rem;
-  padding: 0.4rem 0.6rem;
+  padding: 0.28rem 0.5rem;
   background: #fff;
   color: #0f172a;
+  font-size: 0.84rem;
 }
 
 .status-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.28rem;
 }
 
 .status-pill,
 .state-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.32rem;
   border-radius: 999px;
-  padding: 0.22rem 0.56rem;
+  padding: 0.16rem 0.42rem;
 }
 
 .status-pill {
@@ -81,15 +108,22 @@
 .status-label,
 .summary-label {
   color: #64748b;
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
 .status-value {
   color: #0f172a;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 600;
+}
+
+.selected-status-pill .status-value {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-good {
@@ -107,18 +141,14 @@
 .fleet-section,
 .detail-section,
 .game-section {
-  margin-top: 0.7rem;
+  margin-top: 0.38rem;
 }
 
-.section-heading {
-  margin-bottom: 0.4rem;
-}
-
-.fleet-heading {
+.fleet-compact-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.36rem;
 }
 
 .fleet-toggle-button {
@@ -411,36 +441,6 @@
   content: '•';
   color: #2563eb;
   font-weight: 800;
-}
-
-.top-status-rail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.05rem;
-}
-
-.top-status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.24rem 0.5rem;
-  border: 1px solid #dbe4ee;
-  border-radius: 999px;
-  background: #f8fbff;
-}
-
-.top-status-key {
-  color: #64748b;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.top-status-value {
-  color: #0f172a;
-  font-size: 0.82rem;
-  font-weight: 700;
 }
 
 .kpi-small {
@@ -874,6 +874,69 @@
   box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.16);
 }
 
+.guild-activity-filter-row {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.34rem;
+}
+
+.guild-activity-filter-row button {
+  border: 1px solid #e5eaf2;
+  border-radius: 999px;
+  padding: 0.2rem 0.28rem 0.2rem 0.5rem;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.guild-activity-filter-row button:hover {
+  border-color: #cbd5e1;
+  background: #f8fbff;
+}
+
+.guild-activity-filter-row button:focus-visible {
+  outline: none;
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.16);
+}
+
+.guild-activity-filter-row button.selected {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.guild-activity-filter-row small {
+  min-width: 1.2rem;
+  border-radius: 999px;
+  padding: 0.08rem 0.3rem;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.guild-activity-filter-row button.selected small {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.guild-activity-progress {
+  margin-top: 0.32rem;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .guild-activity-row {
   border: 1px solid #e5eaf2;
   border-radius: 0.55rem;
@@ -929,6 +992,38 @@
   color: #475569;
   font-size: 0.74rem;
   font-weight: 800;
+}
+
+.guild-confidence-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 0.12rem 0.38rem;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.guild-confidence-low {
+  border-color: #e5e7eb;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.guild-confidence-partial,
+.guild-confidence-medium {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.guild-confidence-high {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
 }
 
 .guild-member-list {

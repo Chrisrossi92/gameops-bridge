@@ -584,6 +584,7 @@ export type PalworldGuildActivityRiskLevel = z.infer<typeof palworldGuildActivit
 export const palworldGuildActivityMemberSchema = z.object({
   memberName: z.string().min(1),
   matched: z.boolean(),
+  status: z.enum(['never_seen']).optional(),
   matchedPlayerName: z.string().nullable(),
   lastSeenAt: z.string().datetime().nullable(),
   daysSinceSeen: z.number().int().min(0).nullable(),

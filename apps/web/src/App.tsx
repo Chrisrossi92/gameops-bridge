@@ -99,6 +99,7 @@ interface PalworldGuildHint {
 }
 
 type GuildRiskLevel = 'active' | 'watch' | 'risk' | 'expired' | 'unknown';
+type GuildActivityFilter = 'all' | 'at-risk' | 'missing-activity' | 'low-confidence' | 'reviewed';
 
 interface PalworldNextAction {
   label: string;
@@ -348,6 +349,58 @@ interface GuildRiskRowProps {
   onMarkReviewed: () => void;
 }
 
+interface GuildConfidence {
+  trackedCount: number;
+  totalCount: number;
+  label: string;
+  shortLabel: string;
+  tone: 'low' | 'partial' | 'medium' | 'high';
+}
+
+function getGuildConfidence(members: PalworldGuildActivityMember[], memberCountFallback: number): GuildConfidence {
+  const trackedCount = members.filter((member) => member.matched).length;
+  const totalCount = members.length > 0 ? members.length : memberCountFallback;
+  const ratio = totalCount > 0 ? trackedCount / totalCount : 0;
+
+  if (trackedCount === 0) {
+    return {
+      trackedCount,
+      totalCount,
+      label: 'Low confidence',
+      shortLabel: 'Low',
+      tone: 'low'
+    };
+  }
+
+  if (ratio < 0.5) {
+    return {
+      trackedCount,
+      totalCount,
+      label: 'Partial confidence',
+      shortLabel: 'Partial',
+      tone: 'partial'
+    };
+  }
+
+  if (ratio < 1) {
+    return {
+      trackedCount,
+      totalCount,
+      label: 'Medium confidence',
+      shortLabel: 'Medium',
+      tone: 'medium'
+    };
+  }
+
+  return {
+    trackedCount,
+    totalCount,
+    label: 'High confidence',
+    shortLabel: 'High',
+    tone: 'high'
+  };
+}
+
 function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: GuildRiskRowProps) {
   const riskText = guild.daysInactive !== null
     ? `${guild.daysInactive}d inactive`
@@ -357,8 +410,9 @@ function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: G
   const riskLabel = guild.riskLevel === 'unknown' ? 'No activity data' : guild.riskLevel;
   const lastActivityLabel = guild.lastMemberSeenAt
     ? `Last activity: ${guild.lastSeenMemberName ?? 'Unknown member'}${guild.daysInactive !== null ? ` — ${guild.daysInactive}d ago` : ''}`
-    : 'No matched activity';
+    : 'No tracked players yet';
   const palboxRiskLabel = guild.daysUntilPalboxRisk !== null ? `${guild.daysUntilPalboxRisk}d to palbox risk` : 'Activity unknown';
+  const confidence = getGuildConfidence(guild.members, guild.memberCount);
 
   return (
     <li className={`guild-activity-row ${expanded ? 'guild-activity-row-expanded' : ''}`}>
@@ -373,6 +427,7 @@ function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: G
           </div>
           <div className="homepage-player-meta">
             <span>{guild.memberCount} members</span>
+            <span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>{confidence.label}</span>
             <span>{lastActivityLabel}</span>
             <span>{palboxRiskLabel}</span>
             {riskText ? <span>{riskText}</span> : null}
@@ -384,6 +439,7 @@ function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: G
         <GuildActivityDetail
           guildName={guild.guildName}
           members={guild.members}
+          memberCount={guild.memberCount}
           reviewed={reviewed}
           onMarkReviewed={onMarkReviewed}
         />
@@ -395,11 +451,12 @@ function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: G
 interface GuildActivityDetailProps {
   guildName: string;
   members: PalworldGuildActivityMember[];
+  memberCount: number;
   reviewed: boolean;
   onMarkReviewed: () => void;
 }
 
-function GuildActivityDetail({ guildName, members, reviewed, onMarkReviewed }: GuildActivityDetailProps) {
+function GuildActivityDetail({ guildName, members, memberCount, reviewed, onMarkReviewed }: GuildActivityDetailProps) {
   const sortedMembers = [...members].sort((left, right) => {
     if (Number(right.matched) !== Number(left.matched)) {
       return Number(right.matched) - Number(left.matched);
@@ -407,12 +464,13 @@ function GuildActivityDetail({ guildName, members, reviewed, onMarkReviewed }: G
 
     return (right.lastSeenAt ?? '').localeCompare(left.lastSeenAt ?? '');
   });
-  const trackedMemberCount = sortedMembers.filter((member) => member.matched).length;
+  const confidence = getGuildConfidence(sortedMembers, memberCount);
 
   return (
     <div className="guild-activity-detail">
       <div className="guild-activity-detail-meta">
-        <span>Tracked members: {trackedMemberCount} / {sortedMembers.length}</span>
+        <span>Tracked members: {confidence.trackedCount} / {confidence.totalCount}</span>
+        <span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>Confidence: {confidence.shortLabel}</span>
       </div>
       <ul className="guild-member-list">
         {sortedMembers.length === 0 ? <li className="empty-line">No members listed in guild data</li> : null}
@@ -425,11 +483,12 @@ function GuildActivityDetail({ guildName, members, reviewed, onMarkReviewed }: G
               </span>
             </div>
             <div className="guild-member-meta">
-              {member.lastSeenAt ? <span>{formatTimestamp(member.lastSeenAt)}</span> : <span>last seen unknown</span>}
-              {member.daysSinceSeen !== null ? <span>{member.daysSinceSeen}d ago</span> : null}
-              {member.level !== null ? <span>lvl {member.level}</span> : null}
-              {member.saveLinked !== null ? <span>{member.saveLinked ? 'Save linked' : 'Save link needed'}</span> : null}
-              {member.matchedPlayerName && member.matchedPlayerName !== member.memberName ? <span>as {member.matchedPlayerName}</span> : null}
+              {!member.matched ? <span>never seen</span> : null}
+              {member.matched && member.lastSeenAt ? <span>{formatTimestamp(member.lastSeenAt)}</span> : null}
+              {member.matched && member.daysSinceSeen !== null ? <span>{member.daysSinceSeen}d ago</span> : null}
+              {member.matched && member.level !== null ? <span>lvl {member.level}</span> : null}
+              {member.matched && member.saveLinked !== null ? <span>{member.saveLinked ? 'Save linked' : 'Save link needed'}</span> : null}
+              {member.matched && member.matchedPlayerName && member.matchedPlayerName !== member.memberName ? <span>as {member.matchedPlayerName}</span> : null}
             </div>
           </li>
         ))}
@@ -563,6 +622,8 @@ function App() {
   const [guildActivity, setGuildActivity] = useState<PalworldGuildActivityEntry[]>([]);
   const [expandedGuildActivityName, setExpandedGuildActivityName] = useState<string | null>(null);
   const [reviewedGuildNames, setReviewedGuildNames] = useState<Set<string>>(() => new Set());
+  const [guildActivityFilter, setGuildActivityFilter] = useState<GuildActivityFilter>('all');
+  const [guildFocusMode, setGuildFocusMode] = useState(false);
   const [palworldGuildsError, setPalworldGuildsError] = useState<string | null>(null);
   const [palworldTransitionPostSubmittingKey, setPalworldTransitionPostSubmittingKey] = useState<string | null>(null);
   const [palworldTransitionPostSuccessKey, setPalworldTransitionPostSuccessKey] = useState<string | null>(null);
@@ -618,6 +679,8 @@ function App() {
     setGuildActivity([]);
     setExpandedGuildActivityName(null);
     setReviewedGuildNames(loadReviewedGuildNames(selectedServerId));
+    setGuildActivityFilter('all');
+    setGuildFocusMode(false);
     reviewedGuildStorageServerId.current = selectedServerId || null;
     setPalworldGuildsError(null);
     setPalworldTransitionPostSubmittingKey(null);
@@ -1652,6 +1715,97 @@ function App() {
     return guildActivity.filter((guild) => guild.riskLevel === 'unknown' && !reviewedGuildNames.has(guild.guildName)).length;
   }, [guildActivity, reviewedGuildNames]);
 
+  const guildActivityFilterOptions = useMemo(() => {
+    const isAtRisk = (guild: PalworldGuildActivityEntry): boolean => (
+      guild.riskLevel === 'watch' || guild.riskLevel === 'risk' || guild.riskLevel === 'expired'
+    );
+    const isLowConfidence = (guild: PalworldGuildActivityEntry): boolean => {
+      const tone = getGuildConfidence(guild.members, guild.memberCount).tone;
+      return tone === 'low' || tone === 'partial';
+    };
+    const matchesFilter = (guild: PalworldGuildActivityEntry, filter: GuildActivityFilter): boolean => {
+      switch (filter) {
+        case 'all':
+          return true;
+        case 'at-risk':
+          return isAtRisk(guild);
+        case 'missing-activity':
+          return guild.lastMemberSeenAt === null;
+        case 'low-confidence':
+          return isLowConfidence(guild);
+        case 'reviewed':
+          return reviewedGuildNames.has(guild.guildName);
+      }
+    };
+    const options: Array<{ value: GuildActivityFilter; label: string; count: number }> = [
+      { value: 'all', label: 'All', count: guildActivity.length },
+      { value: 'at-risk', label: 'At Risk', count: guildActivity.filter((guild) => matchesFilter(guild, 'at-risk')).length },
+      { value: 'missing-activity', label: 'Missing Activity', count: guildActivity.filter((guild) => matchesFilter(guild, 'missing-activity')).length },
+      { value: 'low-confidence', label: 'Low Confidence', count: guildActivity.filter((guild) => matchesFilter(guild, 'low-confidence')).length },
+      { value: 'reviewed', label: 'Reviewed', count: guildActivity.filter((guild) => matchesFilter(guild, 'reviewed')).length }
+    ];
+
+    return {
+      options,
+      filteredGuildActivity: guildActivity.filter((guild) => matchesFilter(guild, guildActivityFilter))
+    };
+  }, [guildActivity, guildActivityFilter, reviewedGuildNames]);
+
+  const guildActivityProgress = useMemo(() => {
+    const filteredGuilds = guildActivityFilterOptions.filteredGuildActivity;
+
+    if (guildActivityFilter === 'all') {
+      return {
+        reviewedCount: guildActivity.filter((guild) => reviewedGuildNames.has(guild.guildName)).length,
+        totalCount: guildActivity.length,
+        labelSuffix: 'guilds'
+      };
+    }
+
+    return {
+      reviewedCount: filteredGuilds.filter((guild) => reviewedGuildNames.has(guild.guildName)).length,
+      totalCount: filteredGuilds.length,
+      labelSuffix: 'in this filter'
+    };
+  }, [guildActivity, guildActivityFilter, guildActivityFilterOptions.filteredGuildActivity, reviewedGuildNames]);
+
+  useEffect(() => {
+    if (!guildFocusMode) {
+      return;
+    }
+
+    const filteredGuilds = guildActivityFilterOptions.filteredGuildActivity;
+    const selectedGuildIsVisible = filteredGuilds.some((guild) => guild.guildName === expandedGuildActivityName);
+
+    if (filteredGuilds.length === 0) {
+      setExpandedGuildActivityName(null);
+      return;
+    }
+
+    if (!expandedGuildActivityName || !selectedGuildIsVisible) {
+      setExpandedGuildActivityName(filteredGuilds[0]?.guildName ?? null);
+    }
+  }, [expandedGuildActivityName, guildActivityFilterOptions.filteredGuildActivity, guildFocusMode]);
+
+  const visibleGuildActivity = useMemo(() => {
+    const filteredGuilds = guildActivityFilterOptions.filteredGuildActivity;
+
+    if (!guildFocusMode) {
+      return filteredGuilds;
+    }
+
+    const focusedGuild = filteredGuilds.find((guild) => guild.guildName === expandedGuildActivityName);
+    return focusedGuild ? [focusedGuild] : [];
+  }, [expandedGuildActivityName, guildActivityFilterOptions.filteredGuildActivity, guildFocusMode]);
+
+  function markGuildReviewedAndAdvance(guildName: string): void {
+    setReviewedGuildNames((current) => new Set(current).add(guildName));
+
+    const currentIndex = guildActivityFilterOptions.filteredGuildActivity.findIndex((guild) => guild.guildName === guildName);
+    const nextGuild = currentIndex >= 0 ? guildActivityFilterOptions.filteredGuildActivity[currentIndex + 1] : null;
+    setExpandedGuildActivityName(nextGuild?.guildName ?? null);
+  }
+
   const palworldBaseCapacity = useMemo(() => {
     if (palworldBaseSignal === null) {
       return null;
@@ -1918,7 +2072,6 @@ function App() {
   }, [filteredServers, fleetByServerId]);
 
   const apiHealthLabel = health?.ok ? 'Online' : 'Unknown';
-  const lastUpdatedLabel = lastUpdatedAt ? formatTimestamp(lastUpdatedAt) : 'N/A';
   const selectedWarningSummary = useMemo(
     () => summarizeWarnings(selectedServerSummary?.recentWarnings ?? []),
     [selectedServerSummary]
@@ -2215,88 +2368,103 @@ function App() {
   return (
     <main className="dashboard">
       <header className="dashboard-header">
-        <h1>GameOps Bridge Dashboard</h1>
-        <p>Fleet overview with shared server telemetry and game-specific detail panels.</p>
+        <div className="dashboard-title-row">
+          <h1>GameOps Bridge</h1>
+          <span className="dashboard-kicker">Live server operations</span>
+        </div>
 
-        <div className="toolbar toolbar-wide">
-          <div className="toolbar-group">
-            <label htmlFor="game-filter">Game</label>
-            <select id="game-filter" value={selectedGameFilter} onChange={(event) => setSelectedGameFilter(event.target.value as GameFilter)}>
-              <option value="all">All Games</option>
-              <option value="valheim">Valheim</option>
-              <option value="palworld">Palworld</option>
-            </select>
+        <div className="dashboard-control-rail">
+          <div className="toolbar toolbar-wide">
+            <div className="toolbar-group">
+              <label htmlFor="game-filter">Game</label>
+              <select id="game-filter" value={selectedGameFilter} onChange={(event) => setSelectedGameFilter(event.target.value as GameFilter)}>
+                <option value="all">All Games</option>
+                <option value="valheim">Valheim</option>
+                <option value="palworld">Palworld</option>
+              </select>
+            </div>
+
+            <div className="toolbar-group">
+              <label htmlFor="server-select">Server</label>
+              <select
+                id="server-select"
+                value={selectedServerId}
+                onChange={(event) => setSelectedServerId(event.target.value)}
+                disabled={serverOptionsLoading || filteredServers.length === 0}
+              >
+                {filteredServers.map((server) => (
+                  <option key={server.id} value={server.id}>
+                    {server.displayName} ({server.game})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div className="toolbar-group">
-            <label htmlFor="server-select">Server Detail</label>
-            <select
-              id="server-select"
-              value={selectedServerId}
-              onChange={(event) => setSelectedServerId(event.target.value)}
-              disabled={serverOptionsLoading || filteredServers.length === 0}
-            >
-              {filteredServers.map((server) => (
-                <option key={server.id} value={server.id}>
-                  {server.displayName} ({server.game})
-                </option>
+          <div className="status-strip">
+            <div className="status-pill">
+              <span className="status-label">API</span>
+              <span className="status-value status-good">{apiHealthLabel}</span>
+            </div>
+            <div className="status-pill">
+              <span className="status-label">Servers</span>
+              <span className="status-value">{fleetCounts.servers}</span>
+            </div>
+            <div className="status-pill">
+              <span className="status-label">Online</span>
+              <span className="status-value">{fleetCounts.online}</span>
+            </div>
+            <div className="status-pill">
+              <span className="status-label">Players</span>
+              <span className="status-value">{fleetCounts.activePlayers}</span>
+            </div>
+            {selectedServer && selectedServerSummary ? (
+              <>
+                <div className="status-pill selected-status-pill">
+                  <span className="status-label">Selected</span>
+                  <span className="status-value">{selectedServerSummary.displayName}</span>
+                </div>
+                <div className="status-pill">
+                  <span className="status-label">State</span>
+                  <span className="status-value">{health?.ok ? `${apiHealthLabel} / ${selectedServerSummary.state}` : selectedServerSummary.state}</span>
+                </div>
+                <div className="status-pill">
+                  <span className="status-label">Alerts</span>
+                  <span className="status-value">{selectedAlertCount}</span>
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          {selectedServer && selectedServerSummary ? (
+            <div className="dashboard-tab-row">
+              {detailTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`review-button ${selectedDashboardTab === tab.key ? 'approve-button' : 'reject-button'}`}
+                  onClick={() => setSelectedDashboardTab(tab.key)}
+                >
+                  {tab.label}
+                </button>
               ))}
-            </select>
-          </div>
+            </div>
+          ) : null}
         </div>
 
-        {serverOptionsLoading ? <p className="subtle">Loading configured servers...</p> : null}
-        {serverOptionsError ? <p className="error">Server catalog unavailable: {serverOptionsError}</p> : null}
-        {fleetError ? <p className="error">Fleet refresh failed: {fleetError}</p> : null}
-
-        <div className="status-strip">
-          <div className="status-pill">
-            <span className="status-label">API</span>
-            <span className="status-value status-good">{apiHealthLabel}</span>
-          </div>
-          <div className="status-pill">
-            <span className="status-label">Servers</span>
-            <span className="status-value">{fleetCounts.servers}</span>
-          </div>
-          <div className="status-pill">
-            <span className="status-label">Online</span>
-            <span className="status-value">{fleetCounts.online}</span>
-          </div>
-          <div className="status-pill">
-            <span className="status-label">Degraded</span>
-            <span className="status-value">{fleetCounts.degraded}</span>
-          </div>
-          <div className="status-pill">
-            <span className="status-label">Active Players</span>
-            <span className="status-value">{fleetCounts.activePlayers}</span>
-          </div>
-          <div className="status-pill">
-            <span className="status-label">Updated</span>
-            <span className="status-value">{lastUpdatedLabel}</span>
-          </div>
-        </div>
+        {serverOptionsLoading ? <p className="subtle dashboard-message">Loading configured servers...</p> : null}
+        {serverOptionsError ? <p className="error dashboard-message">Server catalog unavailable: {serverOptionsError}</p> : null}
+        {fleetError ? <p className="error dashboard-message">Fleet refresh failed: {fleetError}</p> : null}
       </header>
 
-      {selectedServer && selectedServerSummary ? (
-        <section className="dashboard-tab-shell">
-          <div className="dashboard-tab-row">
-            {detailTabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={`review-button ${selectedDashboardTab === tab.key ? 'approve-button' : 'reject-button'}`}
-                onClick={() => setSelectedDashboardTab(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       <section className="fleet-section">
-        <div className="section-heading fleet-heading">
-          <h2>Fleet</h2>
+        <div className="fleet-compact-row">
+          {selectedServer && !isFleetExpanded ? (
+            <div className="fleet-collapsed-note">
+              <span>{selectedServer.displayName}</span>
+              <span>{selectedServer.game}</span>
+            </div>
+          ) : null}
           {selectedServer ? (
             <button
               type="button"
@@ -2311,10 +2479,7 @@ function App() {
         {fleetLoading ? <p className="subtle">Loading fleet telemetry...</p> : null}
 
         {selectedServer && !isFleetExpanded ? (
-          <div className="fleet-collapsed-note">
-            <span>{selectedServer.displayName}</span>
-            <span>{selectedServer.game}</span>
-          </div>
+          null
         ) : (
           <div className="fleet-grid">
             {filteredServers.map((server) => {
@@ -2361,40 +2526,12 @@ function App() {
       </section>
 
       <section className="detail-section">
-        <div className="section-heading">
-          <h2>Server Detail</h2>
-          <p className="subtle">Shared telemetry first, then game-specific views.</p>
-        </div>
-
         {!selectedServer || !selectedServerSummary ? (
           <article className="card detail-card">
             <p className="subtle">Select a server from the fleet overview to inspect details.</p>
           </article>
         ) : (
           <>
-            <section className="top-status-rail">
-              <div className="top-status-chip">
-                <span className="top-status-key">Server</span>
-                <span className="top-status-value">{selectedServerSummary.displayName}</span>
-              </div>
-              <div className="top-status-chip">
-                <span className="top-status-key">Game</span>
-                <span className="top-status-value">{selectedServerSummary.game}</span>
-              </div>
-              <div className="top-status-chip">
-                <span className="top-status-key">Connection</span>
-                <span className="top-status-value">{health?.ok ? `${apiHealthLabel} / ${selectedServerSummary.state}` : selectedServerSummary.state}</span>
-              </div>
-              <div className="top-status-chip">
-                <span className="top-status-key">Alerts</span>
-                <span className="top-status-value">{selectedAlertCount}</span>
-              </div>
-              <div className="top-status-chip">
-                <span className="top-status-key">Updated</span>
-                <span className="top-status-value">{lastUpdatedLabel}</span>
-              </div>
-            </section>
-
             {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
             {detailError ? <p className="error">{detailError}</p> : null}
 
@@ -2480,7 +2617,7 @@ function App() {
                             expanded={expandedGuildActivityName === guild.guildName}
                             reviewed={reviewedGuildNames.has(guild.guildName)}
                             onToggle={() => setExpandedGuildActivityName((current) => current === guild.guildName ? null : guild.guildName)}
-                            onMarkReviewed={() => setReviewedGuildNames((current) => new Set(current).add(guild.guildName))}
+                            onMarkReviewed={() => markGuildReviewedAndAdvance(guild.guildName)}
                           />
                         ))}
                       </ul>
@@ -2943,16 +3080,39 @@ function App() {
                             </ul>
                           </div>
                         ) : null}
+                        <div className="guild-activity-filter-row" aria-label="Guild activity filters">
+                          <button
+                            type="button"
+                            className={guildFocusMode ? 'selected' : ''}
+                            onClick={() => setGuildFocusMode((current) => !current)}
+                          >
+                            <span>Focus Mode</span>
+                          </button>
+                          {guildActivityFilterOptions.options.map((filter) => (
+                            <button
+                              key={filter.value}
+                              type="button"
+                              className={guildActivityFilter === filter.value ? 'selected' : ''}
+                              onClick={() => setGuildActivityFilter(filter.value)}
+                            >
+                              <span>{filter.label}</span>
+                              <small>{filter.count}</small>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="guild-activity-progress">
+                          Reviewed: {guildActivityProgress.reviewedCount} / {guildActivityProgress.totalCount} {guildActivityProgress.labelSuffix}
+                        </div>
                         <ul className="list review-list guild-activity-list">
-                          {!palworldGuildsError && guildActivity.length === 0 ? <li className="empty-line">No guild activity available.</li> : null}
-                          {guildActivity.map((guild) => (
+                          {!palworldGuildsError && visibleGuildActivity.length === 0 ? <li className="empty-line">No guilds match this filter</li> : null}
+                          {visibleGuildActivity.map((guild) => (
                             <GuildRiskRow
                               key={`all-guild:${guild.guildName}`}
                               guild={guild}
-                              expanded={expandedGuildActivityName === guild.guildName}
+                              expanded={guildFocusMode || expandedGuildActivityName === guild.guildName}
                               reviewed={reviewedGuildNames.has(guild.guildName)}
                               onToggle={() => setExpandedGuildActivityName((current) => current === guild.guildName ? null : guild.guildName)}
-                              onMarkReviewed={() => setReviewedGuildNames((current) => new Set(current).add(guild.guildName))}
+                              onMarkReviewed={() => markGuildReviewedAndAdvance(guild.guildName)}
                             />
                           ))}
                         </ul>
