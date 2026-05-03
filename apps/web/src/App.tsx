@@ -102,7 +102,8 @@ type GuildRiskLevel = 'active' | 'watch' | 'risk' | 'expired' | 'unknown';
 
 interface PalworldNextAction {
   label: string;
-  destination?: string;
+  cta: string;
+  targetTab: DashboardTab;
 }
 
 interface PlayerProfileCardProps {
@@ -1769,34 +1770,50 @@ function App() {
 
     if (palworldUrgentGuildRiskCount > 0) {
       actions.push({
-        label: `${palworldUrgentGuildRiskCount} urgent guild ${palworldUrgentGuildRiskCount === 1 ? 'risk needs' : 'risks need'} review`
+        label: `${palworldUrgentGuildRiskCount} urgent guild ${palworldUrgentGuildRiskCount === 1 ? 'risk needs' : 'risks need'} review`,
+        cta: 'View Guilds',
+        targetTab: 'guilds'
       });
     }
 
     if (activeSaveLinkNeededCount > 0) {
       actions.push({
         label: `Link saves for ${activeSaveLinkNeededCount} active ${activeSaveLinkNeededCount === 1 ? 'player' : 'players'}`,
-        destination: 'Review Saves'
+        cta: 'Review Saves',
+        targetTab: 'players'
       });
     }
 
     if (unknownGuildActivityCount > 0) {
       actions.push({
         label: `Resolve missing activity data for ${unknownGuildActivityCount} ${unknownGuildActivityCount === 1 ? 'guild' : 'guilds'}`,
-        destination: 'View Players'
+        cta: 'View Guilds',
+        targetTab: 'guilds'
       });
     }
 
     if (palworldBaseCapacityAlerts && palworldBaseCapacityAlerts.severity !== 'safe') {
-      actions.push({ label: palworldBaseCapacityAlerts.alertMessage });
+      actions.push({
+        label: palworldBaseCapacityAlerts.alertMessage,
+        cta: 'View Metrics',
+        targetTab: 'metrics'
+      });
     }
 
     if (palworldBaseCapacityAlerts?.growthAlert) {
-      actions.push({ label: palworldBaseCapacityAlerts.growthAlert });
+      actions.push({
+        label: palworldBaseCapacityAlerts.growthAlert,
+        cta: 'View Metrics',
+        targetTab: 'metrics'
+      });
     }
 
     if (actions.length === 0) {
-      actions.push({ label: 'No immediate action needed' });
+      actions.push({
+        label: 'No immediate action needed',
+        cta: 'All Good',
+        targetTab: 'overview'
+      });
     }
 
     return actions.slice(0, 4);
@@ -2478,16 +2495,10 @@ function App() {
                           <li key={action.label}>
                             <button
                               type="button"
-                              onClick={() => {
-                                if (action.destination === 'Review Saves') {
-                                  setSelectedDashboardTab('review-saves');
-                                } else if (action.destination === 'View Players') {
-                                  setSelectedDashboardTab('players');
-                                }
-                              }}
+                              onClick={() => setSelectedDashboardTab(action.targetTab)}
                             >
                               <span>{action.label}</span>
-                              {action.destination ? <small>{action.destination}</small> : null}
+                              <small>{action.cta}</small>
                             </button>
                           </li>
                         ))}
