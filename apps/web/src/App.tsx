@@ -5,6 +5,7 @@ import {
   knownPlayersResponseSchema,
   palworldIdentityApprovalsResponseSchema,
   palworldIdentityLinksResponseSchema,
+  palworldGuildActivityResponseSchema,
   palworldLatestPlayersResponseSchema,
   palworldMilestoneFeedResponseSchema,
   palworldMetricsSummariesResponseSchema,
@@ -15,6 +16,8 @@ import {
   recentEventsResponseSchema,
   serverStatusSchema,
   type ConfiguredServersResponse,
+  type PalworldGuildActivityEntry,
+  type PalworldGuildActivityMember,
   type KnownPlayerProfileResponse,
   type NormalizedEvent,
   type PalworldApprovedIdentity,
@@ -30,7 +33,7 @@ import {
   type PalworldTransitionMilestoneEvent,
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 
 interface HealthResponse {
@@ -96,15 +99,6 @@ interface PalworldGuildHint {
 }
 
 type GuildRiskLevel = 'active' | 'watch' | 'risk' | 'expired' | 'unknown';
-
-interface GuildActivityEntry {
-  guildName: string;
-  memberCount: number;
-  lastMemberSeenAt: string | null;
-  daysInactive: number | null;
-  daysUntilPalboxRisk: number | null;
-  riskLevel: GuildRiskLevel;
-}
 
 interface PalworldNextAction {
   label: string;
@@ -346,30 +340,116 @@ function PlayerDetailDrawer({
 }
 
 interface GuildRiskRowProps {
-  guild: GuildActivityEntry;
+  guild: PalworldGuildActivityEntry;
+  expanded: boolean;
+  reviewed: boolean;
+  onToggle: () => void;
+  onMarkReviewed: () => void;
 }
 
-function GuildRiskRow({ guild }: GuildRiskRowProps) {
+function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: GuildRiskRowProps) {
   const riskText = guild.daysInactive !== null
     ? `${guild.daysInactive}d inactive`
     : guild.daysUntilPalboxRisk !== null
       ? `${guild.daysUntilPalboxRisk}d to risk`
       : null;
   const riskLabel = guild.riskLevel === 'unknown' ? 'No activity data' : guild.riskLevel;
+  const lastActivityLabel = guild.lastMemberSeenAt
+    ? `Last activity: ${guild.lastSeenMemberName ?? 'Unknown member'}${guild.daysInactive !== null ? ` — ${guild.daysInactive}d ago` : ''}`
+    : 'No matched activity';
+  const palboxRiskLabel = guild.daysUntilPalboxRisk !== null ? `${guild.daysUntilPalboxRisk}d to palbox risk` : 'Activity unknown';
 
   return (
-    <li className="homepage-player-row">
-      <div className="homepage-player-main">
-        <div className="homepage-player-title">
-          <span className="homepage-player-name">{guild.guildName}</span>
-          <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{riskLabel}</span>
+    <li className={`guild-activity-row ${expanded ? 'guild-activity-row-expanded' : ''}`}>
+      <button type="button" className="guild-activity-toggle" onClick={onToggle}>
+        <div className="homepage-player-main">
+          <div className="homepage-player-title">
+            <span className="homepage-player-name">{guild.guildName}</span>
+            <span className="guild-risk-badge-group">
+              <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{riskLabel}</span>
+              {reviewed ? <span className="guild-reviewed-pill">Reviewed</span> : null}
+            </span>
+          </div>
+          <div className="homepage-player-meta">
+            <span>{guild.memberCount} members</span>
+            <span>{lastActivityLabel}</span>
+            <span>{palboxRiskLabel}</span>
+            {riskText ? <span>{riskText}</span> : null}
+          </div>
         </div>
-        <div className="homepage-player-meta">
-          {riskText ? <span>{riskText}</span> : null}
-          <span>{guild.memberCount} members</span>
-        </div>
-      </div>
+        <span className="homepage-player-detail-button" aria-hidden="true">{expanded ? 'Hide' : 'Details'}</span>
+      </button>
+      {expanded ? (
+        <GuildActivityDetail
+          guildName={guild.guildName}
+          members={guild.members}
+          reviewed={reviewed}
+          onMarkReviewed={onMarkReviewed}
+        />
+      ) : null}
     </li>
+  );
+}
+
+interface GuildActivityDetailProps {
+  guildName: string;
+  members: PalworldGuildActivityMember[];
+  reviewed: boolean;
+  onMarkReviewed: () => void;
+}
+
+function GuildActivityDetail({ guildName, members, reviewed, onMarkReviewed }: GuildActivityDetailProps) {
+  const sortedMembers = [...members].sort((left, right) => {
+    if (Number(right.matched) !== Number(left.matched)) {
+      return Number(right.matched) - Number(left.matched);
+    }
+
+    return (right.lastSeenAt ?? '').localeCompare(left.lastSeenAt ?? '');
+  });
+  const trackedMemberCount = sortedMembers.filter((member) => member.matched).length;
+
+  return (
+    <div className="guild-activity-detail">
+      <div className="guild-activity-detail-meta">
+        <span>Tracked members: {trackedMemberCount} / {sortedMembers.length}</span>
+      </div>
+      <ul className="guild-member-list">
+        {sortedMembers.length === 0 ? <li className="empty-line">No members listed in guild data</li> : null}
+        {sortedMembers.map((member, index) => (
+          <li key={`${member.memberName}:${index}`} className="guild-member-row">
+            <div>
+              <span className="guild-member-name">{member.memberName}</span>
+              <span className={`guild-member-match ${member.matched ? 'matched' : 'unmatched'}`}>
+                {member.matched ? 'tracked' : 'no player data'}
+              </span>
+            </div>
+            <div className="guild-member-meta">
+              {member.lastSeenAt ? <span>{formatTimestamp(member.lastSeenAt)}</span> : <span>last seen unknown</span>}
+              {member.daysSinceSeen !== null ? <span>{member.daysSinceSeen}d ago</span> : null}
+              {member.level !== null ? <span>lvl {member.level}</span> : null}
+              {member.saveLinked !== null ? <span>{member.saveLinked ? 'Save linked' : 'Save link needed'}</span> : null}
+              {member.matchedPlayerName && member.matchedPlayerName !== member.memberName ? <span>as {member.matchedPlayerName}</span> : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="guild-activity-actions">
+        <span>Actions</span>
+        {reviewed ? (
+          <span className="guild-activity-reviewed-status">Reviewed</span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              console.log('Mark guild reviewed', { guildName });
+              onMarkReviewed();
+            }}
+          >
+            Mark Reviewed
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -384,6 +464,47 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
 const LIVE_SIGNAL_WINDOW_MS = 10 * 60 * 1000;
+const REVIEWED_GUILDS_STORAGE_PREFIX = 'gameops.reviewedGuilds.';
+
+function getReviewedGuildsStorageKey(serverId: string): string {
+  return `${REVIEWED_GUILDS_STORAGE_PREFIX}${serverId}`;
+}
+
+function loadReviewedGuildNames(serverId: string): Set<string> {
+  if (!serverId) {
+    return new Set();
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(getReviewedGuildsStorageKey(serverId));
+
+    if (!rawValue) {
+      return new Set();
+    }
+
+    const parsedValue = JSON.parse(rawValue) as unknown;
+
+    if (!Array.isArray(parsedValue)) {
+      return new Set();
+    }
+
+    return new Set(parsedValue.filter((value): value is string => typeof value === 'string' && value.trim() !== ''));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveReviewedGuildNames(serverId: string, guildNames: Set<string>): void {
+  if (!serverId) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(getReviewedGuildsStorageKey(serverId), JSON.stringify([...guildNames]));
+  } catch {
+    // Ignore storage failures; review state is a dashboard convenience.
+  }
+}
 
 async function loadPalworldGuilds(serverId: string): Promise<PalworldGuildHint[]> {
   const response = await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/guilds`);
@@ -401,38 +522,14 @@ async function loadPalworldGuilds(serverId: string): Promise<PalworldGuildHint[]
   return payload.guilds.filter((guild): guild is PalworldGuildHint => typeof guild === 'object' && guild !== null);
 }
 
-function isGuildActivityEntry(value: unknown): value is GuildActivityEntry {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const entry = value as Partial<GuildActivityEntry>;
-  return typeof entry.guildName === 'string'
-    && typeof entry.memberCount === 'number'
-    && (typeof entry.lastMemberSeenAt === 'string' || entry.lastMemberSeenAt === null)
-    && (typeof entry.daysInactive === 'number' || entry.daysInactive === null)
-    && (typeof entry.daysUntilPalboxRisk === 'number' || entry.daysUntilPalboxRisk === null)
-    && (entry.riskLevel === 'active'
-      || entry.riskLevel === 'watch'
-      || entry.riskLevel === 'risk'
-      || entry.riskLevel === 'expired'
-      || entry.riskLevel === 'unknown');
-}
-
-async function loadPalworldGuildActivity(serverId: string): Promise<GuildActivityEntry[]> {
+async function loadPalworldGuildActivity(serverId: string): Promise<PalworldGuildActivityEntry[]> {
   const response = await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/guild-activity`);
 
   if (!response.ok) {
     throw new Error(`Palworld guild activity fetch failed with status ${response.status}`);
   }
 
-  const payload = await response.json() as { guilds?: unknown };
-
-  if (!Array.isArray(payload.guilds)) {
-    throw new Error('Palworld guild activity payload validation failed.');
-  }
-
-  return payload.guilds.filter(isGuildActivityEntry);
+  return palworldGuildActivityResponseSchema.parse(await response.json()).guilds;
 }
 
 function App() {
@@ -462,7 +559,9 @@ function App() {
   const [palworldRefinedEstimatedBases, setPalworldRefinedEstimatedBases] = useState<number | null>(null);
   const [palworldBaseSignalHistory, setPalworldBaseSignalHistory] = useState<PalworldBaseSignalHistoryEntry[]>([]);
   const [palworldGuilds, setPalworldGuilds] = useState<PalworldGuildHint[]>([]);
-  const [guildActivity, setGuildActivity] = useState<GuildActivityEntry[]>([]);
+  const [guildActivity, setGuildActivity] = useState<PalworldGuildActivityEntry[]>([]);
+  const [expandedGuildActivityName, setExpandedGuildActivityName] = useState<string | null>(null);
+  const [reviewedGuildNames, setReviewedGuildNames] = useState<Set<string>>(() => new Set());
   const [palworldGuildsError, setPalworldGuildsError] = useState<string | null>(null);
   const [palworldTransitionPostSubmittingKey, setPalworldTransitionPostSubmittingKey] = useState<string | null>(null);
   const [palworldTransitionPostSuccessKey, setPalworldTransitionPostSuccessKey] = useState<string | null>(null);
@@ -495,6 +594,7 @@ function App() {
   const [drawerLinkSuccess, setDrawerLinkSuccess] = useState<string | null>(null);
   const [drawerLinkSubmitting, setDrawerLinkSubmitting] = useState(false);
   const [isFleetExpanded, setIsFleetExpanded] = useState(false);
+  const reviewedGuildStorageServerId = useRef<string | null>(null);
 
   useEffect(() => {
     setSelectedValheimPlayerLookupKey(null);
@@ -515,6 +615,9 @@ function App() {
     setPalworldBaseSignalHistory([]);
     setPalworldGuilds([]);
     setGuildActivity([]);
+    setExpandedGuildActivityName(null);
+    setReviewedGuildNames(loadReviewedGuildNames(selectedServerId));
+    reviewedGuildStorageServerId.current = selectedServerId || null;
     setPalworldGuildsError(null);
     setPalworldTransitionPostSubmittingKey(null);
     setPalworldTransitionPostSuccessKey(null);
@@ -537,6 +640,14 @@ function App() {
     setSelectedPlayerProfile(null);
     setSelectedDashboardTab('overview');
   }, [selectedServerId]);
+
+  useEffect(() => {
+    if (!selectedServerId || reviewedGuildStorageServerId.current !== selectedServerId) {
+      return;
+    }
+
+    saveReviewedGuildNames(selectedServerId, reviewedGuildNames);
+  }, [reviewedGuildNames, selectedServerId]);
 
   useEffect(() => {
     setDrawerSavePlayerSaveId('');
@@ -829,6 +940,7 @@ function App() {
         setPlayerProfiles([]);
         setPalworldGuilds([]);
         setGuildActivity([]);
+        setExpandedGuildActivityName(null);
         setPalworldGuildsError(null);
         setDetailLoading(false);
         setDetailError(null);
@@ -897,6 +1009,7 @@ function App() {
         await loadBaseSignalHistory(selectedServer.id, baseSignalHistoryResponse);
         setPalworldGuilds(guildsResult.guilds);
         setGuildActivity(guildActivityResult.guilds);
+        setExpandedGuildActivityName(null);
         setPalworldGuildsError(guildsResult.error ?? guildActivityResult.error);
       } catch (caughtError) {
         const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
@@ -913,6 +1026,7 @@ function App() {
           setPalworldBaseSignalHistory([]);
           setPalworldGuilds([]);
           setGuildActivity([]);
+          setExpandedGuildActivityName(null);
           setPalworldGuildsError(null);
         }
       } finally {
@@ -1534,8 +1648,8 @@ function App() {
   }, [guildActivity]);
 
   const unknownGuildActivityCount = useMemo(() => {
-    return guildActivity.filter((guild) => guild.riskLevel === 'unknown').length;
-  }, [guildActivity]);
+    return guildActivity.filter((guild) => guild.riskLevel === 'unknown' && !reviewedGuildNames.has(guild.guildName)).length;
+  }, [guildActivity, reviewedGuildNames]);
 
   const palworldBaseCapacity = useMemo(() => {
     if (palworldBaseSignal === null) {
@@ -2343,7 +2457,14 @@ function App() {
                           </li>
                         ) : null}
                         {palworldActionableGuildRisks.map((guild) => (
-                          <GuildRiskRow key={guild.guildName} guild={guild} />
+                          <GuildRiskRow
+                            key={guild.guildName}
+                            guild={guild}
+                            expanded={expandedGuildActivityName === guild.guildName}
+                            reviewed={reviewedGuildNames.has(guild.guildName)}
+                            onToggle={() => setExpandedGuildActivityName((current) => current === guild.guildName ? null : guild.guildName)}
+                            onMarkReviewed={() => setReviewedGuildNames((current) => new Set(current).add(guild.guildName))}
+                          />
                         ))}
                       </ul>
                     </article>
@@ -2785,8 +2906,21 @@ function App() {
                     ) : null}
 
                     {selectedDashboardTab === 'guilds' ? (
-                      <article className="card">
-                        <h2>Guild Hints</h2>
+                      <article className="card guild-activity-card">
+                        <div className="command-panel-heading">
+                          <div>
+                            <h2>Guild Activity</h2>
+                            <p className="subtle">All parsed guilds with matched member activity.</p>
+                          </div>
+                          <div className="guild-activity-heading-actions">
+                            {reviewedGuildNames.size > 0 ? (
+                              <button type="button" onClick={() => setReviewedGuildNames(new Set())}>
+                                Clear Reviewed
+                              </button>
+                            ) : null}
+                            <span className="state-pill state-warning">{guildActivity.length} guilds</span>
+                          </div>
+                        </div>
                         {palworldGuildsError ? <p className="error">{palworldGuildsError}</p> : null}
                         {!palworldGuildsError ? (
                           <div className="detail-block">
@@ -2798,17 +2932,17 @@ function App() {
                             </ul>
                           </div>
                         ) : null}
-                        <ul className="list review-list">
-                          {!palworldGuildsError && palworldGuilds.length === 0 ? <li>No guild hints available.</li> : null}
-                          {palworldGuilds.map((guild, index) => (
-                            <li key={`${guild.guildId ?? guild.guildName ?? 'guild'}:${index}`} className="review-row">
-                              <div className="review-main">
-                                <div><strong>{guild.guildName?.trim() || 'Unknown Guild'}</strong></div>
-                                <div className="subtle">guildId {guild.guildId?.trim() || 'N/A'}</div>
-                                <div className="subtle">memberCount {guild.memberCount ?? guild.members?.length ?? 0}</div>
-                                <div className="subtle">members {guild.members && guild.members.length > 0 ? guild.members.join(', ') : 'None'}</div>
-                              </div>
-                            </li>
+                        <ul className="list review-list guild-activity-list">
+                          {!palworldGuildsError && guildActivity.length === 0 ? <li className="empty-line">No guild activity available.</li> : null}
+                          {guildActivity.map((guild) => (
+                            <GuildRiskRow
+                              key={`all-guild:${guild.guildName}`}
+                              guild={guild}
+                              expanded={expandedGuildActivityName === guild.guildName}
+                              reviewed={reviewedGuildNames.has(guild.guildName)}
+                              onToggle={() => setExpandedGuildActivityName((current) => current === guild.guildName ? null : guild.guildName)}
+                              onMarkReviewed={() => setReviewedGuildNames((current) => new Set(current).add(guild.guildName))}
+                            />
                           ))}
                         </ul>
                       </article>

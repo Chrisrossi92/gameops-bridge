@@ -9,8 +9,13 @@ import {
   palworldMetricsSummariesResponseSchema,
   palworldPlayerTelemetryProfileResponseSchema,
   palworldHighlightsResponseSchema,
+  palworldGuildActivityResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   type PalworldLatestPlayersResponse,
+  type PalworldGuildActivityEntry,
+  type PalworldGuildActivityMember,
+  type PalworldGuildActivityResponse,
+  type PalworldGuildActivityRiskLevel,
   type PalworldHighlightsResponse,
   type PalworldManualTransitionPostAction,
   type PalworldManualTransitionPostResponse,
@@ -77,22 +82,6 @@ interface PalworldBaseAlertResponse {
   statusLabel: 'critical' | 'high' | 'warning' | 'safe';
   alertMessage: string;
   growthAlertMessage: string | null;
-}
-
-type PalworldGuildActivityRiskLevel = 'active' | 'watch' | 'risk' | 'expired' | 'unknown';
-
-interface PalworldGuildActivityEntry {
-  guildName: string;
-  memberCount: number;
-  lastMemberSeenAt: string | null;
-  daysInactive: number | null;
-  daysUntilPalboxRisk: number | null;
-  riskLevel: PalworldGuildActivityRiskLevel;
-}
-
-interface PalworldGuildActivityResponse {
-  serverId: string;
-  guilds: PalworldGuildActivityEntry[];
 }
 
 const PALWORLD_GUILD_PLACEHOLDERS = new Set(['unknown', 'unknown guild', 'unnamed guild', 'none', 'null']);
@@ -429,6 +418,10 @@ function getNormalizedGuildKey(value: string | null | undefined): string {
   return normalizeGuildText(value ?? '').toLowerCase();
 }
 
+function getNormalizedPlayerMatchKey(value: string | null | undefined): string {
+  return normalizeGuildText(value ?? '').toLowerCase();
+}
+
 function isTrackableGuildName(value: string | null | undefined): value is string {
   const normalized = normalizeGuildText(value ?? '');
   return Boolean(normalized) && !isPlaceholderGuildLabel(normalized);
@@ -439,24 +432,45 @@ function buildPalworldGuildActivityResponse(
   guilds: PalworldGuildSummary[],
   profiles: PalworldPlayerProfileSessionSummary[]
 ): PalworldGuildActivityResponse {
-  const guildsByKey = new Map<string, { guildName: string; memberCount: number }>();
+  const guildsByKey = new Map<string, { guildName: string; memberCount: number; members: string[] }>();
   const profilesByGuildKey = new Map<string, PalworldPlayerProfileSessionSummary[]>();
+  const profilesByMemberKey = new Map<string, PalworldPlayerProfileSessionSummary>();
+
+  for (const profile of profiles) {
+    const candidateNames = [profile.playerName, profile.accountName]
+      .map(getNormalizedPlayerMatchKey)
+      .filter(Boolean);
+
+    for (const candidateName of candidateNames) {
+      const existingProfile = profilesByMemberKey.get(candidateName);
+
+      if (!existingProfile || (profile.profile.lastSeenAt ?? '').localeCompare(existingProfile.profile.lastSeenAt ?? '') > 0) {
+        profilesByMemberKey.set(candidateName, profile);
+      }
+    }
+  }
 
   for (const guild of guilds) {
-    if (!isTrackableGuildName(guild.guildName)) {
+    const normalizedGuildName = normalizeGuildText(guild.guildName ?? '');
+
+    if (!normalizedGuildName) {
       continue;
     }
 
-    const guildName = normalizeGuildText(guild.guildName);
+    const guildName = normalizedGuildName;
     const guildKey = getNormalizedGuildKey(guildName);
+    const members = Array.isArray(guild.members)
+      ? [...new Set(guild.members.filter((member): member is string => typeof member === 'string').map(normalizeGuildText).filter(Boolean))]
+      : [];
     const memberCount = Math.max(
       guild.memberCount ?? 0,
-      Array.isArray(guild.members) ? guild.members.length : 0
+      members.length
     );
 
     guildsByKey.set(guildKey, {
       guildName,
-      memberCount
+      memberCount,
+      members
     });
   }
 
@@ -474,23 +488,74 @@ function buildPalworldGuildActivityResponse(
     if (!guildsByKey.has(guildKey)) {
       guildsByKey.set(guildKey, {
         guildName,
-        memberCount: 0
+        memberCount: 0,
+        members: []
       });
     }
   }
 
   const activity = Array.from(guildsByKey.entries()).map(([guildKey, guild]) => {
     const matchedProfiles = profilesByGuildKey.get(guildKey) ?? [];
-    const lastMemberSeenAt = matchedProfiles
-      .map((profile) => profile.profile.lastSeenAt)
-      .filter((value): value is string => typeof value === 'string' && Boolean(value))
-      .sort((left, right) => right.localeCompare(left))[0] ?? null;
+    const memberEntries = guild.members.map((memberName): PalworldGuildActivityMember => {
+      const matchedProfile = profilesByMemberKey.get(getNormalizedPlayerMatchKey(memberName)) ?? null;
+
+      if (!matchedProfile) {
+        return {
+          memberName,
+          matched: false,
+          matchedPlayerName: null,
+          lastSeenAt: null,
+          daysSinceSeen: null,
+          level: null,
+          saveLinked: null
+        };
+      }
+
+      return {
+        memberName,
+        matched: true,
+        matchedPlayerName: matchedProfile.playerName ?? matchedProfile.accountName ?? memberName,
+        lastSeenAt: matchedProfile.profile.lastSeenAt,
+        daysSinceSeen: getDaysInactive(matchedProfile.profile.lastSeenAt),
+        level: matchedProfile.profile.level,
+        saveLinked: matchedProfile.saveArtifact.present
+      };
+    });
+    const matchedMemberKeys = new Set(memberEntries.filter((member) => member.matched).map((member) => getNormalizedPlayerMatchKey(member.matchedPlayerName)));
+    const inferredMemberEntries = matchedProfiles
+      .filter((profile) => {
+        const displayName = profile.playerName ?? profile.accountName;
+        return Boolean(displayName) && !matchedMemberKeys.has(getNormalizedPlayerMatchKey(displayName));
+      })
+      .map((profile): PalworldGuildActivityMember => ({
+        memberName: profile.playerName ?? profile.accountName ?? 'Unknown member',
+        matched: true,
+        matchedPlayerName: profile.playerName ?? profile.accountName ?? 'Unknown member',
+        lastSeenAt: profile.profile.lastSeenAt,
+        daysSinceSeen: getDaysInactive(profile.profile.lastSeenAt),
+        level: profile.profile.level,
+        saveLinked: profile.saveArtifact.present
+      }));
+    const members = [...memberEntries, ...inferredMemberEntries].sort((left, right) => {
+      if (Number(right.matched) !== Number(left.matched)) {
+        return Number(right.matched) - Number(left.matched);
+      }
+
+      return (right.lastSeenAt ?? '').localeCompare(left.lastSeenAt ?? '');
+    });
+    const mostRecentMember = members
+      .filter((member) => member.lastSeenAt)
+      .sort((left, right) => (right.lastSeenAt ?? '').localeCompare(left.lastSeenAt ?? ''))[0] ?? null;
+    const lastMemberSeenAt = mostRecentMember?.lastSeenAt ?? null;
+    const lastSeenMemberName = mostRecentMember?.matchedPlayerName ?? mostRecentMember?.memberName ?? null;
     const daysInactive = getDaysInactive(lastMemberSeenAt);
 
     return {
       guildName: guild.guildName,
-      memberCount: Math.max(guild.memberCount, matchedProfiles.length),
+      memberCount: Math.max(guild.memberCount, matchedProfiles.length, members.length),
+      members,
       lastMemberSeenAt,
+      lastSeenMemberName,
       daysInactive,
       daysUntilPalboxRisk: daysInactive === null ? null : Math.max(0, PALWORLD_PALBOX_RISK_DAYS - daysInactive),
       riskLevel: getGuildActivityRiskLevel(daysInactive)
@@ -594,7 +659,17 @@ function computePalworldBaseSignalTrend(history: PalworldBaseSignalHistoryEntry[
     };
   }
 
-  const delta = recentHistory[recentHistory.length - 1].baseSignal - recentHistory[0].baseSignal;
+  const oldestHistoryEntry = recentHistory[0];
+  const newestHistoryEntry = recentHistory[recentHistory.length - 1];
+
+  if (!oldestHistoryEntry || !newestHistoryEntry) {
+    return {
+      direction: 'stable',
+      indicator: '→'
+    };
+  }
+
+  const delta = newestHistoryEntry.baseSignal - oldestHistoryEntry.baseSignal;
 
   if (delta > 0) {
     return {
@@ -708,8 +783,10 @@ function buildPalworldBaseAlertResponse(
   }
 
   const recentHistory = history.slice(-5);
-  const growthDelta = recentHistory.length >= 2
-    ? recentHistory[recentHistory.length - 1].baseSignal - recentHistory[0].baseSignal
+  const oldestHistoryEntry = recentHistory[0];
+  const newestHistoryEntry = recentHistory[recentHistory.length - 1];
+  const growthDelta = recentHistory.length >= 2 && oldestHistoryEntry && newestHistoryEntry
+    ? newestHistoryEntry.baseSignal - oldestHistoryEntry.baseSignal
     : 0;
 
   let growthAlertMessage: string | null = null;
@@ -983,7 +1060,7 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
         const guilds = sanitizePalworldGuilds(JSON.parse(readFileSync(path, 'utf8')) as unknown[]);
         const profiles = getPalworldPlayerProfileSessionSummariesForServer(serverId, 10_000);
 
-        return buildPalworldGuildActivityResponse(serverId, guilds, profiles);
+        return palworldGuildActivityResponseSchema.parse(buildPalworldGuildActivityResponse(serverId, guilds, profiles));
       } catch (error) {
         reply.code(500);
         return { error: error instanceof Error ? error.message : String(error) };

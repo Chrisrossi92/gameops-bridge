@@ -578,6 +578,38 @@ export const palworldPlayerProfileSessionSummariesResponseSchema = z.object({
 });
 export type PalworldPlayerProfileSessionSummariesResponse = z.infer<typeof palworldPlayerProfileSessionSummariesResponseSchema>;
 
+export const palworldGuildActivityRiskLevelSchema = z.enum(['active', 'watch', 'risk', 'expired', 'unknown']);
+export type PalworldGuildActivityRiskLevel = z.infer<typeof palworldGuildActivityRiskLevelSchema>;
+
+export const palworldGuildActivityMemberSchema = z.object({
+  memberName: z.string().min(1),
+  matched: z.boolean(),
+  matchedPlayerName: z.string().nullable(),
+  lastSeenAt: z.string().datetime().nullable(),
+  daysSinceSeen: z.number().int().min(0).nullable(),
+  level: z.number().int().min(0).nullable(),
+  saveLinked: z.boolean().nullable()
+});
+export type PalworldGuildActivityMember = z.infer<typeof palworldGuildActivityMemberSchema>;
+
+export const palworldGuildActivityEntrySchema = z.object({
+  guildName: z.string().min(1),
+  memberCount: z.number().int().min(0),
+  members: z.array(palworldGuildActivityMemberSchema),
+  lastMemberSeenAt: z.string().datetime().nullable(),
+  lastSeenMemberName: z.string().nullable(),
+  daysInactive: z.number().int().min(0).nullable(),
+  daysUntilPalboxRisk: z.number().int().min(0).nullable(),
+  riskLevel: palworldGuildActivityRiskLevelSchema
+});
+export type PalworldGuildActivityEntry = z.infer<typeof palworldGuildActivityEntrySchema>;
+
+export const palworldGuildActivityResponseSchema = z.object({
+  serverId: z.string().min(1),
+  guilds: z.array(palworldGuildActivityEntrySchema)
+});
+export type PalworldGuildActivityResponse = z.infer<typeof palworldGuildActivityResponseSchema>;
+
 const workspaceConfigSchema = z.object({
   workspaceId: z.string().min(1),
   workspaceName: z.string().min(1),
