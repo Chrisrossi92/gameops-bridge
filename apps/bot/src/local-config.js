@@ -2,11 +2,15 @@ import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { eventTypeSchema } from '@gameops/shared';
 import { z } from 'zod';
+import { getConfiguredServerById, getConfiguredServers } from './shared-config.js';
 const routedEventTypeSchema = z.enum([
     'PLAYER_JOIN',
     'PLAYER_LEAVE',
     'HEALTH_WARN',
-    'SERVER_ONLINE'
+    'SERVER_ONLINE',
+    'SERVER_OFFLINE',
+    'SERVER_RESTARTING',
+    'INCIDENT_OPENED'
 ]);
 const localBotConfigSchema = z.object({
     guildDefaults: z.record(z.string(), z.string().min(1)).default({}),
@@ -14,7 +18,7 @@ const localBotConfigSchema = z.object({
         activity: z.string().min(1),
         alerts: z.string().min(1)
     })).default({}),
-    eventRoutes: z.record(z.string(), z.record(routedEventTypeSchema, z.string().min(1))).default({}),
+    eventRoutes: z.record(z.string(), z.partialRecord(routedEventTypeSchema, z.string().min(1))).default({}),
     polling: z.object({
         intervalMs: z.number().int().min(1000).default(5000),
         fetchLimit: z.number().int().min(1).max(50).default(20)
@@ -54,7 +58,22 @@ export function getLocalBotConfig() {
 }
 export function resolveDefaultServerId(guildId) {
     const config = getLocalBotConfig();
-    return config.guildDefaults[guildId] ?? null;
+    const configuredServers = getConfiguredServers();
+    const guildDefault = config.guildDefaults[guildId];
+    if (guildDefault) {
+        if (configuredServers.length === 0) {
+            return guildDefault;
+        }
+        const existsInSharedConfig = configuredServers.some((server) => server.id === guildDefault);
+        if (existsInSharedConfig) {
+            return guildDefault;
+        }
+        console.warn(`[bot] guild-default-server-missing guild=${guildId} server=${guildDefault} reason=not_in_shared_config`);
+    }
+    if (configuredServers.length === 1) {
+        return configuredServers[0]?.id ?? null;
+    }
+    return null;
 }
 export function resolveEventChannelId(serverId, eventType) {
     const config = getLocalBotConfig();
@@ -69,6 +88,10 @@ export function resolveEventChannelId(serverId, eventType) {
     return routes[parsedEventType.data] ?? null;
 }
 export function getRoutedServerIds() {
+    const configuredServers = getConfiguredServers();
+    if (configuredServers.length > 0) {
+        return configuredServers.map((server) => server.id);
+    }
     const config = getLocalBotConfig();
     return Object.keys(config.eventRoutes);
 }
@@ -78,5 +101,16 @@ export function getPollingConfig() {
         intervalMs: config.polling.intervalMs,
         fetchLimit: config.polling.fetchLimit
     };
+}
+export function getKnownServerMetadata(serverId) {
+    return getConfiguredServerById(serverId);
+}
+export function getKnownServerIds() {
+    const configuredServers = getConfiguredServers();
+    if (configuredServers.length > 0) {
+        return configuredServers.map((server) => server.id);
+    }
+    const config = getLocalBotConfig();
+    return Object.keys(config.eventRoutes);
 }
 //# sourceMappingURL=local-config.js.map

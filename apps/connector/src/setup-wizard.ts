@@ -424,8 +424,13 @@ async function main(): Promise<void> {
   };
 
   const config = gameOpsConfigSchema.parse(configCandidate);
+  const serializedConfig = JSON.stringify(config, null, 2);
+  if (!serializedConfig || !serializedConfig.trim().startsWith('{')) {
+    throw new Error('Generated config did not serialize to a JSON object.');
+  }
+
   await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  await writeFile(outputPath, `${serializedConfig}\n`, 'utf8');
 
   const requiredSecrets: string[] = [];
   if (discordEnabled) {

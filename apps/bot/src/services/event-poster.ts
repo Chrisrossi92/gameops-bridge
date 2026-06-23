@@ -200,7 +200,40 @@ function buildBurstEmbed(serverId: string, eventType: 'PLAYER_JOIN' | 'PLAYER_LE
   return embed;
 }
 
+export function shouldPostEventToDiscord(event: NormalizedEvent): boolean {
+  if (event.raw?.discordNotify === true || event.raw?.ownerActionRequired === true) {
+    return true;
+  }
+
+  if (event.eventType === 'PLAYER_JOIN' || event.eventType === 'PLAYER_LEAVE') {
+    return true;
+  }
+
+  if (event.eventType === 'SERVER_ONLINE') {
+    return false;
+  }
+
+  if (event.eventType === 'HEALTH_WARN') {
+    return event.raw?.severity === 'critical';
+  }
+
+  if (
+    event.eventType === 'SERVER_OFFLINE'
+    || event.eventType === 'SERVER_RESTARTING'
+    || event.eventType === 'INCIDENT_OPENED'
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function postRoutedEvent(client: Client, event: NormalizedEvent): Promise<boolean> {
+  if (!shouldPostEventToDiscord(event)) {
+    console.log(`[route] suppressed server=${event.serverId} type=${event.eventType} reason=notification-policy`);
+    return false;
+  }
+
   const channelId = resolveEventChannelId(event.serverId, event.eventType);
 
   if (!channelId) {

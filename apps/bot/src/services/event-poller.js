@@ -1,7 +1,7 @@
 import { recentEventsResponseSchema } from '@gameops/shared';
 import { botConfig } from '../config.js';
 import { getPollingConfig, getRoutedServerIds } from '../local-config.js';
-import { postRoutedBurstSummary, postRoutedEvent } from './event-poster.js';
+import { postRoutedBurstSummary, postRoutedEvent, shouldPostEventToDiscord } from './event-poster.js';
 const MAX_FINGERPRINTS = 5000;
 const BURST_WINDOW_MS = 12_000;
 const BURST_MIN_EVENTS = 3;
@@ -98,6 +98,11 @@ export function startEventPolling(client) {
                     continue;
                 }
                 if (current.eventType !== 'PLAYER_JOIN' && current.eventType !== 'PLAYER_LEAVE') {
+                    if (!shouldPostEventToDiscord(current)) {
+                        console.log(`[poll] notification-policy-suppressed server=${serverId} type=${current.eventType}`);
+                        index += 1;
+                        continue;
+                    }
                     attemptedPosts += 1;
                     const posted = await postRoutedEvent(client, current);
                     if (posted) {

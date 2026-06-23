@@ -52,7 +52,7 @@ function normalizeNumber(value: number | undefined): number | null {
 }
 
 function normalizeInteger(value: number | undefined): number | null {
-  return Number.isInteger(value) ? value : null;
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
 }
 
 function normalizePlayerName(value: string | undefined): string | null {
@@ -148,6 +148,9 @@ function buildLookupKey(player: PalworldRestPlayer): string | null {
 function toPlayerIdentity(player: PalworldRestPlayer): PalworldPlayerIdentity | null {
   const lookupKey = buildLookupKey(player);
   const playerName = getPlayerName(player) ?? getPlayerAccountName(player);
+  const playerId = getPlayerPlayerId(player);
+  const userId = getPlayerUserId(player);
+  const accountName = getPlayerAccountName(player);
 
   if (!lookupKey || !playerName) {
     return null;
@@ -156,9 +159,9 @@ function toPlayerIdentity(player: PalworldRestPlayer): PalworldPlayerIdentity | 
   return {
     lookupKey,
     playerName,
-    ...(getPlayerPlayerId(player) ? { playerId: getPlayerPlayerId(player) ?? undefined } : {}),
-    ...(getPlayerUserId(player) ? { userId: getPlayerUserId(player) ?? undefined } : {}),
-    ...(getPlayerAccountName(player) ? { accountName: getPlayerAccountName(player) ?? undefined } : {})
+    ...(playerId ? { playerId } : {}),
+    ...(userId ? { userId } : {}),
+    ...(accountName ? { accountName } : {})
   };
 }
 

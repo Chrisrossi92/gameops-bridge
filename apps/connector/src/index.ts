@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {
   gameKeySchema,
   gameOpsConfigSchema,
+  connectorHeartbeatRequestSchema,
   ingestEventsRequestSchema,
   type GameOpsConfig,
   type IdentityConfidence,
@@ -204,6 +205,9 @@ const restPath = runtime.restPath;
 
 const adapter = getAdapter(game);
 let processedLineCount = 0;
+let lastConnectorHeartbeatAtMs = 0;
+
+const HEARTBEAT_INTERVAL_MS = 10_000;
 
 const IDENTITY_BUFFER_MAX = 25;
 const IDENTITY_CORRELATION_WINDOW_MS = 20_000;
@@ -514,6 +518,68 @@ async function ingestEvents(events: NormalizedEvent[]): Promise<void> {
   console.log(`Ingested ${events.length} ${game} event(s) for server ${serverId}`);
 }
 
+function getConnectorCapabilities(): string[] {
+  if (game === 'palworld' && mode === 'rest') {
+    return ['players', 'metrics', 'settings', 'sessions'];
+  }
+
+  if (game === 'valheim' && mode === 'journal') {
+    return ['log_stream', 'join_leave', 'identity_hints'];
+  }
+
+  if (mode === 'file') {
+    return ['log_file', 'join_leave'];
+  }
+
+  return [mode];
+}
+
+async function sendConnectorHeartbeat(input: {
+  status: 'running' | 'degraded' | 'error';
+  message: string;
+  lastSuccessfulPollAt?: string | undefined;
+  consecutiveFailureCount?: number | undefined;
+  force?: boolean | undefined;
+}): Promise<void> {
+  const nowMs = Date.now();
+
+  if (!input.force && nowMs - lastConnectorHeartbeatAtMs < HEARTBEAT_INTERVAL_MS) {
+    return;
+  }
+
+  lastConnectorHeartbeatAtMs = nowMs;
+
+  const payload = connectorHeartbeatRequestSchema.parse({
+    serverId,
+    game,
+    connectorMode: mode,
+    observedAt: new Date(nowMs).toISOString(),
+    status: input.status,
+    message: input.message,
+    lastSuccessfulPollAt: input.lastSuccessfulPollAt,
+    consecutiveFailureCount: input.consecutiveFailureCount,
+    capabilities: getConnectorCapabilities()
+  });
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/connectors/heartbeat`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn(`[connector] heartbeat failed status=${response.status} body=${body.slice(0, 180)}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[connector] heartbeat failed reason=${message}`);
+  }
+}
+
 function parseLineSafe(line: string): NormalizedEvent[] {
   const trimmed = line.trim();
   const nowMs = Date.now();
@@ -578,12 +644,14 @@ function parseLineSafe(line: string): NormalizedEvent[] {
 
 async function runFileMode(): Promise<void> {
   const requiredLogFile = logFile ?? getRequiredEnv(game === 'palworld' ? 'PALWORLD_LOG_FILE' : 'VALHEIM_LOG_FILE');
+  let lastSuccessfulPollAt: string | undefined;
 
   console.log(`Starting ${game} connector for ${serverId} in file mode`);
   console.log(`Watching log file: ${requiredLogFile}`);
 
   async function pollLogsAndIngest(): Promise<void> {
     const content = await readFile(requiredLogFile, 'utf8');
+    lastSuccessfulPollAt = new Date().toISOString();
     const allLines = content
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -597,32 +665,85 @@ async function runFileMode(): Promise<void> {
     processedLineCount = allLines.length;
 
     if (newLines.length === 0) {
+      await sendConnectorHeartbeat({
+        status: 'running',
+        message: 'Connector is reading the configured log file. No new activity lines observed recently.',
+        lastSuccessfulPollAt
+      });
       return;
     }
 
     const events = newLines.flatMap((line) => parseLineSafe(line));
 
     await ingestEvents(events);
+    await sendConnectorHeartbeat({
+      status: 'running',
+      message: 'Connector is reading the configured log file.',
+      lastSuccessfulPollAt
+    });
     logIngestStats('file poll');
   }
 
   setInterval(() => {
     void pollLogsAndIngest().catch((error) => {
       console.error('Connector file poll failed', error);
+      void sendConnectorHeartbeat({
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        lastSuccessfulPollAt,
+        consecutiveFailureCount: 1,
+        force: true
+      });
     });
   }, pollIntervalMs);
 
+  void sendConnectorHeartbeat({
+    status: 'running',
+    message: 'Connector started and is waiting for log activity.',
+    lastSuccessfulPollAt,
+    force: true
+  });
+
   void pollLogsAndIngest().catch((error) => {
     console.error('Connector file startup poll failed', error);
+    void sendConnectorHeartbeat({
+      status: 'error',
+      message: error instanceof Error ? error.message : String(error),
+      lastSuccessfulPollAt,
+      consecutiveFailureCount: 1,
+      force: true
+    });
   });
 }
 
 async function runJournalMode(): Promise<void> {
   console.log(`Starting ${game} connector for ${serverId} in journal mode`);
+  let lastSuccessfulPollAt: string | undefined;
+  let lineCountSinceHeartbeat = 0;
+
+  void sendConnectorHeartbeat({
+    status: 'running',
+    message: 'Connector started and is listening to the Valheim journal.',
+    lastSuccessfulPollAt,
+    force: true
+  });
+
+  setInterval(() => {
+    void sendConnectorHeartbeat({
+      status: 'running',
+      message: lineCountSinceHeartbeat > 0
+        ? `Connector is listening to the Valheim journal. ${lineCountSinceHeartbeat} lines observed recently.`
+        : 'Connector is listening to the Valheim journal. No new activity lines observed recently.',
+      lastSuccessfulPollAt
+    });
+    lineCountSinceHeartbeat = 0;
+  }, HEARTBEAT_INTERVAL_MS);
 
   await startValheimJournalStream({
     ...(journalServiceName ? { serviceName: journalServiceName } : {}),
     onLine: async (line) => {
+      lastSuccessfulPollAt = new Date().toISOString();
+      lineCountSinceHeartbeat += 1;
       const events = parseLineSafe(line);
 
       if (events.length === 0) {
@@ -657,6 +778,7 @@ async function runPalworldRestMode(): Promise<void> {
   let consecutiveFailureCount = 0;
   let lastHealthWarnAtMs = 0;
   let pollInFlight = false;
+  let lastSuccessfulPollAt: string | undefined;
 
   const HEALTH_WARN_FAILURE_THRESHOLD = 3;
   const HEALTH_WARN_COOLDOWN_MS = 5 * 60 * 1000;
@@ -684,6 +806,7 @@ async function runPalworldRestMode(): Promise<void> {
       ]);
       const currentSnapshot = buildPlayerSnapshot(players);
       const occurredAt = new Date().toISOString();
+      lastSuccessfulPollAt = occurredAt;
       const events: NormalizedEvent[] = [];
       const previousLookupKeys = new Set(previousSnapshot.keys());
       const currentLookupKeys = new Set(currentSnapshot.keys());
@@ -712,6 +835,13 @@ async function runPalworldRestMode(): Promise<void> {
 
       consecutiveFailureCount = 0;
 
+      await sendConnectorHeartbeat({
+        status: 'running',
+        message: `Palworld REST poll succeeded. ${currentSnapshot.size} player${currentSnapshot.size === 1 ? '' : 's'} observed.`,
+        lastSuccessfulPollAt,
+        consecutiveFailureCount
+      });
+
       if (events.length > 0) {
         await ingestEvents(events);
       }
@@ -719,6 +849,13 @@ async function runPalworldRestMode(): Promise<void> {
       consecutiveFailureCount += 1;
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[palworld-rest] poll failed server=${serverId} count=${consecutiveFailureCount} reason=${message}`);
+      await sendConnectorHeartbeat({
+        status: consecutiveFailureCount >= HEALTH_WARN_FAILURE_THRESHOLD ? 'error' : 'degraded',
+        message: `Palworld REST poll failed: ${message}`,
+        lastSuccessfulPollAt,
+        consecutiveFailureCount,
+        force: consecutiveFailureCount === 1 || consecutiveFailureCount >= HEALTH_WARN_FAILURE_THRESHOLD
+      });
 
       const nowMs = Date.now();
       const shouldEmitHealthWarn = consecutiveFailureCount >= HEALTH_WARN_FAILURE_THRESHOLD
@@ -745,6 +882,14 @@ async function runPalworldRestMode(): Promise<void> {
   setInterval(() => {
     void pollPlayersAndIngest();
   }, pollIntervalMs);
+
+  void sendConnectorHeartbeat({
+    status: 'running',
+    message: 'Connector started and is preparing to poll Palworld REST.',
+    lastSuccessfulPollAt,
+    consecutiveFailureCount,
+    force: true
+  });
 
   await pollPlayersAndIngest();
 }

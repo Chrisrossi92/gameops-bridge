@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import { resolveEventChannelId } from '../local-config.js';
+import { getKnownServerMetadata, resolveEventChannelId } from '../local-config.js';
 import { formatDurationCompact } from './time-format.js';
 function getResolvedPlayerName(event) {
     if (event.playerName && event.playerName.trim()) {
@@ -107,12 +107,16 @@ function getEventPresentation(event) {
 }
 function buildEventEmbed(event) {
     const presentation = getEventPresentation(event);
+    const serverMetadata = getKnownServerMetadata(event.serverId);
+    const footerServerLabel = serverMetadata
+        ? `${serverMetadata.displayName} (${serverMetadata.game}) • ${event.serverId}`
+        : event.serverId;
     const embed = new EmbedBuilder()
         .setColor(presentation.color)
         .setTitle(presentation.title)
         .setDescription(presentation.description)
         .addFields({ name: 'When', value: formatTimestamp(event.occurredAt), inline: true })
-        .setFooter({ text: `Server ${event.serverId}` });
+        .setFooter({ text: `Server ${footerServerLabel}` });
     if (presentation.extraFields && presentation.extraFields.length > 0) {
         embed.addFields(...presentation.extraFields);
     }
@@ -134,19 +138,47 @@ function buildBurstEmbed(serverId, eventType, events) {
         : `${events.length} player event(s)`;
     const overflow = uniqueNames.length > 6 ? `, +${uniqueNames.length - 6} more` : '';
     const onlineLine = latestDetails ? `Online now **${latestDetails.currentPlayerCount}**` : '';
+    const serverMetadata = getKnownServerMetadata(serverId);
+    const footerServerLabel = serverMetadata
+        ? `${serverMetadata.displayName} (${serverMetadata.game}) • ${serverId}`
+        : serverId;
     const descriptionParts = [namesLine + overflow, onlineLine].filter(Boolean);
     const embed = new EmbedBuilder()
         .setColor(color)
         .setTitle(title)
         .setDescription(descriptionParts.join('\n'))
         .addFields({ name: 'When', value: latestWhen, inline: true })
-        .setFooter({ text: `Server ${serverId}` });
+        .setFooter({ text: `Server ${footerServerLabel}` });
     if (latestDetails) {
         embed.addFields({ name: 'World', value: latestDetails.worldName, inline: true }, { name: 'Code', value: latestDetails.joinCode, inline: true });
     }
     return embed;
 }
+export function shouldPostEventToDiscord(event) {
+    if (event.raw?.discordNotify === true || event.raw?.ownerActionRequired === true) {
+        return true;
+    }
+    if (event.eventType === 'PLAYER_JOIN' || event.eventType === 'PLAYER_LEAVE') {
+        return true;
+    }
+    if (event.eventType === 'SERVER_ONLINE') {
+        return false;
+    }
+    if (event.eventType === 'HEALTH_WARN') {
+        return event.raw?.severity === 'critical';
+    }
+    if (event.eventType === 'SERVER_OFFLINE'
+        || event.eventType === 'SERVER_RESTARTING'
+        || event.eventType === 'INCIDENT_OPENED') {
+        return true;
+    }
+    return false;
+}
 export async function postRoutedEvent(client, event) {
+    if (!shouldPostEventToDiscord(event)) {
+        console.log(`[route] suppressed server=${event.serverId} type=${event.eventType} reason=notification-policy`);
+        return false;
+    }
     const channelId = resolveEventChannelId(event.serverId, event.eventType);
     if (!channelId) {
         return false;

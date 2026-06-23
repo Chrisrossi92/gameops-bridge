@@ -1,10 +1,14 @@
 import { eventTypeSchema } from '@gameops/shared';
 import { z } from 'zod';
+import { type ConfiguredServerMetadata } from './shared-config.js';
 declare const routedEventTypeSchema: z.ZodEnum<{
     PLAYER_JOIN: "PLAYER_JOIN";
     PLAYER_LEAVE: "PLAYER_LEAVE";
     SERVER_ONLINE: "SERVER_ONLINE";
+    SERVER_OFFLINE: "SERVER_OFFLINE";
+    SERVER_RESTARTING: "SERVER_RESTARTING";
     HEALTH_WARN: "HEALTH_WARN";
+    INCIDENT_OPENED: "INCIDENT_OPENED";
 }>;
 declare const localBotConfigSchema: z.ZodObject<{
     guildDefaults: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -16,8 +20,11 @@ declare const localBotConfigSchema: z.ZodObject<{
         PLAYER_JOIN: "PLAYER_JOIN";
         PLAYER_LEAVE: "PLAYER_LEAVE";
         SERVER_ONLINE: "SERVER_ONLINE";
+        SERVER_OFFLINE: "SERVER_OFFLINE";
+        SERVER_RESTARTING: "SERVER_RESTARTING";
         HEALTH_WARN: "HEALTH_WARN";
-    }>, z.ZodString>>>;
+        INCIDENT_OPENED: "INCIDENT_OPENED";
+    }> & z.core.$partial, z.ZodString>>>;
     polling: z.ZodDefault<z.ZodObject<{
         intervalMs: z.ZodDefault<z.ZodNumber>;
         fetchLimit: z.ZodDefault<z.ZodNumber>;
@@ -33,5 +40,7 @@ export declare function getPollingConfig(): {
     intervalMs: number;
     fetchLimit: number;
 };
+export declare function getKnownServerMetadata(serverId: string): ConfiguredServerMetadata | null;
+export declare function getKnownServerIds(): string[];
 export {};
 //# sourceMappingURL=local-config.d.ts.map

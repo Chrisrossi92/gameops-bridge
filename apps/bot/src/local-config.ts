@@ -8,7 +8,10 @@ const routedEventTypeSchema = z.enum([
   'PLAYER_JOIN',
   'PLAYER_LEAVE',
   'HEALTH_WARN',
-  'SERVER_ONLINE'
+  'SERVER_ONLINE',
+  'SERVER_OFFLINE',
+  'SERVER_RESTARTING',
+  'INCIDENT_OPENED'
 ]);
 
 const localBotConfigSchema = z.object({
@@ -22,7 +25,7 @@ const localBotConfigSchema = z.object({
   ).default({}),
   eventRoutes: z.record(
     z.string(),
-    z.record(routedEventTypeSchema, z.string().min(1))
+    z.partialRecord(routedEventTypeSchema, z.string().min(1))
   ).default({}),
   polling: z.object({
     intervalMs: z.number().int().min(1000).default(5000),
