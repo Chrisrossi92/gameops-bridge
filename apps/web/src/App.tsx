@@ -123,6 +123,16 @@ interface ServerSummary {
   palworldRecentMetrics: PalworldMetricsSummary[];
 }
 
+const OPTIONAL_DASHBOARD_FETCH_TIMEOUT_MS = 5_000;
+
+async function fetchOptionalDashboardResource(url: string): Promise<Response | null> {
+  try {
+    return await fetch(url, { signal: AbortSignal.timeout(OPTIONAL_DASHBOARD_FETCH_TIMEOUT_MS) });
+  } catch {
+    return null;
+  }
+}
+
 type WarningCategory = 'network' | 'disconnect' | 'save_storage' | 'general';
 type GameFilter = 'all' | ConfiguredServersResponse['servers'][number]['game'];
 
@@ -2305,11 +2315,11 @@ function App() {
           ];
           const palworldRequests = server.game === 'palworld'
             ? [
-                fetch(`${apiBaseUrl}/servers/${server.id}/palworld/players/latest?limit=8`),
-                fetch(`${apiBaseUrl}/servers/${server.id}/palworld/metrics/recent?limit=8`),
-                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-config-audit`),
-                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-backup-readiness`),
-                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-runtime-audit`)
+                fetchOptionalDashboardResource(`${apiBaseUrl}/servers/${server.id}/palworld/players/latest?limit=8`),
+                fetchOptionalDashboardResource(`${apiBaseUrl}/servers/${server.id}/palworld/metrics/recent?limit=8`),
+                fetchOptionalDashboardResource(`${apiBaseUrl}/servers/${server.id}/palworld-config-audit`),
+                fetchOptionalDashboardResource(`${apiBaseUrl}/servers/${server.id}/palworld-backup-readiness`),
+                fetchOptionalDashboardResource(`${apiBaseUrl}/servers/${server.id}/palworld-runtime-audit`)
               ]
             : [];
           const responses = await Promise.all([...sharedRequests, ...palworldRequests]);
@@ -2338,26 +2348,6 @@ function App() {
             throw new Error(`Server ${server.id} summary fetch failed with status ${statusCode ?? 'unknown'}`);
           }
 
-          if (palworldLatestPlayersResponse && !palworldLatestPlayersResponse.ok) {
-            throw new Error(`Server ${server.id} Palworld players fetch failed with status ${palworldLatestPlayersResponse.status}`);
-          }
-
-          if (palworldMetricsResponse && !palworldMetricsResponse.ok) {
-            throw new Error(`Server ${server.id} Palworld metrics fetch failed with status ${palworldMetricsResponse.status}`);
-          }
-
-          if (palworldConfigAuditResponse && !palworldConfigAuditResponse.ok) {
-            throw new Error(`Server ${server.id} Palworld config audit fetch failed with status ${palworldConfigAuditResponse.status}`);
-          }
-
-          if (palworldBackupReadinessResponse && !palworldBackupReadinessResponse.ok) {
-            throw new Error(`Server ${server.id} Palworld backup readiness fetch failed with status ${palworldBackupReadinessResponse.status}`);
-          }
-
-          if (palworldRuntimeAuditResponse && !palworldRuntimeAuditResponse.ok) {
-            throw new Error(`Server ${server.id} Palworld runtime audit fetch failed with status ${palworldRuntimeAuditResponse.status}`);
-          }
-
           const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, dataFreshnessPayload, playerIntelligencePayload, playerEngagementPayload, serverAliveRhythmPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload, palworldLatestPlayersPayload, palworldMetricsPayload, palworldConfigAuditPayload, palworldBackupReadinessPayload, palworldRuntimeAuditPayload] = await Promise.all([
             statusResponse.json(),
             sessionsResponse.json(),
@@ -2372,11 +2362,11 @@ function App() {
             settingsCapabilitiesResponse.json(),
             eventTemplateDraftsResponse.json(),
             sessionTimelineResponse.json(),
-            palworldLatestPlayersResponse ? palworldLatestPlayersResponse.json() : Promise.resolve(null),
-            palworldMetricsResponse ? palworldMetricsResponse.json() : Promise.resolve(null),
-            palworldConfigAuditResponse ? palworldConfigAuditResponse.json() : Promise.resolve(null),
-            palworldBackupReadinessResponse ? palworldBackupReadinessResponse.json() : Promise.resolve(null),
-            palworldRuntimeAuditResponse ? palworldRuntimeAuditResponse.json() : Promise.resolve(null)
+            palworldLatestPlayersResponse?.ok ? palworldLatestPlayersResponse.json() : Promise.resolve(null),
+            palworldMetricsResponse?.ok ? palworldMetricsResponse.json() : Promise.resolve(null),
+            palworldConfigAuditResponse?.ok ? palworldConfigAuditResponse.json() : Promise.resolve(null),
+            palworldBackupReadinessResponse?.ok ? palworldBackupReadinessResponse.json() : Promise.resolve(null),
+            palworldRuntimeAuditResponse?.ok ? palworldRuntimeAuditResponse.json() : Promise.resolve(null)
           ]);
 
           const statusParsed = serverStatusSchema.safeParse(statusPayload);
@@ -2393,18 +2383,23 @@ function App() {
           const eventTemplateDraftsParsed = eventTemplateDraftCatalogSchema.safeParse(eventTemplateDraftsPayload);
           const sessionTimelineParsed = sessionTimelineResponseSchema.safeParse(sessionTimelinePayload);
           const palworldLatestPlayersParsed = server.game === 'palworld'
+            && palworldLatestPlayersPayload
             ? palworldLatestPlayersResponseSchema.safeParse(palworldLatestPlayersPayload)
             : null;
           const palworldMetricsParsed = server.game === 'palworld'
+            && palworldMetricsPayload
             ? palworldMetricsSummariesResponseSchema.safeParse(palworldMetricsPayload)
             : null;
           const palworldConfigAuditParsed = server.game === 'palworld'
+            && palworldConfigAuditPayload
             ? palworldConfigAuditSchema.safeParse(palworldConfigAuditPayload)
             : null;
           const palworldBackupReadinessParsed = server.game === 'palworld'
+            && palworldBackupReadinessPayload
             ? palworldBackupReadinessSchema.safeParse(palworldBackupReadinessPayload)
             : null;
           const palworldRuntimeAuditParsed = server.game === 'palworld'
+            && palworldRuntimeAuditPayload
             ? palworldRuntimeAuditSchema.safeParse(palworldRuntimeAuditPayload)
             : null;
 

@@ -27,7 +27,68 @@ import { getEventTemplateManualChangeChecklist } from '../services/event-templat
 import { getPalworldBackupReadiness } from '../services/palworld-backup-readiness.js';
 import { getPalworldConfigAudit } from '../services/palworld-config-audit.js';
 import { getPalworldRuntimeAudit } from '../services/palworld-runtime-audit.js';
+import { measureSync } from '../services/request-performance.js';
 import { getEventTemplateDraftCatalog, getObservedServerSettings, getServerSettingsCapabilitySummary, saveEventTemplateDraftCustomization } from '../services/settings-capabilities.js';
+
+function toMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function degradedConfigAudit(serverId: string, reason: string): PalworldConfigAudit {
+  return palworldConfigAuditSchema.parse({
+    serverId,
+    serverName: null,
+    discoveryStatus: 'no_config_path',
+    candidatePaths: [],
+    selectedPath: null,
+    canReadFile: false,
+    parseStatus: 'not_attempted',
+    parsedSettingCount: 0,
+    matchedRestSettings: [],
+    unmatchedFileSettings: [],
+    unmatchedRestSettings: [],
+    fileEditViability: 'unknown',
+    safetyWarnings: [`Config audit degraded before completion: ${reason}`],
+    nextValidationSteps: ['Retry the audit after the API has recovered.']
+  });
+}
+
+function degradedBackupReadiness(serverId: string, reason: string): PalworldBackupReadiness {
+  return palworldBackupReadinessSchema.parse({
+    serverId,
+    serverName: null,
+    readinessStatus: 'unknown',
+    filesToBackup: [],
+    proposedBackupDirectory: null,
+    proposedBackupFilenamePattern: null,
+    activeRuntimeConfigPath: null,
+    runtimeConfigMatchesSelected: false,
+    runtimeAlignmentStatus: 'unknown',
+    rollbackRequirements: [],
+    validationSteps: ['Retry backup readiness after the API has recovered.'],
+    safetyWarnings: [`Backup readiness degraded before completion: ${reason}`],
+    canCreateBackup: false,
+    reasonCreateBackupDisabled: 'Backup creation is not implemented. This endpoint only audits readiness.'
+  });
+}
+
+function degradedRuntimeAudit(serverId: string, reason: string): PalworldRuntimeAudit {
+  return palworldRuntimeAuditSchema.parse({
+    serverId,
+    servicePath: 'unknown',
+    serviceReadable: false,
+    workingDirectory: null,
+    execStart: null,
+    inferredActiveConfigPath: null,
+    inferredActiveConfigExists: false,
+    inferredActiveConfigReadable: false,
+    selectedConfigAuditPath: null,
+    pathsMatch: false,
+    runtimeAuditStatus: 'unknown',
+    summary: 'Runtime audit degraded before completion.',
+    safetyWarnings: [reason]
+  });
+}
 
 export async function registerSettingsCapabilityRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { serverId: string } }>('/servers/:serverId/settings-capabilities', async (request, reply): Promise<ServerSettingsCapabilitySummary | { error: string }> => {
@@ -60,7 +121,13 @@ export async function registerSettingsCapabilityRoutes(app: FastifyInstance): Pr
       return { error: 'Invalid serverId' };
     }
 
-    return palworldConfigAuditSchema.parse(getPalworldConfigAudit(serverId));
+    try {
+      return measureSync('palworld-config-audit', () => palworldConfigAuditSchema.parse(getPalworldConfigAudit(serverId)));
+    } catch (error) {
+      const message = toMessage(error);
+      request.log.warn(`[palworld-config-audit] degraded server=${serverId} reason=${message}`);
+      return degradedConfigAudit(serverId, message);
+    }
   });
 
   app.get<{ Params: { serverId: string } }>('/servers/:serverId/palworld-backup-readiness', async (request, reply): Promise<PalworldBackupReadiness | { error: string }> => {
@@ -71,7 +138,13 @@ export async function registerSettingsCapabilityRoutes(app: FastifyInstance): Pr
       return { error: 'Invalid serverId' };
     }
 
-    return palworldBackupReadinessSchema.parse(getPalworldBackupReadiness(serverId));
+    try {
+      return measureSync('palworld-backup-readiness', () => palworldBackupReadinessSchema.parse(getPalworldBackupReadiness(serverId)));
+    } catch (error) {
+      const message = toMessage(error);
+      request.log.warn(`[palworld-backup-readiness] degraded server=${serverId} reason=${message}`);
+      return degradedBackupReadiness(serverId, message);
+    }
   });
 
   app.get<{ Params: { serverId: string } }>('/servers/:serverId/palworld-runtime-audit', async (request, reply): Promise<PalworldRuntimeAudit | { error: string }> => {
@@ -82,7 +155,13 @@ export async function registerSettingsCapabilityRoutes(app: FastifyInstance): Pr
       return { error: 'Invalid serverId' };
     }
 
-    return palworldRuntimeAuditSchema.parse(getPalworldRuntimeAudit(serverId));
+    try {
+      return measureSync('palworld-runtime-audit', () => palworldRuntimeAuditSchema.parse(getPalworldRuntimeAudit(serverId)));
+    } catch (error) {
+      const message = toMessage(error);
+      request.log.warn(`[palworld-runtime-audit] degraded server=${serverId} reason=${message}`);
+      return degradedRuntimeAudit(serverId, message);
+    }
   });
 
   app.get<{ Params: { serverId: string } }>('/servers/:serverId/event-template-drafts', async (request, reply): Promise<EventTemplateDraftCatalog | { error: string }> => {

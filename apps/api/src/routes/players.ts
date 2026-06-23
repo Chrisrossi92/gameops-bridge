@@ -16,6 +16,7 @@ import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from '..
 import { getIdentityObservationsForPlayer, getKnownPlayerForServer, getKnownPlayersForServer } from '../services/known-player-store.js';
 import { getPlayerDetail } from '../services/player-detail.js';
 import { getPlayerIntelligenceForServer } from '../services/player-intelligence.js';
+import { measureSync } from '../services/request-performance.js';
 
 function normalizePlayerKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -62,7 +63,7 @@ export async function registerPlayerRoutes(app: FastifyInstance): Promise<void> 
       return { error: 'Invalid serverId' };
     }
 
-    return playerIntelligenceResponseSchema.parse(getPlayerIntelligenceForServer(serverId));
+    return measureSync('player-intelligence', () => playerIntelligenceResponseSchema.parse(getPlayerIntelligenceForServer(serverId)));
   });
 
   app.get<{ Params: { serverId: string; playerId: string } }>('/servers/:serverId/players/:playerId/detail', async (request, reply): Promise<PlayerDetailResponse | { error: string; explanation: string }> => {

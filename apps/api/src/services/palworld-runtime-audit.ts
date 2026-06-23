@@ -2,8 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, normalize, resolve } from 'node:path';
 import { palworldRuntimeAuditSchema, type PalworldRuntimeAudit } from '@gameops/shared';
 import { getPalworldConfigAudit } from './palworld-config-audit.js';
+import { getCachedResult } from './request-performance.js';
 
 const DEFAULT_PALWORLD_SERVICE_PATH = '/etc/systemd/system/palworld.service';
+const RUNTIME_AUDIT_CACHE_TTL_MS = 120_000;
 
 function getServicePath(): string {
   return process.env.PALWORLD_SYSTEMD_SERVICE_PATH?.trim() || DEFAULT_PALWORLD_SERVICE_PATH;
@@ -76,7 +78,7 @@ function buildResponse(input: Omit<PalworldRuntimeAudit, 'safetyWarnings'> & { s
   });
 }
 
-export function getPalworldRuntimeAudit(serverId: string): PalworldRuntimeAudit {
+function computePalworldRuntimeAudit(serverId: string): PalworldRuntimeAudit {
   const servicePath = getServicePath();
   const configAudit = getPalworldConfigAudit(serverId);
   const selectedConfigAuditPath = configAudit.selectedPath;
@@ -158,4 +160,8 @@ export function getPalworldRuntimeAudit(serverId: string): PalworldRuntimeAudit 
       ...(inferredActiveConfigExists && !inferredActiveConfigReadable ? ['Inferred active config file exists but is not readable.'] : [])
     ]
   });
+}
+
+export function getPalworldRuntimeAudit(serverId: string): PalworldRuntimeAudit {
+  return getCachedResult(`palworld-runtime-audit:${serverId}`, RUNTIME_AUDIT_CACHE_TTL_MS, () => computePalworldRuntimeAudit(serverId));
 }

@@ -20,10 +20,12 @@ import {
   type DailyPlayerEngagementRollup
 } from './player-engagement-rollup-store.js';
 import { getPlayerIntelligenceForServer } from './player-intelligence.js';
+import { getCachedResult } from './request-performance.js';
 import { getSessionTimelineForServer } from './session-timeline.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EMPTY_EXPLANATION = 'No player engagement has been observed yet. Start the connector and wait for sessions to appear.';
+const PLAYER_ENGAGEMENT_CACHE_TTL_MS = 15_000;
 
 interface EngagementWindowEntry {
   id: string;
@@ -740,7 +742,7 @@ export function getPlayerEngagementDetailForServer(serverId: string, playerId: s
   });
 }
 
-export function getPlayerEngagementSummaryForServer(serverId: string, now = new Date()): PlayerEngagementSummary {
+function computePlayerEngagementSummaryForServer(serverId: string, now = new Date()): PlayerEngagementSummary {
   const generatedAt = now.toISOString();
   const intelligence = getPlayerIntelligenceForServer(serverId);
   const timeline = getSessionTimelineForServer(serverId, 100);
@@ -803,4 +805,8 @@ export function getPlayerEngagementSummaryForServer(serverId: string, now = new 
       dailyRollupCount: dailyRollups.length
     })
   });
+}
+
+export function getPlayerEngagementSummaryForServer(serverId: string, now = new Date()): PlayerEngagementSummary {
+  return getCachedResult(`player-engagement:${serverId}`, PLAYER_ENGAGEMENT_CACHE_TTL_MS, () => computePlayerEngagementSummaryForServer(serverId, now));
 }

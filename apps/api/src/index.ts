@@ -19,7 +19,11 @@ import { registerSessionRoutes } from './routes/sessions.js';
 import { getAllowedCorsOrigins } from './services/cors-origin.js';
 import { initializeSessionStateStore } from './services/event-store.js';
 
-const app = Fastify({ logger: true });
+const requestTimeout = Number(process.env.API_REQUEST_TIMEOUT_MS ?? 15_000);
+const app = Fastify({
+  logger: true,
+  requestTimeout: Number.isFinite(requestTimeout) && requestTimeout > 0 ? requestTimeout : 15_000
+});
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.API_HOST ?? process.env.HOST ?? '0.0.0.0';
 initializeSessionStateStore();

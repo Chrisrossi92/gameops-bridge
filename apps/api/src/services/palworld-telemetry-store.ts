@@ -68,6 +68,10 @@ const rawTelemetryStoreSchema = z.object({
 
 const PLAYER_PING_WINDOW = 20;
 const METRICS_WINDOW = 20;
+const STORE_CACHE_TTL_MS = 5_000;
+type RawTelemetryStore = z.infer<typeof rawTelemetryStoreSchema>;
+
+let storeCache: { path: string; expiresAt: number; store: RawTelemetryStore } | null = null;
 
 function resolveStorePath(): string {
   const rawPath = process.env.PALWORLD_TELEMETRY_STORE_PATH ?? '../palworld-telemetry.json';
@@ -128,13 +132,22 @@ function roundTo(value: number | undefined, places: number): number | undefined 
   return Math.round(value * scale) / scale;
 }
 
-function loadStore(): z.infer<typeof rawTelemetryStoreSchema> {
+function loadStore(): RawTelemetryStore {
   const path = resolveStorePath();
+  const now = Date.now();
+
+  if (storeCache && storeCache.path === path && storeCache.expiresAt > now) {
+    return storeCache.store;
+  }
 
   try {
-    return rawTelemetryStoreSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown);
+    const store = rawTelemetryStoreSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown);
+    storeCache = { path, expiresAt: now + STORE_CACHE_TTL_MS, store };
+    return store;
   } catch {
-    return rawTelemetryStoreSchema.parse({});
+    const store = rawTelemetryStoreSchema.parse({});
+    storeCache = { path, expiresAt: now + STORE_CACHE_TTL_MS, store };
+    return store;
   }
 }
 

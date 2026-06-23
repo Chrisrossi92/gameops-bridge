@@ -7,9 +7,37 @@ import {
   type KnownPlayerRecord
 } from '@gameops/shared';
 
+const STORE_CACHE_TTL_MS = 5_000;
+
+interface KnownPlayerStore {
+  players?: unknown;
+  observations?: unknown;
+}
+
+let storeCache: { path: string; expiresAt: number; store: KnownPlayerStore } | null = null;
+
 function resolveStorePath(): string {
   const rawPath = process.env.KNOWN_PLAYER_STORE_PATH ?? '../known-players.json';
   return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+}
+
+function loadStore(): KnownPlayerStore {
+  const path = resolveStorePath();
+  const now = Date.now();
+
+  if (storeCache && storeCache.path === path && storeCache.expiresAt > now) {
+    return storeCache.store;
+  }
+
+  try {
+    const store = JSON.parse(readFileSync(path, 'utf8')) as KnownPlayerStore;
+    storeCache = { path, expiresAt: now + STORE_CACHE_TTL_MS, store };
+    return store;
+  } catch {
+    const store: KnownPlayerStore = {};
+    storeCache = { path, expiresAt: now + STORE_CACHE_TTL_MS, store };
+    return store;
+  }
 }
 
 function isCharacterId(value: string): boolean {
@@ -47,11 +75,8 @@ function normalizeKnownPlayerRecord(record: KnownPlayerRecord): KnownPlayerRecor
 }
 
 export function getKnownPlayersForServer(serverId: string, limit = 20): KnownPlayerRecord[] {
-  const path = resolveStorePath();
-
   try {
-    const content = readFileSync(path, 'utf8');
-    const parsedRoot = JSON.parse(content) as { players?: unknown };
+    const parsedRoot = loadStore();
     const rawPlayers = Array.isArray(parsedRoot.players) ? parsedRoot.players : [];
     const parsedPlayers = rawPlayers
       .map((rawPlayer) => knownPlayerRecordSchema.safeParse(rawPlayer))
@@ -95,11 +120,8 @@ export function getIdentityObservationsForPlayer(
   player: Pick<KnownPlayerRecord, 'normalizedPlayerKey' | 'displayName'>,
   limit = 20
 ): IdentityObservation[] {
-  const path = resolveStorePath();
-
   try {
-    const content = readFileSync(path, 'utf8');
-    const parsedRoot = JSON.parse(content) as { observations?: unknown };
+    const parsedRoot = loadStore();
     const rawObservations = Array.isArray(parsedRoot.observations) ? parsedRoot.observations : [];
     const parsedObservations = rawObservations
       .map((rawObservation) => identityObservationSchema.safeParse(rawObservation))

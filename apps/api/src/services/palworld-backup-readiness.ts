@@ -3,6 +3,9 @@ import { dirname, join } from 'node:path';
 import { palworldBackupReadinessSchema, type PalworldBackupReadiness } from '@gameops/shared';
 import { getPalworldConfigAudit } from './palworld-config-audit.js';
 import { getPalworldRuntimeAudit } from './palworld-runtime-audit.js';
+import { getCachedResult } from './request-performance.js';
+
+const BACKUP_READINESS_CACHE_TTL_MS = 120_000;
 
 const ROLLBACK_REQUIREMENTS = [
   'Backup the selected PalWorldSettings.ini before any future config change.',
@@ -35,7 +38,7 @@ function getReadable(path: string): boolean {
   }
 }
 
-export function getPalworldBackupReadiness(serverId: string): PalworldBackupReadiness {
+function computePalworldBackupReadiness(serverId: string): PalworldBackupReadiness {
   const audit = getPalworldConfigAudit(serverId);
   const runtimeAudit = getPalworldRuntimeAudit(serverId);
   const selectedPath = audit.selectedPath;
@@ -126,4 +129,8 @@ export function getPalworldBackupReadiness(serverId: string): PalworldBackupRead
     canCreateBackup: false,
     reasonCreateBackupDisabled: 'Backup creation is not implemented. This endpoint only audits readiness.'
   });
+}
+
+export function getPalworldBackupReadiness(serverId: string): PalworldBackupReadiness {
+  return getCachedResult(`palworld-backup-readiness:${serverId}`, BACKUP_READINESS_CACHE_TTL_MS, () => computePalworldBackupReadiness(serverId));
 }

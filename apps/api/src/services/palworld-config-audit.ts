@@ -2,9 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { palworldConfigAuditSchema, type PalworldConfigAudit, type ServerConfig } from '@gameops/shared';
 import { getLatestPalworldSettingsSnapshotForServer } from './palworld-telemetry-store.js';
+import { getCachedResult } from './request-performance.js';
 import { loadGameOpsConfig } from './server-config.js';
 
 const PALWORLD_SETTINGS_FILE = 'PalWorldSettings.ini';
+const CONFIG_AUDIT_CACHE_TTL_MS = 120_000;
 
 export interface PalworldParsedConfigContext {
   audit: PalworldConfigAudit;
@@ -250,7 +252,7 @@ function unsupported(serverId: string): PalworldConfigAudit {
   });
 }
 
-export function getPalworldConfigAudit(serverId: string): PalworldConfigAudit {
+function computePalworldConfigAudit(serverId: string): PalworldConfigAudit {
   const server = getConfiguredServer(serverId);
 
   if (!server || server.game !== 'palworld') {
@@ -376,6 +378,10 @@ export function getPalworldConfigAudit(serverId: string): PalworldConfigAudit {
       'Compare parsed file settings after a manual owner-approved change.'
     ]
   });
+}
+
+export function getPalworldConfigAudit(serverId: string): PalworldConfigAudit {
+  return getCachedResult(`palworld-config-audit:${serverId}`, CONFIG_AUDIT_CACHE_TTL_MS, () => computePalworldConfigAudit(serverId));
 }
 
 export function getPalworldParsedConfigContext(serverId: string): PalworldParsedConfigContext {

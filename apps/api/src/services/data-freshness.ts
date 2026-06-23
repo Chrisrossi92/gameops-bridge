@@ -8,8 +8,11 @@ import {
 import { getServerOperationalStatus } from './connector-heartbeat.js';
 import { getActiveSessionsForServer, getRecentEventsForServer } from './event-store.js';
 import { getPersistedPlayerRollupsForServer } from './player-intelligence-rollup-store.js';
+import { getCachedResult } from './request-performance.js';
 import { getConfiguredServerGame, isServerConfigured } from './server-config.js';
 import { getSessionTimelineForServer } from './session-timeline.js';
+
+const DATA_FRESHNESS_CACHE_TTL_MS = 10_000;
 
 function formatAge(seconds: number | null): string {
   if (seconds === null) {
@@ -93,7 +96,7 @@ function buildErrorFreshness(input: {
   });
 }
 
-export function getDataFreshnessForServer(serverId: string, now = new Date()): DataFreshnessResponse {
+function computeDataFreshnessForServer(serverId: string, now = new Date()): DataFreshnessResponse {
   const operationalStatus = getServerOperationalStatus(serverId, isServerConfigured(serverId), now);
   const recentEvent = getRecentEventsForServer(serverId, 1)[0] ?? null;
   const timeline = getSessionTimelineForServer(serverId, 50);
@@ -192,4 +195,8 @@ export function getDataFreshnessForServer(serverId: string, now = new Date()): D
     trustWarnings: Array.from(new Set(trustWarnings)),
     recommendedAction: getRecommendedAction({ status, operationalStatus })
   });
+}
+
+export function getDataFreshnessForServer(serverId: string, now = new Date()): DataFreshnessResponse {
+  return getCachedResult(`data-freshness:${serverId}`, DATA_FRESHNESS_CACHE_TTL_MS, () => computeDataFreshnessForServer(serverId, now));
 }

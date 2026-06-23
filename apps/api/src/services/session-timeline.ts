@@ -11,8 +11,10 @@ import {
 import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from './event-store.js';
 import { getPlayerIntelligenceForServer } from './player-intelligence.js';
 import { getClosedSessionRollupId, getPersistedPlayerRollupsForServer } from './player-intelligence-rollup-store.js';
+import { getCachedResult } from './request-performance.js';
 
 const DEFAULT_EXPLANATION = 'No sessions observed yet. Start the connector and wait for player join/leave activity.';
+const SESSION_TIMELINE_CACHE_TTL_MS = 10_000;
 
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -178,7 +180,7 @@ function buildSummary(sessions: SessionTimelineItem[]) {
   };
 }
 
-export function getSessionTimelineForServer(serverId: string, limit = 50): SessionTimelineResponse {
+function computeSessionTimelineForServer(serverId: string, limit = 50): SessionTimelineResponse {
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
   const players = getPlayerIntelligenceForServer(serverId).players;
   const sessionsById = new Map<string, SessionTimelineItem>();
@@ -213,4 +215,9 @@ export function getSessionTimelineForServer(serverId: string, limit = 50): Sessi
       ? DEFAULT_EXPLANATION
       : 'Recent server sessions from live connector state, recent API memory, and stored player rollups.'
   });
+}
+
+export function getSessionTimelineForServer(serverId: string, limit = 50): SessionTimelineResponse {
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+  return getCachedResult(`session-timeline:${serverId}:${safeLimit}`, SESSION_TIMELINE_CACHE_TTL_MS, () => computeSessionTimelineForServer(serverId, safeLimit));
 }

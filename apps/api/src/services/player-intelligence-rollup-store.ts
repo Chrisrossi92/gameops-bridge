@@ -11,9 +11,11 @@ import {
 } from '@gameops/shared';
 import { z } from 'zod';
 import { recordClosedSessionEngagementRollup } from './player-engagement-rollup-store.js';
+import { clearCachedResult } from './request-performance.js';
 
 const MAX_PROCESSED_SESSION_IDS = 20_000;
 const MAX_RECENT_SESSIONS_PER_PLAYER = 25;
+const STORE_CACHE_TTL_MS = 5_000;
 
 const playerRollupRecordSchema = z.object({
   playerId: z.string().min(1),
@@ -40,6 +42,9 @@ const playerIntelligenceStoreSchema = z.object({
 });
 
 export type PersistedPlayerRollup = z.infer<typeof playerRollupRecordSchema>;
+type PlayerIntelligenceStore = z.infer<typeof playerIntelligenceStoreSchema>;
+
+let storeCache: { path: string; expiresAt: number; store: PlayerIntelligenceStore } | null = null;
 
 function resolveStorePath(): string {
   const rawPath = process.env.PLAYER_INTELLIGENCE_STORE_PATH ?? '../player-intelligence-state.json';
@@ -135,22 +140,36 @@ function getPlayerId(serverId: string, playerName: string): string {
   return `${serverId}:${slug(playerName)}`;
 }
 
-function loadStore(): z.infer<typeof playerIntelligenceStoreSchema> {
+function loadStore(): PlayerIntelligenceStore {
   const path = resolveStorePath();
+  const now = Date.now();
+
+  if (storeCache && storeCache.path === path && storeCache.expiresAt > now) {
+    return storeCache.store;
+  }
 
   try {
-    return playerIntelligenceStoreSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown);
+    const store = playerIntelligenceStoreSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown);
+    storeCache = { path, expiresAt: now + STORE_CACHE_TTL_MS, store };
+    return store;
   } catch {
-    return playerIntelligenceStoreSchema.parse({});
+    const store = playerIntelligenceStoreSchema.parse({});
+    storeCache = { path, expiresAt: now + STORE_CACHE_TTL_MS, store };
+    return store;
   }
 }
 
-function writeStore(store: z.infer<typeof playerIntelligenceStoreSchema>): void {
+function writeStore(store: PlayerIntelligenceStore): void {
   const path = resolveStorePath();
 
   try {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+    storeCache = { path, expiresAt: Date.now() + STORE_CACHE_TTL_MS, store };
+    clearCachedResult('player-intelligence:');
+    clearCachedResult('session-timeline:');
+    clearCachedResult('player-engagement:');
+    clearCachedResult('data-freshness:');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown_error';
     console.log(`[player-intelligence] persist-failed path=${path} error=${message}`);

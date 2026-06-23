@@ -17,7 +17,10 @@ import {
   getPersistedPlayerRollupsForServer,
   type PersistedPlayerRollup
 } from './player-intelligence-rollup-store.js';
+import { getCachedResult } from './request-performance.js';
 import { getConfiguredServerGame } from './server-config.js';
+
+const PLAYER_INTELLIGENCE_CACHE_TTL_MS = 15_000;
 
 interface PlayerDraft {
   playerId: string;
@@ -281,7 +284,7 @@ function toRecord(draft: PlayerDraft): PlayerIntelligenceRecord {
   });
 }
 
-export function getPlayerIntelligenceForServer(serverId: string): PlayerIntelligenceResponse {
+function computePlayerIntelligenceForServer(serverId: string): PlayerIntelligenceResponse {
   const game = getConfiguredServerGame(serverId) ?? 'valheim';
   const draftsByKey = new Map<string, PlayerDraft>();
   const persistedRollups = getPersistedPlayerRollupsForServer(serverId);
@@ -345,4 +348,8 @@ export function getPlayerIntelligenceForServer(serverId: string): PlayerIntellig
       : 'Player intelligence is built from connector sessions, known-player observations, and available game telemetry.',
     players
   });
+}
+
+export function getPlayerIntelligenceForServer(serverId: string): PlayerIntelligenceResponse {
+  return getCachedResult(`player-intelligence:${serverId}`, PLAYER_INTELLIGENCE_CACHE_TTL_MS, () => computePlayerIntelligenceForServer(serverId));
 }

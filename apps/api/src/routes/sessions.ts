@@ -8,6 +8,7 @@ import {
 } from '@gameops/shared';
 import type { FastifyInstance } from 'fastify';
 import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from '../services/event-store.js';
+import { measureSync } from '../services/request-performance.js';
 import { getSessionTimelineForServer } from '../services/session-timeline.js';
 
 export async function registerSessionRoutes(app: FastifyInstance): Promise<void> {
@@ -53,6 +54,6 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     const parsedLimit = Number(request.query.limit);
     const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
 
-    return sessionTimelineResponseSchema.parse(getSessionTimelineForServer(serverId, limit));
+    return measureSync('session-timeline', () => sessionTimelineResponseSchema.parse(getSessionTimelineForServer(serverId, limit)));
   });
 }
