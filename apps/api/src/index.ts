@@ -16,14 +16,16 @@ import { registerServerCatalogRoutes } from './routes/servers.js';
 import { registerServerStatusRoute } from './routes/server-status.js';
 import { registerSettingsCapabilityRoutes } from './routes/settings-capabilities.js';
 import { registerSessionRoutes } from './routes/sessions.js';
+import { getAllowedCorsOrigins } from './services/cors-origin.js';
 import { initializeSessionStateStore } from './services/event-store.js';
 
 const app = Fastify({ logger: true });
 const port = Number(process.env.PORT ?? 3001);
+const host = process.env.API_HOST ?? process.env.HOST ?? '0.0.0.0';
 initializeSessionStateStore();
 
 await app.register(cors, {
-  origin: true
+  origin: getAllowedCorsOrigins()
 });
 
 await registerHealthRoute(app);
@@ -42,9 +44,9 @@ await registerPalworldTelemetryRoutes(app);
 await registerPalworldIdentityLinkRoutes(app);
 await registerPalworldIdentityApprovalRoutes(app);
 
-app.listen({ port, host: '0.0.0.0' })
+app.listen({ port, host })
   .then(() => {
-    console.log(`API running at http://localhost:${port}`);
+    console.log(`API running at http://${host}:${port}`);
   })
   .catch((err) => {
     app.log.error(err);

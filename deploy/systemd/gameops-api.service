@@ -4,9 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/Users/christopherrossi/Desktop/Projects/gameops-bridge
+WorkingDirectory=/opt/gameops-bridge
 Environment=NODE_ENV=production
-Environment=GAMEOPS_CONFIG_PATH=/tmp/gameops.bootstrap.sample.json
+Environment=PORT=3001
+Environment=API_HOST=127.0.0.1
+Environment=GAMEOPS_CONFIG_PATH=/opt/gameops-bridge/config/gameops.config.json
+Environment=API_CORS_ORIGIN=https://servers.cdawgbot.xyz
 ExecStart=/usr/bin/env npm --workspace apps/api run dev
 Restart=on-failure
 RestartSec=3

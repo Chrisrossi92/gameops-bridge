@@ -71,6 +71,7 @@ import {
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolveApiBaseUrl } from './api-base-url.ts';
 import './App.css';
 
 interface HealthResponse {
@@ -1901,7 +1902,7 @@ interface PalworldBaseSignalHistoryEntry {
 
 type DashboardTab = 'overview' | 'highlights' | 'players' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001';
+const apiBaseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
 const LIVE_SIGNAL_WINDOW_MS = 10 * 60 * 1000;

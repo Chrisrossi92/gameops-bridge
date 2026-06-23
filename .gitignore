@@ -3,6 +3,10 @@ dist
 build
 .env
 .env.local
+*.local.env
+config/gameops.config.json
+config/bot.local.json
+config/*.secrets.env
 apps/*/node_modules
 apps/*/dist
 packages/*/node_modules

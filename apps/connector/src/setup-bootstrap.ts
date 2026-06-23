@@ -109,7 +109,10 @@ function buildApiService(configPath: string): string {
     'Type=simple',
     `WorkingDirectory=${repoRoot}`,
     'Environment=NODE_ENV=production',
+    'Environment=PORT=3001',
+    'Environment=API_HOST=127.0.0.1',
     `Environment=GAMEOPS_CONFIG_PATH=${configPath}`,
+    'Environment=API_CORS_ORIGIN=https://servers.cdawgbot.xyz',
     'ExecStart=/usr/bin/env npm --workspace apps/api run dev',
     'Restart=on-failure',
     'RestartSec=3',
@@ -132,7 +135,28 @@ function buildBotService(configPath: string): string {
     'Environment=NODE_ENV=production',
     `Environment=GAMEOPS_CONFIG_PATH=${configPath}`,
     `Environment=BOT_LOCAL_CONFIG_PATH=${resolve(repoRoot, 'config/bot.local.json')}`,
+    'Environment=API_BASE_URL=http://127.0.0.1:3001',
     'ExecStart=/usr/bin/env npm --workspace apps/bot run dev',
+    'Restart=on-failure',
+    'RestartSec=3',
+    '',
+    '[Install]',
+    'WantedBy=multi-user.target',
+    ''
+  ].join('\n');
+}
+
+function buildDashboardService(): string {
+  return [
+    '[Unit]',
+    'Description=GameOps Bridge Dashboard',
+    'After=network.target gameops-api.service',
+    '',
+    '[Service]',
+    'Type=simple',
+    `WorkingDirectory=${repoRoot}`,
+    'Environment=NODE_ENV=production',
+    'ExecStart=/usr/bin/env npm --workspace apps/web run preview -- --host 127.0.0.1 --port 4173',
     'Restart=on-failure',
     'RestartSec=3',
     '',
@@ -154,6 +178,7 @@ function buildConnectorService(configPath: string, serverId: string): string {
     'Environment=NODE_ENV=production',
     `Environment=GAMEOPS_CONFIG_PATH=${configPath}`,
     `Environment=CONNECTOR_SERVER_ID=${serverId}`,
+    'Environment=API_BASE_URL=http://127.0.0.1:3001',
     'ExecStart=/usr/bin/env npm --workspace apps/connector run dev',
     'Restart=on-failure',
     'RestartSec=3',
@@ -212,6 +237,7 @@ function main(): void {
   writeIfMissing(resolve(configDir, 'gameops.secrets.example.env'), buildSecretsExample(config));
   writeIfMissing(resolve(configDir, 'bot.local.json'), buildBotLocalStarter(config));
   writeIfMissing(resolve(deploySystemdDir, 'gameops-api.service'), buildApiService(configPath));
+  writeIfMissing(resolve(deploySystemdDir, 'gameops-dashboard.service'), buildDashboardService());
   writeIfMissing(resolve(deploySystemdDir, 'gameops-bot.service'), buildBotService(configPath));
 
   for (const server of enabledServers) {
@@ -226,4 +252,3 @@ function main(): void {
 }
 
 main();
-

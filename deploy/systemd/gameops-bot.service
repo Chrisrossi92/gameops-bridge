@@ -4,10 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/Users/christopherrossi/Desktop/Projects/gameops-bridge
+WorkingDirectory=/opt/gameops-bridge
 Environment=NODE_ENV=production
-Environment=GAMEOPS_CONFIG_PATH=/tmp/gameops.bootstrap.sample.json
-Environment=BOT_LOCAL_CONFIG_PATH=/Users/christopherrossi/Desktop/Projects/gameops-bridge/config/bot.local.json
+Environment=GAMEOPS_CONFIG_PATH=/opt/gameops-bridge/config/gameops.config.json
+Environment=BOT_LOCAL_CONFIG_PATH=/opt/gameops-bridge/config/bot.local.json
+Environment=API_BASE_URL=http://127.0.0.1:3001
 ExecStart=/usr/bin/env npm --workspace apps/bot run dev
 Restart=on-failure
 RestartSec=3
