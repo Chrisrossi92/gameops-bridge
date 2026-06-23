@@ -1,15 +1,21 @@
 import {
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
+  playerDetailResponseSchema,
+  playerIntelligenceResponseSchema,
   playerCharacterAuditResponseSchema,
+  type PlayerDetailResponse,
   type KnownPlayerProfileResponse,
   type KnownPlayersResponse,
+  type PlayerIntelligenceResponse,
   type PlayerCharacterAuditAssessment,
   type PlayerCharacterAuditResponse
 } from '@gameops/shared';
 import type { FastifyInstance } from 'fastify';
 import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from '../services/event-store.js';
 import { getIdentityObservationsForPlayer, getKnownPlayerForServer, getKnownPlayersForServer } from '../services/known-player-store.js';
+import { getPlayerDetail } from '../services/player-detail.js';
+import { getPlayerIntelligenceForServer } from '../services/player-intelligence.js';
 
 function normalizePlayerKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -48,6 +54,44 @@ function getAuditAssessment(params: {
 }
 
 export async function registerPlayerRoutes(app: FastifyInstance): Promise<void> {
+  app.get<{ Params: { serverId: string } }>('/servers/:serverId/player-intelligence', async (request, reply): Promise<PlayerIntelligenceResponse | { error: string }> => {
+    const serverId = request.params.serverId.trim();
+
+    if (!serverId) {
+      reply.code(400);
+      return { error: 'Invalid serverId' };
+    }
+
+    return playerIntelligenceResponseSchema.parse(getPlayerIntelligenceForServer(serverId));
+  });
+
+  app.get<{ Params: { serverId: string; playerId: string } }>('/servers/:serverId/players/:playerId/detail', async (request, reply): Promise<PlayerDetailResponse | { error: string; explanation: string }> => {
+    const serverId = request.params.serverId.trim();
+    const playerId = decodeURIComponent(request.params.playerId).trim();
+
+    if (!serverId) {
+      reply.code(400);
+      return { error: 'Invalid serverId', explanation: 'Server ID is required.' };
+    }
+
+    if (!playerId) {
+      reply.code(400);
+      return { error: 'Invalid playerId', explanation: 'Player ID is required.' };
+    }
+
+    const detail = getPlayerDetail(serverId, playerId);
+
+    if (!detail) {
+      reply.code(404);
+      return {
+        error: 'Player not found',
+        explanation: 'No player intelligence has been observed for this player yet.'
+      };
+    }
+
+    return playerDetailResponseSchema.parse(detail);
+  });
+
   app.get<{ Params: { serverId: string }; Querystring: { limit?: string } }>('/servers/:serverId/players/known', async (request, reply): Promise<KnownPlayersResponse | { error: string }> => {
     const serverId = request.params.serverId.trim();
 

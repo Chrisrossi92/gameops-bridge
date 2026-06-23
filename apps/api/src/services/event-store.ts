@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { type NormalizedEvent, sessionRecordSchema, type SessionRecord } from '@gameops/shared';
+import { recordClosedSessionRollup, recordPlayerSeenFromSessionStart } from './player-intelligence-rollup-store.js';
 
 const MAX_STORED_EVENTS = 500;
 const MAX_STORED_CLOSED_SESSIONS = 500;
@@ -154,6 +155,31 @@ function getDurationSeconds(startedAt: string, endedAt: string): number {
   return Math.floor((endMs - startMs) / 1000);
 }
 
+function getEventSourceId(event: NormalizedEvent): string {
+  return event.id?.trim()
+    || [
+      event.serverId,
+      event.eventType,
+      event.occurredAt,
+      event.playerName ?? '',
+      event.message ?? ''
+    ].join('|');
+}
+
+function getJoinConfidence(event: NormalizedEvent): 'low' | 'medium' | 'high' {
+  const rawConfidence = event.raw?.valheimIdentityConfidence;
+
+  if (rawConfidence === 'low' || rawConfidence === 'medium' || rawConfidence === 'high') {
+    return rawConfidence;
+  }
+
+  if (event.game === 'palworld' && event.raw?.palworldEventSource === 'rest_players') {
+    return 'high';
+  }
+
+  return event.playerName ? 'high' : 'medium';
+}
+
 function getStructuredPlayerCount(event: NormalizedEvent): number | null {
   const value = event.raw?.valheimCurrentPlayerCount;
 
@@ -165,20 +191,31 @@ function getStructuredPlayerCount(event: NormalizedEvent): number | null {
 }
 
 function closeSession(
+  game: NormalizedEvent['game'],
   serverId: string,
   playerName: string,
   session: SessionRecord,
   closedAt: string,
-  reason: string
+  reason: string,
+  endConfidence: 'low' | 'medium' | 'high',
+  sourceEventId: string
 ): SessionRecord {
   const durationSeconds = getDurationSeconds(session.startedAt, closedAt);
   const closedSession = sessionRecordSchema.parse({
     ...session,
     endedAt: closedAt,
-    durationSeconds
+    durationSeconds,
+    closeReason: reason,
+    endConfidence,
+    sourceEventIds: Array.from(new Set([...(session.sourceEventIds ?? []), sourceEventId]))
   });
 
   console.log(`[session] closed server=${serverId} player=${playerName} reason=${reason} duration_s=${durationSeconds}`);
+  recordClosedSessionRollup({
+    game,
+    session: closedSession,
+    confidence: endConfidence
+  });
   return closedSession;
 }
 
@@ -212,11 +249,14 @@ function reconcileByOccupancyCap(
   for (const [playerName, session] of sortedOldestFirst.slice(0, sessionsToClose)) {
     activeByPlayer.delete(playerName);
     closedSessions.push(closeSession(
+      event.game,
       event.serverId,
       playerName,
       session,
       event.occurredAt,
-      'occupancy_reconciliation'
+      'occupancy_reconciliation',
+      'low',
+      getEventSourceId(event)
     ));
     closedPlayers.push(playerName);
   }
@@ -255,6 +295,7 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
 
   const activeByPlayer = getActiveSessionMap(event.serverId);
   const closedSessions = getRecentClosedSessionList(event.serverId);
+  const sourceEventId = getEventSourceId(event);
 
   if (event.eventType === 'PLAYER_JOIN') {
     if (!event.playerName) {
@@ -265,11 +306,14 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
 
     if (existingSession) {
       const replacedSession = closeSession(
+        event.game,
         event.serverId,
         event.playerName,
         existingSession,
         event.occurredAt,
-        'replaced_by_new_join'
+        'replaced_by_new_join',
+        'medium',
+        sourceEventId
       );
 
       activeByPlayer.delete(event.playerName);
@@ -287,10 +331,19 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
     const opened = sessionRecordSchema.parse({
       serverId: event.serverId,
       playerName: event.playerName,
-      startedAt: event.occurredAt
+      startedAt: event.occurredAt,
+      startConfidence: getJoinConfidence(event),
+      sourceEventIds: [sourceEventId]
     });
 
     activeByPlayer.set(event.playerName, opened);
+    recordPlayerSeenFromSessionStart({
+      serverId: event.serverId,
+      game: event.game,
+      playerName: event.playerName,
+      observedAt: event.occurredAt,
+      confidence: opened.startConfidence
+    });
     return existingSession
       ? {
           ...event,
@@ -317,11 +370,14 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
     } else {
       const durationSeconds = getDurationSeconds(existingSession.startedAt, event.occurredAt);
       const closedSession = closeSession(
+        event.game,
         event.serverId,
         event.playerName,
         existingSession,
         event.occurredAt,
-        triggerReason
+        triggerReason,
+        triggerReason === 'player_leave' ? 'high' : 'low',
+        sourceEventId
       );
 
       activeByPlayer.delete(event.playerName);

@@ -1,25 +1,50 @@
 import {
+  activityLogResponseSchema,
   activeSessionsResponseSchema,
   configuredServersResponseSchema,
+  dataFreshnessResponseSchema,
+  eventTemplateDraftCatalogSchema,
+  eventTemplateConfigDiffPreviewSchema,
+  eventTemplateManualChangeChecklistSchema,
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
+  observedSettingsResponseSchema,
+  palworldBackupReadinessSchema,
   palworldIdentityApprovalsResponseSchema,
   palworldIdentityLinksResponseSchema,
   palworldGuildActivityResponseSchema,
+  palworldConfigAuditSchema,
   palworldLatestPlayersResponseSchema,
   palworldMilestoneFeedResponseSchema,
   palworldMetricsSummariesResponseSchema,
   palworldPlayerSnapshotsResponseSchema,
   palworldPlayerProfileSessionSummariesResponseSchema,
+  playerEngagementDetailSchema,
+  playerEngagementSummarySchema,
+  playerIntelligenceResponseSchema,
+  playerDetailResponseSchema,
+  serverAliveRhythmSummarySchema,
+  serverSettingsCapabilitySummarySchema,
+  sessionTimelineResponseSchema,
   palworldTransitionMilestoneEventsResponseSchema,
   palworldUnifiedPlayerProfileSchema,
   recentEventsResponseSchema,
   serverStatusSchema,
+  serverOperationalStatusSchema,
   type ConfiguredServersResponse,
+  type ActivityLogItem,
+  type DataFreshnessResponse,
+  type EventTemplateDraftCatalog,
+  type EventTemplateConfigDiffPreview,
+  type EventTemplateManualChangeChecklist,
+  type ServerOperationalStatus,
   type PalworldGuildActivityEntry,
   type PalworldGuildActivityMember,
+  type PalworldConfigAudit,
   type KnownPlayerProfileResponse,
   type NormalizedEvent,
+  type ObservedSettingsResponse,
+  type PalworldBackupReadiness,
   type PalworldApprovedIdentity,
   type PalworldIdentityLinkCandidate,
   type PalworldIdentityLinkFailure,
@@ -29,6 +54,14 @@ import {
   type PalworldMetricsSummary,
   type PalworldPlayerProfileSessionSummary,
   type PalworldPlayerSnapshot,
+  type PlayerIntelligenceRecord,
+  type PlayerEngagementDetail,
+  type PlayerEngagementSummary,
+  type PlayerDetailResponse,
+  type ServerAliveRhythmSummary,
+  type ServerSettingsCapabilitySummary,
+  type SessionTimelineItem,
+  type SessionTimelineResponse,
   type PalworldRejectedIdentity,
   type PalworldTransitionMilestoneEvent,
   type PalworldUnifiedPlayerProfile
@@ -62,10 +95,23 @@ interface ServerSummary {
   game: ServerOption['game'];
   reportedState: 'online' | 'offline' | 'starting' | 'stopping' | 'restarting' | 'degraded';
   state: 'online' | 'offline' | 'starting' | 'stopping' | 'restarting' | 'degraded';
+  statusMessage?: string;
+  operationalStatus: ServerOperationalStatus;
+  dataFreshness: DataFreshnessResponse;
   activePlayers: number;
   knownPlayerCount: number;
   recentEvents: NormalizedEvent[];
   recentWarnings: NormalizedEvent[];
+  activityLog: ActivityLogItem[];
+  playerIntelligence: PlayerIntelligenceRecord[];
+  playerIntelligenceExplanation: string;
+  playerEngagement: PlayerEngagementSummary;
+  serverAliveRhythm: ServerAliveRhythmSummary;
+  settingsCapabilities: ServerSettingsCapabilitySummary;
+  eventTemplateDrafts: EventTemplateDraftCatalog;
+  palworldConfigAudit: PalworldConfigAudit | null;
+  palworldBackupReadiness: PalworldBackupReadiness | null;
+  sessionTimeline: SessionTimelineResponse;
   knownPlayers: KnownPlayerEntry[];
   palworldLatestPlayers: PalworldLatestPlayerTelemetry[];
   palworldRecentMetrics: PalworldMetricsSummary[];
@@ -117,28 +163,6 @@ function getProfileDisplayName(profile: PalworldPlayerProfileSessionSummary): st
 
 function formatSaveLinkLabel(isPresent: boolean): string {
   return isPresent ? 'Save linked' : 'Save link needed';
-}
-
-function PlayerProfileCard({ profile }: PlayerProfileCardProps) {
-  return (
-    <li className="review-row">
-      <div className="review-main">
-        <div className="review-header">
-          <span className="review-id">{profile.playerName ?? profile.accountName ?? profile.playerId}</span>
-          <span className={`state-pill state-${profile.isOnline ? 'online' : 'offline'}`}>
-            {profile.isOnline ? 'online' : 'offline'}
-          </span>
-        </div>
-        <div className="telemetry-stats">
-          <span>session {formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)}</span>
-          <span>recent {formatDurationFromSeconds(profile.recentTrackedSeconds)}</span>
-          <span>guild {profile.inferredGuildName ?? 'N/A'}</span>
-          <span>{formatSaveLinkLabel(profile.saveArtifact.present)}</span>
-          {profile.profile.level !== null ? <span>lvl {profile.profile.level}</span> : null}
-        </div>
-      </div>
-    </li>
-  );
 }
 
 interface PlayerRowProps extends PlayerProfileCardProps {
@@ -204,6 +228,1247 @@ function SaveLinkNeededRow({ profile }: PlayerProfileCardProps) {
         </span>
       </div>
     </li>
+  );
+}
+
+interface ActivityLogPanelProps {
+  items: ActivityLogItem[];
+}
+
+interface DataFreshnessBannerProps {
+  freshness: DataFreshnessResponse;
+}
+
+function getFreshnessTone(status: DataFreshnessResponse['status']): string {
+  if (status === 'live') {
+    return 'live';
+  }
+
+  if (status === 'stale' || status === 'historical') {
+    return 'warning';
+  }
+
+  if (status === 'error') {
+    return 'critical';
+  }
+
+  return 'neutral';
+}
+
+function DataFreshnessBanner({ freshness }: DataFreshnessBannerProps) {
+  const lastActivityAt = freshness.lastSessionActivityAt ?? freshness.lastEventAt;
+
+  return (
+    <article className={`card trust-banner trust-banner-${getFreshnessTone(freshness.status)}`}>
+      <div className="trust-banner-main">
+        <div>
+          <span className="summary-label">Data Trust</span>
+          <h2>{freshness.headline}</h2>
+          <p>{freshness.explanation}</p>
+        </div>
+        <span className={`confidence-badge confidence-${freshness.confidence}`}>{freshness.confidence}</span>
+      </div>
+      <div className="trust-banner-meta">
+        <span>Connector: {freshness.connectorStatus}</span>
+        <span>Last heard: {freshness.lastHeartbeatAt ? `${formatDurationFromSeconds(freshness.heartbeatAgeSeconds ?? 0)} ago` : 'never'}</span>
+        <span>Last poll: {freshness.lastSuccessfulPollAt ? formatTimestamp(freshness.lastSuccessfulPollAt) : 'none yet'}</span>
+        <span>Last activity: {lastActivityAt ? formatTimestamp(lastActivityAt) : 'none observed'}</span>
+        <span>Action: {freshness.recommendedAction}</span>
+      </div>
+      {freshness.trustWarnings.length > 0 ? (
+        <div className="trust-warning-row">
+          {freshness.trustWarnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function FreshnessInlineLabel({ freshness }: DataFreshnessBannerProps) {
+  return (
+    <span className={`source-badge freshness-source-${getFreshnessTone(freshness.status)}`}>
+      {freshness.status === 'live' ? 'live data' : freshness.status === 'not_started' ? 'not started' : `${freshness.status} data`}
+    </span>
+  );
+}
+
+function ActivityLogPanel({ items }: ActivityLogPanelProps) {
+  return (
+    <article className="card activity-log-card">
+      <h2>Activity Log</h2>
+      <ul className="list activity-list">
+        {items.length === 0 ? <li>Connector has not reported activity yet.</li> : null}
+        {items.map((item) => (
+          <li key={item.id} className="activity-row activity-row-rich">
+            <div className="activity-main activity-main-rich">
+              <div className="activity-title-row">
+                <span className={`activity-badge activity-severity-${item.severity}`}>{item.severity}</span>
+                <strong>{item.title}</strong>
+                <span className={`confidence-badge confidence-${item.confidence}`}>{item.confidence}</span>
+              </div>
+              <div>{item.description}</div>
+              <div className="subtle activity-explanation">{item.explanation}</div>
+            </div>
+            <span className="subtle activity-time">{formatClock(item.timestamp)}</span>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+interface SessionTimelinePanelProps {
+  timeline: SessionTimelineResponse;
+  freshness: DataFreshnessResponse;
+}
+
+function getTimelineSourceLabel(source: SessionTimelineItem['source']): string {
+  switch (source) {
+    case 'live':
+      return 'Live session';
+    case 'recent':
+      return 'Recent API memory';
+    case 'stored':
+      return 'Stored rollup';
+  }
+}
+
+function getSessionEndLabel(session: SessionTimelineItem): string {
+  if (session.isActive) {
+    return 'Still online';
+  }
+
+  return session.endedAt ? formatTimestamp(session.endedAt) : 'Unknown leave time';
+}
+
+function getSessionConfidence(session: SessionTimelineItem): string {
+  return session.endConfidence ?? session.startConfidence ?? 'unknown';
+}
+
+function SessionTimelinePanel({ timeline, freshness }: SessionTimelinePanelProps) {
+  const activeSessions = timeline.sessions.filter((session) => session.isActive);
+  const endedSessions = timeline.sessions.filter((session) => !session.isActive);
+
+  return (
+    <article className="card session-timeline-card">
+      <div className="session-timeline-heading">
+        <div>
+          <h2>Recent Sessions</h2>
+          <p className="subtle">{timeline.explanation}</p>
+        </div>
+        <div className="session-timeline-summary">
+          <FreshnessInlineLabel freshness={freshness} />
+          <span>{timeline.summary.activeCount} active</span>
+          <span>{timeline.summary.sessionsToday} today</span>
+          <span>{formatDurationFromSeconds(timeline.summary.trackedSecondsToday)} tracked today</span>
+        </div>
+      </div>
+
+      {timeline.sessions.length === 0 ? (
+        <p className="subtle">No sessions observed yet. Start the connector and wait for player join/leave activity.</p>
+      ) : null}
+
+      {activeSessions.length > 0 ? (
+        <section className="session-timeline-section">
+          <h3>Online Now</h3>
+          <ul className="list session-timeline-list">
+            {activeSessions.map((session) => (
+              <li key={session.sessionId} className="session-timeline-row">
+                <div className="session-timeline-main">
+                  <div className="session-timeline-title">
+                    <strong>{session.displayName}</strong>
+                    <span className="state-pill state-online">online</span>
+                    <span className={`confidence-badge confidence-${getSessionConfidence(session) === 'unknown' ? 'low' : getSessionConfidence(session)}`}>
+                      {getSessionConfidence(session)}
+                    </span>
+                    <span className="source-badge">{getTimelineSourceLabel(session.source)}</span>
+                  </div>
+                  <div className="session-timeline-meta">
+                    <span>Joined {formatTimestamp(session.startedAt)}</span>
+                    <span>{getSessionEndLabel(session)}</span>
+                    <span>{formatDurationFromSeconds(session.durationSeconds)}</span>
+                  </div>
+                  <div className="subtle">{session.explanation}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="session-timeline-section">
+        <h3>Recent History</h3>
+        <ul className="list session-timeline-list">
+          {endedSessions.length === 0 && activeSessions.length > 0 ? <li className="empty-line">No ended sessions tracked yet.</li> : null}
+          {endedSessions.map((session) => (
+            <li key={session.sessionId} className="session-timeline-row">
+              <div className="session-timeline-main">
+                <div className="session-timeline-title">
+                  <strong>{session.displayName}</strong>
+                  <span className={`confidence-badge confidence-${getSessionConfidence(session) === 'unknown' ? 'low' : getSessionConfidence(session)}`}>
+                    {getSessionConfidence(session)}
+                  </span>
+                  <span className="source-badge">{getTimelineSourceLabel(session.source)}</span>
+                </div>
+                <div className="session-timeline-meta">
+                  <span>Joined {formatTimestamp(session.startedAt)}</span>
+                  <span>Left {getSessionEndLabel(session)}</span>
+                  <span>{formatDurationFromSeconds(session.durationSeconds)}</span>
+                </div>
+                <div className="subtle">
+                  {session.explanation}
+                  {session.closeReason ? ` Close reason: ${session.closeReason}.` : ''}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </article>
+  );
+}
+
+interface PlayerIntelligencePanelProps {
+  players: PlayerIntelligenceRecord[];
+  explanation: string;
+  freshness: DataFreshnessResponse;
+  selectedPlayerId: string | null;
+  onSelectPlayer: (playerId: string) => void;
+}
+
+interface PlayerEngagementPanelProps {
+  engagement: PlayerEngagementSummary;
+  onSelectPlayer: (playerId: string) => void;
+}
+
+function PlayerEngagementPanel({ engagement, onSelectPlayer }: PlayerEngagementPanelProps) {
+  const peakHourLabel = engagement.activity.peakHourUtc === null
+    ? 'not enough sessions'
+    : `${String(engagement.activity.peakHourUtc).padStart(2, '0')}:00 UTC`;
+
+  return (
+    <article className="card player-engagement-card">
+      <div className="panel-title-row">
+        <div>
+          <h2>Player Engagement</h2>
+          <p className="subtle">{engagement.headline}</p>
+        </div>
+        <span className={`confidence-badge confidence-${engagement.confidence === 'unknown' ? 'low' : engagement.confidence}`}>
+          {engagement.confidence}
+        </span>
+      </div>
+
+      <div className="detail-grid">
+        <section className="detail-block">
+          <h3>Who is playing?</h3>
+          <ul className="list compact">
+            <li><span>Online now</span><span>{engagement.activity.activeNowCount}</span></li>
+            {engagement.activity.activeNow.slice(0, 3).map((player) => (
+              <li key={`active-now:${player.playerId}`}>
+                <button type="button" className="inline-player-link" onClick={() => onSelectPlayer(player.playerId)}>
+                  {player.displayName}
+                </button>
+                <span className="subtle">{player.reason}</span>
+              </li>
+            ))}
+            <li><span>Today</span><span>{engagement.activity.today.sessions} sessions / {formatDurationFromSeconds(engagement.activity.today.trackedSeconds)}</span></li>
+            <li><span>7 days</span><span>{engagement.activity.sevenDays.sessions} sessions / {formatDurationFromSeconds(engagement.activity.sevenDays.trackedSeconds)}</span></li>
+            <li><span>30 days</span><span>{engagement.activity.thirtyDays.sessions} sessions / {formatDurationFromSeconds(engagement.activity.thirtyDays.trackedSeconds)}</span></li>
+            <li><span>Server alive around</span><span>{peakHourLabel}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Who came back?</h3>
+          <ul className="list compact">
+            {engagement.returningPlayers.length === 0 ? <li>No returning players tracked yet.</li> : null}
+            {engagement.returningPlayers.slice(0, 4).map((player) => (
+              <li key={`returning:${player.playerId}`}>
+                <button type="button" className="inline-player-link" onClick={() => onSelectPlayer(player.playerId)}>
+                  {player.displayName}
+                </button>
+                <span className="subtle">{player.sessionCount} sessions</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Who disappeared?</h3>
+          <ul className="list compact">
+            {engagement.inactivePlayers.length === 0 ? <li>Not enough history to call anyone inactive yet.</li> : null}
+            {engagement.inactivePlayers.slice(0, 4).map((player) => (
+              <li key={`inactive:${player.playerId}`}>
+                <button type="button" className="inline-player-link" onClick={() => onSelectPlayer(player.playerId)}>
+                  {player.displayName}
+                </button>
+                <span className="subtle">{player.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Most tracked</h3>
+          <ul className="list compact">
+            {engagement.highEngagementPlayers.length === 0 ? <li>No tracked playtime yet.</li> : null}
+            {engagement.highEngagementPlayers.slice(0, 4).map((player) => (
+              <li key={`high:${player.playerId}`}>
+                <button type="button" className="inline-player-link" onClick={() => onSelectPlayer(player.playerId)}>
+                  {player.displayName}
+                </button>
+                <span className="subtle">{formatDurationFromSeconds(player.totalTrackedSeconds)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      {engagement.dataWarnings.length > 0 ? (
+        <div className="trust-warning-row">
+          {engagement.dataWarnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+interface ServerAliveRhythmPanelProps {
+  rhythm: ServerAliveRhythmSummary;
+}
+
+function ServerAliveRhythmPanel({ rhythm }: ServerAliveRhythmPanelProps) {
+  const bestDays = rhythm.sevenDays.busiestDays.length > 0
+    ? rhythm.sevenDays.busiestDays
+    : rhythm.thirtyDays.busiestDays.slice(0, 3);
+  const quietDays = rhythm.sevenDays.quietDays.slice(0, 3);
+
+  return (
+    <article className="card server-alive-rhythm-card">
+      <div className="panel-title-row">
+        <div>
+          <h2>When is the server alive?</h2>
+          <p className="subtle">{rhythm.summary}</p>
+        </div>
+        <span className={`confidence-badge confidence-${rhythm.confidence === 'unknown' ? 'low' : rhythm.confidence}`}>
+          {rhythm.confidence}
+        </span>
+      </div>
+
+      <div className="detail-grid">
+        <section className="detail-block">
+          <h3>Best days</h3>
+          <ul className="list compact">
+            {bestDays.length === 0 ? <li>Not enough history yet.</li> : null}
+            {bestDays.slice(0, 3).map((day) => (
+              <li key={`busy:${day.date}`}>
+                <span>{day.dayOfWeek}</span>
+                <span>{day.sessions} sessions / {formatDurationFromSeconds(day.trackedSeconds)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Quiet days</h3>
+          <ul className="list compact">
+            {quietDays.length === 0 ? <li>No quiet days in the last 7 days.</li> : null}
+            {quietDays.map((day) => (
+              <li key={`quiet:${day.date}`}>
+                <span>{day.dayOfWeek}</span>
+                <span>{day.date}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Tracked totals</h3>
+          <ul className="list compact">
+            <li><span>7 days</span><span>{rhythm.sevenDays.totalSessions} sessions / {formatDurationFromSeconds(rhythm.sevenDays.totalTrackedSeconds)}</span></li>
+            <li><span>7d players</span><span>{rhythm.sevenDays.uniqueActivePlayers}</span></li>
+            <li><span>30 days</span><span>{rhythm.thirtyDays.totalSessions} sessions / {formatDurationFromSeconds(rhythm.thirtyDays.totalTrackedSeconds)}</span></li>
+            <li><span>30d players</span><span>{rhythm.thirtyDays.uniqueActivePlayers}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Pattern</h3>
+          <ul className="list compact">
+            <li>
+              <span>Day pattern</span>
+              <span>{rhythm.bestDayOfWeekPattern ? rhythm.bestDayOfWeekPattern.dayOfWeek : 'Unknown'}</span>
+            </li>
+            {rhythm.hourlyPattern.status === 'available' ? (
+              rhythm.hourlyPattern.busiestUtcHours.slice(0, 3).map((hour) => (
+                <li key={`hour:${hour.hourUtc}`}>
+                  <span>{String(hour.hourUtc).padStart(2, '0')}:00 UTC</span>
+                  <span>{hour.sessions} starts / {formatDurationFromSeconds(hour.trackedSeconds)}</span>
+                </li>
+              ))
+            ) : (
+              <li>
+                <span>Hourly pattern</span>
+                <span>Unknown</span>
+              </li>
+            )}
+            <li><span className="subtle">{rhythm.hourlyPattern.explanation}</span></li>
+          </ul>
+        </section>
+      </div>
+
+      {rhythm.confidenceWarnings.length > 0 ? (
+        <div className="trust-warning-row">
+          {rhythm.confidenceWarnings.slice(0, 3).map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+interface SettingsCapabilityPanelProps {
+  capabilities: ServerSettingsCapabilitySummary;
+  onOpenObservedSettings: () => void;
+}
+
+function SettingsCapabilityPanel({ capabilities, onOpenObservedSettings }: SettingsCapabilityPanelProps) {
+  const missingPieces = capabilities.missingRequirements.slice(0, 5);
+  const validationSteps = capabilities.validationSteps.slice(0, 3);
+  const rollbackRequirements = capabilities.rollbackRequirements.slice(0, 3);
+  const unresolvedQuestions = capabilities.unresolvedQuestions.slice(0, 3);
+  const canOpenObservedSettings = capabilities.canReadSettings === 'yes';
+
+  return (
+    <article
+      className={`card settings-capability-card ${canOpenObservedSettings ? 'clickable-row' : ''}`}
+      onClick={canOpenObservedSettings ? onOpenObservedSettings : undefined}
+    >
+      <div className="panel-title-row">
+        <div>
+          <h2>Settings Control Readiness</h2>
+          <p className="subtle">{capabilities.nextSafeStep}</p>
+        </div>
+        <span className={`confidence-badge confidence-${capabilities.canReadSettings === 'yes' ? 'high' : capabilities.canReadSettings === 'unknown' ? 'medium' : 'low'}`}>
+          read {capabilities.canReadSettings}
+        </span>
+      </div>
+
+      <div className="detail-grid">
+        <section className="detail-block">
+          <h3>Can read settings</h3>
+          <ul className="list compact">
+            <li><span>Status</span><span>{capabilities.canReadSettings}</span></li>
+            <li><span>Source</span><span>{capabilities.readSource}</span></li>
+            <li><span>Last snapshot</span><span>{capabilities.lastSettingsSnapshotAt ? formatTimestamp(capabilities.lastSettingsSnapshotAt) : 'None'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Can safely change settings</h3>
+          <ul className="list compact">
+            <li><span>Status</span><span>{capabilities.canWriteSettings}</span></li>
+            <li><span>Write path</span><span>{capabilities.writePathStatus}</span></li>
+            <li><span>Needs restart/manual</span><span>{capabilities.requiresRestart}</span></li>
+            <li><span>Connector</span><span>{capabilities.connectorMode ?? 'unknown'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Candidate paths</h3>
+          <ul className="list compact">
+            {capabilities.candidateWritePaths.length === 0 ? <li>No candidate paths reported.</li> : null}
+            {capabilities.candidateWritePaths.map((path) => (
+              <li key={path}><span>{path}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Readable groups</h3>
+          <ul className="list compact">
+            {capabilities.supportedSettingGroups.length === 0 ? <li>No setting groups mapped yet.</li> : null}
+            {capabilities.supportedSettingGroups.map((group) => (
+              <li key={group}><span>{group}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Missing pieces</h3>
+          <ul className="list compact">
+            {missingPieces.length === 0 ? <li>No missing pieces reported.</li> : null}
+            {missingPieces.map((requirement) => (
+              <li key={requirement}><span>{requirement}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Validation needed</h3>
+          <ul className="list compact">
+            {validationSteps.length === 0 ? <li>No validation steps reported.</li> : null}
+            {validationSteps.map((step) => (
+              <li key={step}><span>{step}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Rollback needed</h3>
+          <ul className="list compact">
+            {rollbackRequirements.length === 0 ? <li>No rollback requirements reported.</li> : null}
+            {rollbackRequirements.map((requirement) => (
+              <li key={requirement}><span>{requirement}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Unknowns</h3>
+          <ul className="list compact">
+            {unresolvedQuestions.length === 0 ? <li>No unresolved questions reported.</li> : null}
+            {unresolvedQuestions.map((question) => (
+              <li key={question}><span>{question}</span></li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      <div className="trust-warning-row">
+        {capabilities.safetyNotes.slice(0, 3).map((note) => (
+          <span key={note}>{note}</span>
+        ))}
+        {canOpenObservedSettings ? <span>Open observed settings</span> : null}
+      </div>
+    </article>
+  );
+}
+
+interface PalworldConfigAuditPanelProps {
+  audit: PalworldConfigAudit;
+}
+
+function getConfigAuditTone(audit: PalworldConfigAudit): string {
+  if (audit.fileEditViability === 'possible_needs_backup_restart_validation') {
+    return 'medium';
+  }
+
+  if (audit.discoveryStatus === 'found' && audit.parseStatus === 'parsed') {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function PalworldConfigAuditPanel({ audit }: PalworldConfigAuditPanelProps) {
+  const matchingCount = audit.matchedRestSettings.filter((setting) => setting.valuesMatch).length;
+  const differingCount = audit.matchedRestSettings.length - matchingCount;
+
+  return (
+    <article className="card settings-capability-card">
+      <div className="panel-title-row">
+        <div>
+          <h2>Config file audit</h2>
+          <p className="subtle">{audit.selectedPath ?? 'No settings file selected yet.'}</p>
+        </div>
+        <span className={`confidence-badge confidence-${getConfigAuditTone(audit)}`}>
+          {audit.discoveryStatus}
+        </span>
+      </div>
+
+      <div className="detail-grid">
+        <section className="detail-block">
+          <h3>Discovery</h3>
+          <ul className="list compact">
+            <li><span>Status</span><span>{audit.discoveryStatus}</span></li>
+            <li><span>Can read file</span><span>{audit.canReadFile ? 'yes' : 'no'}</span></li>
+            <li><span>Candidates</span><span>{audit.candidatePaths.length}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Parse result</h3>
+          <ul className="list compact">
+            <li><span>Status</span><span>{audit.parseStatus}</span></li>
+            <li><span>Parsed settings</span><span>{audit.parsedSettingCount}</span></li>
+            <li><span>File-edit viability</span><span>{audit.fileEditViability}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>REST match</h3>
+          <ul className="list compact">
+            <li><span>Matched keys</span><span>{audit.matchedRestSettings.length}</span></li>
+            <li><span>Same values</span><span>{matchingCount}</span></li>
+            <li><span>Different values</span><span>{differingCount}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Gaps</h3>
+          <ul className="list compact">
+            <li><span>File-only</span><span>{audit.unmatchedFileSettings.length}</span></li>
+            <li><span>REST-only</span><span>{audit.unmatchedRestSettings.length}</span></li>
+          </ul>
+        </section>
+      </div>
+
+      <div className="trust-warning-row">
+        {audit.safetyWarnings.slice(0, 3).map((warning) => (
+          <span key={warning}>{warning}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+interface PalworldBackupReadinessPanelProps {
+  readiness: PalworldBackupReadiness;
+}
+
+function getBackupReadinessTone(readiness: PalworldBackupReadiness): string {
+  if (readiness.readinessStatus === 'ready_for_manual_backup_plan') {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function PalworldBackupReadinessPanel({ readiness }: PalworldBackupReadinessPanelProps) {
+  const primaryFile = readiness.filesToBackup[0] ?? null;
+
+  return (
+    <article className="card settings-capability-card">
+      <div className="panel-title-row">
+        <div>
+          <h2>Backup & Rollback Readiness</h2>
+          <p className="subtle">No backup has been created.</p>
+        </div>
+        <span className={`confidence-badge confidence-${getBackupReadinessTone(readiness)}`}>
+          {readiness.readinessStatus}
+        </span>
+      </div>
+
+      <div className="detail-grid">
+        <section className="detail-block">
+          <h3>File to back up</h3>
+          <ul className="list compact">
+            <li><span>Path</span><span>{primaryFile?.path ?? 'none selected'}</span></li>
+            <li><span>Exists</span><span>{primaryFile ? (primaryFile.exists ? 'yes' : 'no') : 'unknown'}</span></li>
+            <li><span>Readable</span><span>{primaryFile ? (primaryFile.readable ? 'yes' : 'no') : 'unknown'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Backup target</h3>
+          <ul className="list compact">
+            <li><span>Directory</span><span>{readiness.proposedBackupDirectory ?? 'unknown'}</span></li>
+            <li><span>Filename</span><span>{readiness.proposedBackupFilenamePattern ?? 'unknown'}</span></li>
+            <li><span>Can create backup</span><span>{readiness.canCreateBackup ? 'yes' : 'no'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Restore validation</h3>
+          <ul className="list compact">
+            {readiness.validationSteps.slice(0, 3).map((step) => (
+              <li key={step}><span>{step}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Rollback needs</h3>
+          <ul className="list compact">
+            {readiness.rollbackRequirements.slice(0, 3).map((requirement) => (
+              <li key={requirement}><span>{requirement}</span></li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      <div className="trust-warning-row">
+        <span>{readiness.reasonCreateBackupDisabled}</span>
+        {readiness.safetyWarnings.slice(0, 2).map((warning) => (
+          <span key={warning}>{warning}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+interface ObservedSettingsDrawerProps {
+  observedSettings: ObservedSettingsResponse | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}
+
+function ObservedSettingsDrawer({ observedSettings, loading, error, onClose }: ObservedSettingsDrawerProps) {
+  return (
+    <div className="player-drawer-shell" role="presentation">
+      <button type="button" className="player-drawer-backdrop" aria-label="Close observed settings" onClick={onClose} />
+      <aside className="player-drawer" aria-label="Observed settings">
+        <div className="player-drawer-header">
+          <div>
+            <span className="state-pill state-warning">Read-only for now</span>
+            <h2>Observed Settings</h2>
+            <p>{observedSettings?.snapshotAt ? `Snapshot ${formatTimestamp(observedSettings.snapshotAt)}` : 'No snapshot loaded'}</p>
+          </div>
+          <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
+        </div>
+
+        {loading ? <p className="subtle">Loading observed settings...</p> : null}
+        {error ? <p className="player-drawer-error">{error}</p> : null}
+        {observedSettings && !observedSettings.available ? (
+          <section className="player-drawer-sessions">
+            <h3>Observed Settings</h3>
+            <p className="subtle">{observedSettings.emptyState ?? 'Observed settings are unavailable.'}</p>
+          </section>
+        ) : null}
+
+        {observedSettings?.available ? (
+          <>
+            <section className="player-drawer-sessions">
+              <h3>Read-only for now</h3>
+              <ul>
+                {observedSettings.safetyNotes.map((note) => (
+                  <li key={note}><span>{note}</span></li>
+                ))}
+              </ul>
+            </section>
+
+            {observedSettings.groups.map((group) => (
+              <section key={group.group} className="player-drawer-sessions">
+                <h3>{group.group === 'unknown/unmapped' ? 'Unknown/unmapped settings' : group.group}</h3>
+                <ul>
+                  {group.settings.slice(0, 12).map((setting) => (
+                    <li key={setting.key}>
+                      <span>{setting.label}</span>
+                      <span>{formatObservedSettingValue(setting.value)}</span>
+                      <span className={`confidence-badge confidence-${getObservedSettingRiskTone(setting.changeRisk)}`}>
+                        {setting.riskLabel}
+                      </span>
+                      <span className="subtle">{setting.valueType} • {setting.recommendedHandling} • restart {setting.requiresRestart}</span>
+                      <span className="subtle">{setting.riskNote}</span>
+                      {setting.sensitive || group.group === 'unknown/unmapped' ? <span className="subtle">{setting.safetyNote}</span> : null}
+                    </li>
+                  ))}
+                  {group.settings.length > 12 ? <li><span className="subtle">{group.settings.length - 12} more settings in this group.</span></li> : null}
+                </ul>
+              </section>
+            ))}
+          </>
+        ) : null}
+      </aside>
+    </div>
+  );
+}
+
+interface EventTemplateDraftPanelProps {
+  catalog: EventTemplateDraftCatalog;
+  onEditDraft: (draft: EventTemplateDraftCatalog['drafts'][number]) => void;
+}
+
+function EventTemplateDraftPanel({ catalog, onEditDraft }: EventTemplateDraftPanelProps) {
+  return (
+    <article className="card event-template-draft-card">
+      <div className="panel-title-row">
+        <div>
+          <h2>Event Template Drafts</h2>
+          <p className="subtle">{catalog.explanation}</p>
+        </div>
+        <span className={`confidence-badge confidence-${catalog.status === 'available' ? 'medium' : 'low'}`}>
+          preview only
+        </span>
+      </div>
+
+      <div className="detail-grid">
+        {catalog.drafts.length === 0 ? (
+          <section className="detail-block">
+            <h3>No drafts yet</h3>
+            <p className="subtle">No observed template-candidate settings are available for draft ideas.</p>
+          </section>
+        ) : null}
+        {catalog.drafts.slice(0, 4).map((draft) => (
+          <section key={draft.templateId} className="detail-block">
+            <h3>{draft.name}</h3>
+            <ul className="list compact">
+              <li><span>Status</span><span>{draft.status}</span></li>
+              <li><span>Can apply</span><span>{draft.canApply ? 'yes' : 'no'}</span></li>
+              <li><span>Restart</span><span>{draft.requiresRestart}</span></li>
+              <li><span>Matched</span><span>{draft.matchedSettings.map((setting) => setting.key).join(', ')}</span></li>
+              {draft.missingSettings.length > 0 ? <li><span>Missing</span><span>{draft.missingSettings.join(', ')}</span></li> : null}
+            </ul>
+            <p className="subtle">{draft.description}</p>
+            <button type="button" className="review-button approve-button" onClick={() => onEditDraft(draft)}>
+              Edit dashboard draft
+            </button>
+          </section>
+        ))}
+      </div>
+
+      <div className="trust-warning-row">
+        {catalog.safetyNotes.slice(0, 3).map((note) => (
+          <span key={note}>{note}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+interface EventTemplateDraftEditDrawerProps {
+  draft: EventTemplateDraftCatalog['drafts'][number];
+  displayName: string;
+  targetMultiplier: string;
+  targetValue: string;
+  durationHours: string;
+  notes: string;
+  scheduleLabel: string;
+  enabledInDashboard: boolean;
+  saving: boolean;
+  error: string | null;
+  success: string | null;
+  configDiffPreview: EventTemplateConfigDiffPreview | null;
+  configDiffLoading: boolean;
+  configDiffError: string | null;
+  manualChecklist: EventTemplateManualChangeChecklist | null;
+  manualChecklistLoading: boolean;
+  manualChecklistError: string | null;
+  onDisplayNameChange: (value: string) => void;
+  onTargetMultiplierChange: (value: string) => void;
+  onTargetValueChange: (value: string) => void;
+  onDurationHoursChange: (value: string) => void;
+  onNotesChange: (value: string) => void;
+  onScheduleLabelChange: (value: string) => void;
+  onEnabledChange: (value: boolean) => void;
+  onSave: () => void;
+  onClose: () => void;
+}
+
+function EventTemplateDraftEditDrawer({
+  draft,
+  displayName,
+  targetMultiplier,
+  targetValue,
+  durationHours,
+  notes,
+  scheduleLabel,
+  enabledInDashboard,
+  saving,
+  error,
+  success,
+  configDiffPreview,
+  configDiffLoading,
+  configDiffError,
+  manualChecklist,
+  manualChecklistLoading,
+  manualChecklistError,
+  onDisplayNameChange,
+  onTargetMultiplierChange,
+  onTargetValueChange,
+  onDurationHoursChange,
+  onNotesChange,
+  onScheduleLabelChange,
+  onEnabledChange,
+  onSave,
+  onClose
+}: EventTemplateDraftEditDrawerProps) {
+  return (
+    <div className="player-drawer-shell" role="presentation">
+      <button type="button" className="player-drawer-backdrop" aria-label="Close event template draft editor" onClick={onClose} />
+      <aside className="player-drawer" aria-label="Event template draft editor">
+        <div className="player-drawer-header">
+          <div>
+            <span className="state-pill state-warning">Dashboard draft only</span>
+            <h2>{draft.displayName ?? draft.name}</h2>
+            <p>No server settings will be changed.</p>
+          </div>
+          <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
+        </div>
+
+        {error ? <p className="player-drawer-error">{error}</p> : null}
+        {success ? <p className="success-message">{success}</p> : null}
+
+        <section className="player-drawer-sessions">
+          <h3>Draft details</h3>
+          <div className="review-actions-form">
+            <label className="review-field">
+              <span>Show in dashboard</span>
+              <input type="checkbox" checked={enabledInDashboard} onChange={(event) => onEnabledChange(event.target.checked)} />
+            </label>
+            <label className="review-field">
+              <span>Display name</span>
+              <input type="text" value={displayName} onChange={(event) => onDisplayNameChange(event.target.value)} placeholder={draft.name} />
+            </label>
+            <label className="review-field">
+              <span>Target multiplier</span>
+              <input type="number" min="0" step="0.1" value={targetMultiplier} onChange={(event) => onTargetMultiplierChange(event.target.value)} placeholder="optional" />
+            </label>
+            <label className="review-field">
+              <span>Target value</span>
+              <input type="text" value={targetValue} onChange={(event) => onTargetValueChange(event.target.value)} placeholder="optional" />
+            </label>
+            <label className="review-field">
+              <span>Duration hours</span>
+              <input type="number" min="0" step="0.5" value={durationHours} onChange={(event) => onDurationHoursChange(event.target.value)} placeholder="optional" />
+            </label>
+            <label className="review-field">
+              <span>Schedule label</span>
+              <input type="text" value={scheduleLabel} onChange={(event) => onScheduleLabelChange(event.target.value)} placeholder="Friday evening" />
+            </label>
+            <label className="review-field">
+              <span>Notes</span>
+              <input type="text" value={notes} onChange={(event) => onNotesChange(event.target.value)} placeholder="owner note" />
+            </label>
+          </div>
+          <section className="event-draft-preview">
+            <h3>Change Preview</h3>
+            {draft.changePreviews.length === 0 ? (
+              <p className="subtle">No matched settings are available to preview.</p>
+            ) : (
+              <ul>
+                {draft.changePreviews.slice(0, 6).map((preview) => (
+                  <li key={preview.settingKey}>
+                    <span>{preview.settingLabel}</span>
+                    <span>{formatObservedSettingValue(preview.currentValue)} {'->'} {formatObservedSettingValue(preview.proposedValue)}</span>
+                    <span className={`confidence-badge confidence-${preview.canPreview ? getObservedSettingRiskTone(preview.changeRisk) : 'low'}`}>
+                      {preview.canPreview ? preview.riskLabel : 'limited'}
+                    </span>
+                    <span className="subtle">{preview.differenceLabel}</span>
+                    {preview.previewWarnings.slice(0, 2).map((warning) => (
+                      <span key={warning} className="subtle">{warning}</span>
+                    ))}
+                  </li>
+                ))}
+                {draft.changePreviews.length > 6 ? (
+                  <li><span className="subtle">{draft.changePreviews.length - 6} more setting previews.</span></li>
+                ) : null}
+              </ul>
+            )}
+          </section>
+          <section className="event-draft-preview">
+            <h3>Config Diff Preview</h3>
+            {configDiffLoading ? <p className="subtle">Loading config diff preview...</p> : null}
+            {configDiffError ? <p className="player-drawer-error">{configDiffError}</p> : null}
+            {!configDiffLoading && !configDiffError && !configDiffPreview ? (
+              <p className="subtle">No config diff preview loaded.</p>
+            ) : null}
+            {configDiffPreview ? (
+              <>
+                <ul>
+                  <li><span>Status</span><span>{configDiffPreview.previewStatus}</span></li>
+                  <li><span>Config file</span><span>{configDiffPreview.selectedConfigPath ?? 'none selected'}</span></li>
+                  {configDiffPreview.changes.slice(0, 6).map((change) => (
+                    <li key={change.key}>
+                      <span>{change.key}</span>
+                      <span>{formatObservedSettingValue(change.currentFileValue)} {'->'} {formatObservedSettingValue(change.proposedValue)}</span>
+                      <span className="confidence-badge confidence-medium">{change.riskLabel}</span>
+                      <span className="subtle">Observed {formatObservedSettingValue(change.currentObservedValue)} • {change.valueType}</span>
+                      {change.warningNotes.slice(0, 2).map((warning) => (
+                        <span key={warning} className="subtle">{warning}</span>
+                      ))}
+                    </li>
+                  ))}
+                  {configDiffPreview.missingKeys.length > 0 ? (
+                    <li><span>Missing keys</span><span>{configDiffPreview.missingKeys.join(', ')}</span></li>
+                  ) : null}
+                  {configDiffPreview.unmappedSettings.length > 0 ? (
+                    <li><span>Unmapped</span><span>{configDiffPreview.unmappedSettings.join(', ')}</span></li>
+                  ) : null}
+                </ul>
+                <p className="subtle">{configDiffPreview.reasonApplyDisabled}</p>
+              </>
+            ) : null}
+          </section>
+          <section className="event-draft-preview">
+            <h3>Manual Change Checklist</h3>
+            <p className="subtle">This does not change the server. It only tells you what would need to be checked manually.</p>
+            {manualChecklistLoading ? <p className="subtle">Loading manual checklist...</p> : null}
+            {manualChecklistError ? <p className="player-drawer-error">{manualChecklistError}</p> : null}
+            {!manualChecklistLoading && !manualChecklistError && !manualChecklist ? (
+              <p className="subtle">No manual checklist loaded.</p>
+            ) : null}
+            {manualChecklist ? (
+              <>
+                <ul>
+                  <li><span>Status</span><span>{manualChecklist.checklistStatus}</span></li>
+                  {manualChecklist.checklistItems.map((item) => (
+                    <li key={item.label}>
+                      <span>{item.label}</span>
+                      <span className={`confidence-badge confidence-${item.status === 'pass' ? 'high' : item.status === 'blocked' ? 'low' : 'medium'}`}>
+                        {item.status}
+                      </span>
+                      <span className="subtle">{item.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+                <ul>
+                  {manualChecklist.requiredManualSteps.slice(0, 6).map((step) => (
+                    <li key={step}><span>{step}</span></li>
+                  ))}
+                </ul>
+                <p className="subtle">{manualChecklist.ownerConfirmationText}</p>
+                <p className="subtle">{manualChecklist.reasonApplyDisabled}</p>
+              </>
+            ) : null}
+          </section>
+          <ul>
+            <li><span>Can apply</span><span>{draft.canApply ? 'yes' : 'no'}</span></li>
+            <li><span>{draft.reasonApplyDisabled}</span></li>
+          </ul>
+          <button type="button" className="review-button approve-button" onClick={onSave} disabled={saving}>
+            {saving ? 'Saving...' : 'Save dashboard draft'}
+          </button>
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+interface PlayerEngagementDetailDrawerProps {
+  detail: PlayerEngagementDetail;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}
+
+function PlayerEngagementDetailDrawer({ detail, loading, error, onClose }: PlayerEngagementDetailDrawerProps) {
+  return (
+    <div className="player-drawer-shell" role="presentation">
+      <button type="button" className="player-drawer-backdrop" aria-label="Close player engagement detail" onClick={onClose} />
+      <aside className="player-drawer" aria-label="Player engagement detail">
+        <div className="player-drawer-header">
+          <div>
+            <span className={`state-pill state-${detail.status === 'active_now' ? 'online' : detail.status === 'unknown' ? 'unknown' : 'offline'}`}>
+              {detail.statusLabel}
+            </span>
+            <h2>{detail.displayName}</h2>
+            <p>{detail.lastSeenAt ? `Last seen ${formatTimestamp(detail.lastSeenAt)}` : 'Last seen unknown'}</p>
+          </div>
+          <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
+        </div>
+
+        {loading ? <p className="subtle">Refreshing engagement detail...</p> : null}
+        {error ? <p className="player-drawer-error">{error}</p> : null}
+
+        <section className="player-drawer-sessions">
+          <h3>Why they matter</h3>
+          <ul>
+            {detail.whyTheyMatter.map((note) => (
+              <li key={note}><span>{note}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="player-drawer-sessions">
+          <h3>Recent activity</h3>
+          <dl className="player-drawer-grid">
+            <dt>First seen</dt>
+            <dd>{detail.firstSeenAt ? formatTimestamp(detail.firstSeenAt) : 'Unknown'}</dd>
+            <dt>Last seen</dt>
+            <dd>{detail.lastSeenAt ? formatTimestamp(detail.lastSeenAt) : 'Unknown'}</dd>
+            <dt>7d sessions</dt>
+            <dd>{detail.sevenDays.sessions}</dd>
+            <dt>30d sessions</dt>
+            <dd>{detail.thirtyDays.sessions}</dd>
+          </dl>
+          <ul>
+            {detail.recentSessions.length === 0 ? <li className="empty-line">No recent session rows available.</li> : null}
+            {detail.recentSessions.slice(0, 5).map((session) => (
+              <li key={session.sessionId}>
+                <span>{session.endedAt ? formatDurationFromSeconds(session.durationSeconds) : 'active'}</span>
+                <span>{session.endedAt ? formatTimestamp(session.endedAt) : `Joined ${formatTimestamp(session.startedAt)}`}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="player-drawer-sessions">
+          <h3>Playtime tracked</h3>
+          <dl className="player-drawer-grid">
+            <dt>Total sessions</dt>
+            <dd>{detail.totalSessions}</dd>
+            <dt>Total playtime</dt>
+            <dd>{formatDurationFromSeconds(detail.totalTrackedSeconds)}</dd>
+            <dt>Average session</dt>
+            <dd>{formatDurationFromSeconds(detail.averageSessionSeconds)}</dd>
+            <dt>7d playtime</dt>
+            <dd>{formatDurationFromSeconds(detail.sevenDays.trackedSeconds)}</dd>
+            <dt>30d playtime</dt>
+            <dd>{formatDurationFromSeconds(detail.thirtyDays.trackedSeconds)}</dd>
+          </dl>
+        </section>
+
+        <section className="player-drawer-sessions">
+          <h3>Trend</h3>
+          <ul>
+            <li><span>{getPlayerEngagementTrendLabel(detail)}</span></li>
+            <li>
+              <span>This week</span>
+              <span>{detail.current7dSessions} sessions / {formatDurationFromSeconds(detail.current7dPlaySeconds)}</span>
+            </li>
+            <li>
+              <span>Previous week</span>
+              <span>{detail.previous7dSessions} sessions / {formatDurationFromSeconds(detail.previous7dPlaySeconds)}</span>
+            </li>
+            {detail.trendReasons.map((reason) => (
+              <li key={reason}><span className="subtle">{reason}</span></li>
+            ))}
+            {detail.trendConfidenceWarning ? (
+              <li><span className="subtle">{detail.trendConfidenceWarning}</span></li>
+            ) : null}
+          </ul>
+        </section>
+
+        <section className="player-drawer-sessions">
+          <h3>Confidence / data quality</h3>
+          <ul>
+            <li><span>Confidence</span><span>{detail.confidence}</span></li>
+            {detail.confidenceWarnings.length === 0 ? <li><span>No confidence warnings for this player.</span></li> : null}
+            {detail.confidenceWarnings.map((warning) => (
+              <li key={warning}><span>{warning}</span></li>
+            ))}
+            {detail.evidenceNotes.map((note) => (
+              <li key={note}><span className="subtle">{note}</span></li>
+            ))}
+          </ul>
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function PlayerIntelligencePanel({ players, explanation, freshness, selectedPlayerId, onSelectPlayer }: PlayerIntelligencePanelProps) {
+  return (
+    <article className="card player-intelligence-card">
+      <div className="panel-title-row">
+        <h2>Player Intelligence</h2>
+        <FreshnessInlineLabel freshness={freshness} />
+      </div>
+      <p className="subtle">{explanation}</p>
+      <ul className="list player-intelligence-list">
+        {players.length === 0 ? (
+          <li className="empty-line">No players observed yet. Once the connector sees joins/leaves, players will appear here automatically.</li>
+        ) : null}
+        {players.map((player) => (
+          <li
+            key={player.playerId}
+            className={`player-intelligence-row clickable-row ${selectedPlayerId === player.playerId ? 'selected' : ''}`}
+            onClick={() => onSelectPlayer(player.playerId)}
+          >
+            <div className="player-intelligence-main">
+              <div className="player-intelligence-heading">
+                <strong>{player.displayName}</strong>
+                <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>
+                  {player.isOnline ? 'online' : 'offline'}
+                </span>
+                <span className={`confidence-badge confidence-${player.identityConfidence === 'unknown' ? 'low' : player.identityConfidence}`}>
+                  {player.identityConfidence}
+                </span>
+              </div>
+              <div className="player-intelligence-meta">
+                <span>Last seen {player.lastSeenAt ? formatTimestamp(player.lastSeenAt) : 'not yet'}</span>
+                <span>Tracked playtime {formatDurationFromSeconds(player.totalTrackedSeconds)}</span>
+                <span>{player.sessionCount} session{player.sessionCount === 1 ? '' : 's'}</span>
+                <span>avg {formatDurationFromSeconds(player.averageSessionSeconds)}</span>
+                {player.sourceSummary.includes('stored rollup') ? <span>Last known from stored rollup</span> : null}
+              </div>
+              <div className="subtle">{player.identityExplanation}</div>
+              {!player.isOnline && player.sourceSummary.includes('stored rollup') ? (
+                <div className="subtle">Connector has not reported current activity for this player in this view.</div>
+              ) : null}
+              {player.sourceSummary.length > 0 ? (
+                <div className="subtle">Sources: {player.sourceSummary.join(', ')}</div>
+              ) : null}
+              {player.aliases.length > 0 ? (
+                <div className="subtle">Aliases: {player.aliases.slice(0, 4).join(', ')}</div>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+interface PlayerDetailPanelProps {
+  detail: PlayerDetailResponse | null;
+  loading: boolean;
+  error: string | null;
+}
+
+function PlayerDetailPanel({ detail, loading, error }: PlayerDetailPanelProps) {
+  return (
+    <article className="card player-detail-card">
+      <h2>Player Detail</h2>
+      {loading ? <p className="subtle">Loading player detail...</p> : null}
+      {error ? <p className="subtle">{error}</p> : null}
+      {!detail && !loading && !error ? <p className="subtle">Select a player to review sessions, aliases, and identity evidence.</p> : null}
+      {detail ? (
+        <div className="player-detail-grid">
+          <section className="detail-block">
+            <h3>{detail.player.displayName}</h3>
+            <p className="subtle">{detail.status}</p>
+            <ul className="list compact">
+              <li><span>Status</span><span>{detail.player.isOnline ? 'Online' : 'Offline'}</span></li>
+              <li><span>Tracked Playtime</span><span>{formatDurationFromSeconds(detail.player.trackedPlaytimeSeconds)}</span></li>
+              <li><span>Sessions</span><span>{detail.player.sessionCount}</span></li>
+              <li><span>Average Session</span><span>{formatDurationFromSeconds(detail.player.averageSessionSeconds)}</span></li>
+              <li><span>First Seen</span><span>{detail.player.firstSeenAt ? formatTimestamp(detail.player.firstSeenAt) : 'Unknown'}</span></li>
+              <li><span>Last Seen</span><span>{detail.player.lastSeenAt ? formatTimestamp(detail.player.lastSeenAt) : 'Unknown'}</span></li>
+              <li><span>Confidence</span><span className={`confidence-badge confidence-${detail.player.identityConfidence === 'unknown' ? 'low' : detail.player.identityConfidence}`}>{detail.player.identityConfidence}</span></li>
+            </ul>
+            <p className="subtle">{detail.explanation}</p>
+          </section>
+
+          <section className="detail-block">
+            <h3>Aliases & Hints</h3>
+            <ul className="list compact">
+              <li><span>Aliases</span><span>{detail.player.aliases.length > 0 ? detail.player.aliases.join(', ') : 'None observed'}</span></li>
+              {Object.entries(detail.player.gameFields ?? {}).slice(0, 6).map(([key, value]) => (
+                <li key={key}><span>{key}</span><span>{String(value ?? 'Unknown')}</span></li>
+              ))}
+              {Object.keys(detail.player.gameFields ?? {}).length === 0 ? <li><span>Game Fields</span><span>None available</span></li> : null}
+            </ul>
+          </section>
+
+          <section className="detail-block">
+            <h3>Recent Sessions</h3>
+            <ul className="list compact">
+              {detail.recentSessions.length === 0 ? <li>No recent sessions stored yet.</li> : null}
+              {detail.recentSessions.map((session) => (
+                <li key={session.sessionId}>
+                  <span>{formatTimestamp(session.startedAt)}</span>
+                  <span className="subtle">
+                    {session.endedAt ? formatDurationFromSeconds(session.durationSeconds) : 'active'}
+                    {session.closeReason ? ` · ${session.closeReason}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="detail-block">
+            <h3>Evidence</h3>
+            <ul className="list compact">
+              {detail.evidence.map((item, index) => (
+                <li key={`${item.type}:${index}`}>
+                  <span>{item.label}</span>
+                  <span className="subtle">{item.description}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -592,6 +1857,34 @@ async function loadPalworldGuildActivity(serverId: string): Promise<PalworldGuil
   return palworldGuildActivityResponseSchema.parse(await response.json()).guilds;
 }
 
+function getConnectorStatusTone(status: ServerOperationalStatus['connectorStatus']): string {
+  if (status === 'running') {
+    return 'status-good';
+  }
+
+  if (status === 'degraded' || status === 'stale') {
+    return 'status-warning';
+  }
+
+  if (status === 'error') {
+    return 'status-critical';
+  }
+
+  return '';
+}
+
+function getTelemetryAvailabilityLabel(summary: ServerSummary): string {
+  if (summary.game === 'palworld') {
+    return summary.palworldLatestPlayers.length > 0 || summary.palworldRecentMetrics.length > 0
+      ? 'available'
+      : 'unavailable';
+  }
+
+  return summary.recentEvents.length > 0 || summary.knownPlayerCount > 0 || summary.activePlayers > 0
+    ? 'available'
+    : 'unavailable';
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [serverOptions, setServerOptions] = useState<ServerOption[]>([]);
@@ -607,6 +1900,35 @@ function App() {
   const [selectedPalworldPlayerKey, setSelectedPalworldPlayerKey] = useState<string | null>(null);
   const [selectedPalworldPlayerProfile, setSelectedPalworldPlayerProfile] = useState<PalworldUnifiedPlayerProfile | null>(null);
   const [selectedPalworldHistory, setSelectedPalworldHistory] = useState<PalworldPlayerSnapshot[]>([]);
+  const [selectedPlayerIntelligenceId, setSelectedPlayerIntelligenceId] = useState<string | null>(null);
+  const [selectedPlayerDetail, setSelectedPlayerDetail] = useState<PlayerDetailResponse | null>(null);
+  const [selectedPlayerDetailLoading, setSelectedPlayerDetailLoading] = useState(false);
+  const [selectedPlayerDetailError, setSelectedPlayerDetailError] = useState<string | null>(null);
+  const [selectedEngagementPlayerId, setSelectedEngagementPlayerId] = useState<string | null>(null);
+  const [selectedEngagementDetail, setSelectedEngagementDetail] = useState<PlayerEngagementDetail | null>(null);
+  const [selectedEngagementDetailLoading, setSelectedEngagementDetailLoading] = useState(false);
+  const [selectedEngagementDetailError, setSelectedEngagementDetailError] = useState<string | null>(null);
+  const [observedSettingsOpen, setObservedSettingsOpen] = useState(false);
+  const [observedSettings, setObservedSettings] = useState<ObservedSettingsResponse | null>(null);
+  const [observedSettingsLoading, setObservedSettingsLoading] = useState(false);
+  const [observedSettingsError, setObservedSettingsError] = useState<string | null>(null);
+  const [selectedEventTemplateDraft, setSelectedEventTemplateDraft] = useState<EventTemplateDraftCatalog['drafts'][number] | null>(null);
+  const [eventDraftDisplayName, setEventDraftDisplayName] = useState('');
+  const [eventDraftTargetMultiplier, setEventDraftTargetMultiplier] = useState('');
+  const [eventDraftTargetValue, setEventDraftTargetValue] = useState('');
+  const [eventDraftDurationHours, setEventDraftDurationHours] = useState('');
+  const [eventDraftNotes, setEventDraftNotes] = useState('');
+  const [eventDraftScheduleLabel, setEventDraftScheduleLabel] = useState('');
+  const [eventDraftEnabled, setEventDraftEnabled] = useState(true);
+  const [eventDraftSaving, setEventDraftSaving] = useState(false);
+  const [eventDraftError, setEventDraftError] = useState<string | null>(null);
+  const [eventDraftSuccess, setEventDraftSuccess] = useState<string | null>(null);
+  const [eventDraftConfigDiffPreview, setEventDraftConfigDiffPreview] = useState<EventTemplateConfigDiffPreview | null>(null);
+  const [eventDraftConfigDiffLoading, setEventDraftConfigDiffLoading] = useState(false);
+  const [eventDraftConfigDiffError, setEventDraftConfigDiffError] = useState<string | null>(null);
+  const [eventDraftManualChecklist, setEventDraftManualChecklist] = useState<EventTemplateManualChangeChecklist | null>(null);
+  const [eventDraftManualChecklistLoading, setEventDraftManualChecklistLoading] = useState(false);
+  const [eventDraftManualChecklistError, setEventDraftManualChecklistError] = useState<string | null>(null);
   const [playerProfiles, setPlayerProfiles] = useState<PalworldPlayerProfileSessionSummary[]>([]);
   const [palworldPlayerProfiles, setPalworldPlayerProfiles] = useState<PalworldUnifiedPlayerProfile[]>([]);
   const [palworldPlayerProfilesLoading, setPalworldPlayerProfilesLoading] = useState(false);
@@ -723,13 +2045,43 @@ function App() {
   }, [selectedPlayerProfile]);
 
   useEffect(() => {
-    if (!selectedPlayerProfile) {
+    setEventDraftDisplayName(selectedEventTemplateDraft?.displayName ?? '');
+    setEventDraftTargetMultiplier(selectedEventTemplateDraft?.targetMultiplier !== null && selectedEventTemplateDraft?.targetMultiplier !== undefined ? String(selectedEventTemplateDraft.targetMultiplier) : '');
+    setEventDraftTargetValue(selectedEventTemplateDraft?.targetValue !== null && selectedEventTemplateDraft?.targetValue !== undefined ? String(selectedEventTemplateDraft.targetValue) : '');
+    setEventDraftDurationHours(selectedEventTemplateDraft?.durationHours !== null && selectedEventTemplateDraft?.durationHours !== undefined ? String(selectedEventTemplateDraft.durationHours) : '');
+    setEventDraftNotes(selectedEventTemplateDraft?.notes ?? '');
+    setEventDraftScheduleLabel(selectedEventTemplateDraft?.scheduleLabel ?? '');
+    setEventDraftEnabled(selectedEventTemplateDraft?.enabledInDashboard ?? true);
+    setEventDraftError(null);
+    setEventDraftSuccess(null);
+    setEventDraftSaving(false);
+    setEventDraftConfigDiffPreview(null);
+    setEventDraftConfigDiffError(null);
+    setEventDraftManualChecklist(null);
+    setEventDraftManualChecklistError(null);
+  }, [selectedEventTemplateDraft]);
+
+  useEffect(() => {
+    if (!selectedPlayerProfile && !selectedEngagementDetail && !observedSettingsOpen && !selectedEventTemplateDraft) {
       return;
     }
 
     function handleKeyDown(event: globalThis.KeyboardEvent): void {
       if (event.key === 'Escape') {
         setSelectedPlayerProfile(null);
+        setSelectedEngagementPlayerId(null);
+        setSelectedEngagementDetail(null);
+        setSelectedEngagementDetailError(null);
+        setObservedSettingsOpen(false);
+        setObservedSettings(null);
+        setObservedSettingsError(null);
+        setSelectedEventTemplateDraft(null);
+        setEventDraftError(null);
+        setEventDraftSuccess(null);
+        setEventDraftConfigDiffPreview(null);
+        setEventDraftConfigDiffError(null);
+        setEventDraftManualChecklist(null);
+        setEventDraftManualChecklistError(null);
       }
     }
 
@@ -738,7 +2090,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedPlayerProfile]);
+  }, [observedSettingsOpen, selectedEngagementDetail, selectedEventTemplateDraft, selectedPlayerProfile]);
 
   useEffect(() => {
     let isMounted = true;
@@ -820,12 +2172,23 @@ function App() {
             fetch(`${apiBaseUrl}/servers/${server.id}/status`),
             fetch(`${apiBaseUrl}/servers/${server.id}/sessions/active`),
             fetch(`${apiBaseUrl}/servers/${server.id}/players/known?limit=100`),
-            fetch(`${apiBaseUrl}/servers/${server.id}/events?limit=50`)
+            fetch(`${apiBaseUrl}/servers/${server.id}/events?limit=50`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/activity-log?limit=20`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/operational-status`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/data-freshness`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/player-intelligence`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/player-engagement`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/server-alive-rhythm`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/settings-capabilities`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/event-template-drafts`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/session-timeline?limit=50`)
           ];
           const palworldRequests = server.game === 'palworld'
             ? [
                 fetch(`${apiBaseUrl}/servers/${server.id}/palworld/players/latest?limit=8`),
-                fetch(`${apiBaseUrl}/servers/${server.id}/palworld/metrics/recent?limit=8`)
+                fetch(`${apiBaseUrl}/servers/${server.id}/palworld/metrics/recent?limit=8`),
+                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-config-audit`),
+                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-backup-readiness`)
               ]
             : [];
           const responses = await Promise.all([...sharedRequests, ...palworldRequests]);
@@ -833,11 +2196,22 @@ function App() {
           const sessionsResponse = responses[1];
           const knownPlayersResponse = responses[2];
           const eventsResponse = responses[3];
-          const palworldLatestPlayersResponse = server.game === 'palworld' ? responses[4] : null;
-          const palworldMetricsResponse = server.game === 'palworld' ? responses[5] : null;
+          const activityLogResponse = responses[4];
+          const operationalStatusResponse = responses[5];
+          const dataFreshnessResponse = responses[6];
+          const playerIntelligenceResponse = responses[7];
+          const playerEngagementResponse = responses[8];
+          const serverAliveRhythmResponse = responses[9];
+          const settingsCapabilitiesResponse = responses[10];
+          const eventTemplateDraftsResponse = responses[11];
+          const sessionTimelineResponse = responses[12];
+          const palworldLatestPlayersResponse = server.game === 'palworld' ? responses[13] : null;
+          const palworldMetricsResponse = server.game === 'palworld' ? responses[14] : null;
+          const palworldConfigAuditResponse = server.game === 'palworld' ? responses[15] : null;
+          const palworldBackupReadinessResponse = server.game === 'palworld' ? responses[16] : null;
 
-          if (!statusResponse.ok || !sessionsResponse.ok || !knownPlayersResponse.ok || !eventsResponse.ok) {
-            const statusCode = [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse]
+          if (!statusResponse.ok || !sessionsResponse.ok || !knownPlayersResponse.ok || !eventsResponse.ok || !activityLogResponse.ok || !operationalStatusResponse.ok || !dataFreshnessResponse.ok || !playerIntelligenceResponse.ok || !playerEngagementResponse.ok || !serverAliveRhythmResponse.ok || !settingsCapabilitiesResponse.ok || !eventTemplateDraftsResponse.ok || !sessionTimelineResponse.ok) {
+            const statusCode = [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse, activityLogResponse, operationalStatusResponse, dataFreshnessResponse, playerIntelligenceResponse, playerEngagementResponse, serverAliveRhythmResponse, settingsCapabilitiesResponse, eventTemplateDraftsResponse, sessionTimelineResponse]
               .find((response) => !response.ok)?.status;
             throw new Error(`Server ${server.id} summary fetch failed with status ${statusCode ?? 'unknown'}`);
           }
@@ -850,27 +2224,61 @@ function App() {
             throw new Error(`Server ${server.id} Palworld metrics fetch failed with status ${palworldMetricsResponse.status}`);
           }
 
-          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, palworldLatestPlayersPayload, palworldMetricsPayload] = await Promise.all([
+          if (palworldConfigAuditResponse && !palworldConfigAuditResponse.ok) {
+            throw new Error(`Server ${server.id} Palworld config audit fetch failed with status ${palworldConfigAuditResponse.status}`);
+          }
+
+          if (palworldBackupReadinessResponse && !palworldBackupReadinessResponse.ok) {
+            throw new Error(`Server ${server.id} Palworld backup readiness fetch failed with status ${palworldBackupReadinessResponse.status}`);
+          }
+
+          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, dataFreshnessPayload, playerIntelligencePayload, playerEngagementPayload, serverAliveRhythmPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload, palworldLatestPlayersPayload, palworldMetricsPayload, palworldConfigAuditPayload, palworldBackupReadinessPayload] = await Promise.all([
             statusResponse.json(),
             sessionsResponse.json(),
             knownPlayersResponse.json(),
             eventsResponse.json(),
+            activityLogResponse.json(),
+            operationalStatusResponse.json(),
+            dataFreshnessResponse.json(),
+            playerIntelligenceResponse.json(),
+            playerEngagementResponse.json(),
+            serverAliveRhythmResponse.json(),
+            settingsCapabilitiesResponse.json(),
+            eventTemplateDraftsResponse.json(),
+            sessionTimelineResponse.json(),
             palworldLatestPlayersResponse ? palworldLatestPlayersResponse.json() : Promise.resolve(null),
-            palworldMetricsResponse ? palworldMetricsResponse.json() : Promise.resolve(null)
+            palworldMetricsResponse ? palworldMetricsResponse.json() : Promise.resolve(null),
+            palworldConfigAuditResponse ? palworldConfigAuditResponse.json() : Promise.resolve(null),
+            palworldBackupReadinessResponse ? palworldBackupReadinessResponse.json() : Promise.resolve(null)
           ]);
 
           const statusParsed = serverStatusSchema.safeParse(statusPayload);
           const sessionsParsed = activeSessionsResponseSchema.safeParse(sessionsPayload);
           const knownPlayersParsed = knownPlayersResponseSchema.safeParse(knownPlayersPayload);
           const eventsParsed = recentEventsResponseSchema.safeParse(eventsPayload);
+          const activityLogParsed = activityLogResponseSchema.safeParse(activityLogPayload);
+          const operationalStatusParsed = serverOperationalStatusSchema.safeParse(operationalStatusPayload);
+          const dataFreshnessParsed = dataFreshnessResponseSchema.safeParse(dataFreshnessPayload);
+          const playerIntelligenceParsed = playerIntelligenceResponseSchema.safeParse(playerIntelligencePayload);
+          const playerEngagementParsed = playerEngagementSummarySchema.safeParse(playerEngagementPayload);
+          const serverAliveRhythmParsed = serverAliveRhythmSummarySchema.safeParse(serverAliveRhythmPayload);
+          const settingsCapabilitiesParsed = serverSettingsCapabilitySummarySchema.safeParse(settingsCapabilitiesPayload);
+          const eventTemplateDraftsParsed = eventTemplateDraftCatalogSchema.safeParse(eventTemplateDraftsPayload);
+          const sessionTimelineParsed = sessionTimelineResponseSchema.safeParse(sessionTimelinePayload);
           const palworldLatestPlayersParsed = server.game === 'palworld'
             ? palworldLatestPlayersResponseSchema.safeParse(palworldLatestPlayersPayload)
             : null;
           const palworldMetricsParsed = server.game === 'palworld'
             ? palworldMetricsSummariesResponseSchema.safeParse(palworldMetricsPayload)
             : null;
+          const palworldConfigAuditParsed = server.game === 'palworld'
+            ? palworldConfigAuditSchema.safeParse(palworldConfigAuditPayload)
+            : null;
+          const palworldBackupReadinessParsed = server.game === 'palworld'
+            ? palworldBackupReadinessSchema.safeParse(palworldBackupReadinessPayload)
+            : null;
 
-          if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success) {
+          if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success || !activityLogParsed.success || !operationalStatusParsed.success || !dataFreshnessParsed.success || !playerIntelligenceParsed.success || !playerEngagementParsed.success || !serverAliveRhythmParsed.success || !settingsCapabilitiesParsed.success || !eventTemplateDraftsParsed.success || !sessionTimelineParsed.success) {
             throw new Error(`Server ${server.id} payload validation failed.`);
           }
 
@@ -882,6 +2290,14 @@ function App() {
             throw new Error(`Server ${server.id} Palworld metrics payload validation failed.`);
           }
 
+          if (palworldConfigAuditParsed && !palworldConfigAuditParsed.success) {
+            throw new Error(`Server ${server.id} Palworld config audit payload validation failed.`);
+          }
+
+          if (palworldBackupReadinessParsed && !palworldBackupReadinessParsed.success) {
+            throw new Error(`Server ${server.id} Palworld backup readiness payload validation failed.`);
+          }
+
           const recentEvents = [...eventsParsed.data.events]
             .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
             .slice(0, 10);
@@ -890,6 +2306,8 @@ function App() {
             .slice(0, 12);
           const palworldLatestPlayers = palworldLatestPlayersParsed?.data.players ?? [];
           const palworldRecentMetrics = palworldMetricsParsed?.data.metrics ?? [];
+          const palworldConfigAudit = palworldConfigAuditParsed?.data ?? null;
+          const palworldBackupReadiness = palworldBackupReadinessParsed?.data ?? null;
           const effectiveState = deriveEffectiveServerState({
             reportedState: statusParsed.data.state,
             game: server.game,
@@ -906,10 +2324,23 @@ function App() {
             game: server.game,
             reportedState: statusParsed.data.state,
             state: effectiveState,
+            statusMessage: statusParsed.data.message,
+            operationalStatus: operationalStatusParsed.data,
+            dataFreshness: dataFreshnessParsed.data,
             activePlayers: sessionsParsed.data.sessions.length,
-            knownPlayerCount: knownPlayersParsed.data.players.length,
+            knownPlayerCount: playerIntelligenceParsed.data.players.length,
             recentEvents,
             recentWarnings,
+            activityLog: activityLogParsed.data.items,
+            playerIntelligence: playerIntelligenceParsed.data.players,
+            playerIntelligenceExplanation: playerIntelligenceParsed.data.explanation,
+            playerEngagement: playerEngagementParsed.data,
+            serverAliveRhythm: serverAliveRhythmParsed.data,
+            settingsCapabilities: settingsCapabilitiesParsed.data,
+            eventTemplateDrafts: eventTemplateDraftsParsed.data,
+            palworldConfigAudit,
+            palworldBackupReadiness,
+            sessionTimeline: sessionTimelineParsed.data,
             knownPlayers: knownPlayersParsed.data.players.map((player) => ({
               displayName: player.displayName,
               normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
@@ -966,6 +2397,345 @@ function App() {
     () => serverOptions.find((server) => server.id === selectedServerId) ?? null,
     [selectedServerId, serverOptions]
   );
+
+  useEffect(() => {
+    if (!selectedServer || !selectedEventTemplateDraft) {
+      setEventDraftConfigDiffPreview(null);
+      setEventDraftConfigDiffError(null);
+      setEventDraftConfigDiffLoading(false);
+      setEventDraftManualChecklist(null);
+      setEventDraftManualChecklistError(null);
+      setEventDraftManualChecklistLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    const serverId = selectedServer.id;
+    const templateId = selectedEventTemplateDraft.templateId;
+
+    async function loadDraftPreflight(): Promise<void> {
+      try {
+        setEventDraftConfigDiffLoading(true);
+        setEventDraftConfigDiffError(null);
+        setEventDraftManualChecklistLoading(true);
+        setEventDraftManualChecklistError(null);
+
+        const [diffResponse, checklistResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/servers/${serverId}/event-template-drafts/${encodeURIComponent(templateId)}/config-diff-preview`),
+          fetch(`${apiBaseUrl}/servers/${serverId}/event-template-drafts/${encodeURIComponent(templateId)}/manual-change-checklist`)
+        ]);
+
+        if (!diffResponse.ok) {
+          throw new Error(`Config diff preview failed with status ${diffResponse.status}`);
+        }
+
+        if (!checklistResponse.ok) {
+          throw new Error(`Manual checklist failed with status ${checklistResponse.status}`);
+        }
+
+        const [diffPayload, checklistPayload] = await Promise.all([
+          diffResponse.json(),
+          checklistResponse.json()
+        ]);
+        const parsed = eventTemplateConfigDiffPreviewSchema.safeParse(diffPayload);
+        const checklistParsed = eventTemplateManualChangeChecklistSchema.safeParse(checklistPayload);
+
+        if (!parsed.success) {
+          throw new Error('Config diff preview payload validation failed.');
+        }
+
+        if (!checklistParsed.success) {
+          throw new Error('Manual checklist payload validation failed.');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setEventDraftConfigDiffPreview(parsed.data);
+        setEventDraftManualChecklist(checklistParsed.data);
+      } catch (caughtError) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown draft preflight error';
+        setEventDraftConfigDiffPreview(null);
+        setEventDraftConfigDiffError(message);
+        setEventDraftManualChecklist(null);
+        setEventDraftManualChecklistError(message);
+      } finally {
+        if (isMounted) {
+          setEventDraftConfigDiffLoading(false);
+          setEventDraftManualChecklistLoading(false);
+        }
+      }
+    }
+
+    void loadDraftPreflight();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedEventTemplateDraft, selectedServer]);
+
+  useEffect(() => {
+    setSelectedPlayerIntelligenceId(null);
+    setSelectedPlayerDetail(null);
+    setSelectedPlayerDetailError(null);
+    setSelectedEngagementPlayerId(null);
+    setSelectedEngagementDetail(null);
+    setSelectedEngagementDetailError(null);
+    setObservedSettingsOpen(false);
+    setObservedSettings(null);
+    setObservedSettingsError(null);
+    setSelectedEventTemplateDraft(null);
+    setEventDraftError(null);
+    setEventDraftSuccess(null);
+  }, [selectedServerId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSelectedPlayerDetail(): Promise<void> {
+      if (!selectedServer || !selectedPlayerIntelligenceId) {
+        setSelectedPlayerDetail(null);
+        setSelectedPlayerDetailError(null);
+        setSelectedPlayerDetailLoading(false);
+        return;
+      }
+
+      try {
+        setSelectedPlayerDetailLoading(true);
+        setSelectedPlayerDetailError(null);
+
+        const response = await fetch(`${apiBaseUrl}/servers/${selectedServer.id}/players/${encodeURIComponent(selectedPlayerIntelligenceId)}/detail`);
+
+        if (response.status === 404) {
+          if (isMounted) {
+            setSelectedPlayerDetail(null);
+            setSelectedPlayerDetailError('No detail has been observed for this player yet.');
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Player detail fetch failed with status ${response.status}`);
+        }
+
+        const parsed = playerDetailResponseSchema.safeParse(await response.json());
+
+        if (!parsed.success) {
+          throw new Error('Player detail payload validation failed.');
+        }
+
+        if (isMounted) {
+          setSelectedPlayerDetail(parsed.data);
+        }
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown player detail error';
+
+        if (isMounted) {
+          setSelectedPlayerDetail(null);
+          setSelectedPlayerDetailError(message);
+        }
+      } finally {
+        if (isMounted) {
+          setSelectedPlayerDetailLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedPlayerDetail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedPlayerIntelligenceId, selectedServer]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSelectedEngagementDetail(): Promise<void> {
+      if (!selectedServer || !selectedEngagementPlayerId) {
+        setSelectedEngagementDetail(null);
+        setSelectedEngagementDetailError(null);
+        setSelectedEngagementDetailLoading(false);
+        return;
+      }
+
+      try {
+        setSelectedEngagementDetailLoading(true);
+        setSelectedEngagementDetailError(null);
+
+        const response = await fetch(`${apiBaseUrl}/servers/${selectedServer.id}/player-engagement/${encodeURIComponent(selectedEngagementPlayerId)}/detail`);
+
+        if (response.status === 404) {
+          if (isMounted) {
+            setSelectedEngagementDetail(null);
+            setSelectedEngagementDetailError('No engagement detail has been observed for this player yet.');
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Engagement detail fetch failed with status ${response.status}`);
+        }
+
+        const parsed = playerEngagementDetailSchema.safeParse(await response.json());
+
+        if (!parsed.success) {
+          throw new Error('Engagement detail payload validation failed.');
+        }
+
+        if (isMounted) {
+          setSelectedEngagementDetail(parsed.data);
+        }
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown engagement detail error';
+
+        if (isMounted) {
+          setSelectedEngagementDetail(null);
+          setSelectedEngagementDetailError(message);
+        }
+      } finally {
+        if (isMounted) {
+          setSelectedEngagementDetailLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedEngagementDetail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedEngagementPlayerId, selectedServer]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadObservedSettings(): Promise<void> {
+      if (!selectedServer || !observedSettingsOpen) {
+        setObservedSettings(null);
+        setObservedSettingsError(null);
+        setObservedSettingsLoading(false);
+        return;
+      }
+
+      try {
+        setObservedSettingsLoading(true);
+        setObservedSettingsError(null);
+
+        const response = await fetch(`${apiBaseUrl}/servers/${selectedServer.id}/settings-observed`);
+
+        if (!response.ok) {
+          throw new Error(`Observed settings fetch failed with status ${response.status}`);
+        }
+
+        const parsed = observedSettingsResponseSchema.safeParse(await response.json());
+
+        if (!parsed.success) {
+          throw new Error('Observed settings payload validation failed.');
+        }
+
+        if (isMounted) {
+          setObservedSettings(parsed.data);
+        }
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown observed settings error';
+
+        if (isMounted) {
+          setObservedSettings(null);
+          setObservedSettingsError(message);
+        }
+      } finally {
+        if (isMounted) {
+          setObservedSettingsLoading(false);
+        }
+      }
+    }
+
+    void loadObservedSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [observedSettingsOpen, selectedServer]);
+
+  async function saveSelectedEventTemplateDraft(): Promise<void> {
+    if (!selectedServer || !selectedEventTemplateDraft) {
+      return;
+    }
+
+    const parsedMultiplier = eventDraftTargetMultiplier.trim() ? Number(eventDraftTargetMultiplier) : null;
+    const parsedDuration = eventDraftDurationHours.trim() ? Number(eventDraftDurationHours) : null;
+
+    if (parsedMultiplier !== null && (!Number.isFinite(parsedMultiplier) || parsedMultiplier <= 0)) {
+      setEventDraftError('Target multiplier must be a positive number.');
+      return;
+    }
+
+    if (parsedDuration !== null && (!Number.isFinite(parsedDuration) || parsedDuration <= 0)) {
+      setEventDraftError('Duration must be a positive number of hours.');
+      return;
+    }
+
+    try {
+      setEventDraftSaving(true);
+      setEventDraftError(null);
+      setEventDraftSuccess(null);
+
+      const response = await fetch(`${apiBaseUrl}/servers/${selectedServer.id}/event-template-drafts/${encodeURIComponent(selectedEventTemplateDraft.templateId)}`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          enabledInDashboard: eventDraftEnabled,
+          displayName: eventDraftDisplayName.trim() || null,
+          targetMultiplier: parsedMultiplier,
+          targetValue: eventDraftTargetValue.trim() || null,
+          durationHours: parsedDuration,
+          notes: eventDraftNotes.trim() || null,
+          scheduleLabel: eventDraftScheduleLabel.trim() || null
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Draft save failed with status ${response.status}`);
+      }
+
+      const parsed = eventTemplateDraftCatalogSchema.safeParse(await response.json());
+
+      if (!parsed.success) {
+        throw new Error('Draft save response validation failed.');
+      }
+
+      setFleetByServerId((current) => {
+        const summary = current[selectedServer.id];
+
+        if (!summary) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [selectedServer.id]: {
+            ...summary,
+            eventTemplateDrafts: parsed.data
+          }
+        };
+      });
+      setSelectedEventTemplateDraft(parsed.data.drafts.find((draft) => draft.templateId === selectedEventTemplateDraft.templateId) ?? null);
+      setEventDraftSuccess('Saved as dashboard draft only.');
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : 'Unknown draft save error';
+      setEventDraftError(message);
+    } finally {
+      setEventDraftSaving(false);
+    }
+  }
 
   async function loadBaseSignal(serverId: string, response?: Response): Promise<void> {
     const res = response ?? await fetch(`${apiBaseUrl}/servers/${serverId}/palworld/base-signal`);
@@ -1879,9 +3649,12 @@ function App() {
       recentValues
     } as const;
   }, [palworldBaseSignalHistory]);
+  const hasPalworldBaseTelemetry = palworldBaseSignal !== null
+    && palworldBaseCapacity !== null
+    && (palworldBaseSignal > 0 || palworldBaseSignalHistory.length > 0);
 
   const palworldBaseCapacityAlerts = useMemo(() => {
-    if (palworldBaseCapacity === null) {
+    if (!hasPalworldBaseTelemetry || palworldBaseCapacity === null) {
       return null;
     }
 
@@ -1917,7 +3690,7 @@ function App() {
       alertMessage,
       growthAlert
     };
-  }, [palworldBaseCapacity, palworldBaseSignalTrend]);
+  }, [hasPalworldBaseTelemetry, palworldBaseCapacity, palworldBaseSignalTrend]);
 
   const palworldNextActions = useMemo<PalworldNextAction[]>(() => {
     const actions: PalworldNextAction[] = [];
@@ -2085,6 +3858,7 @@ function App() {
         { key: 'players', label: 'Players' },
         { key: 'review-saves', label: 'Review Saves' },
         { key: 'guilds', label: 'Guilds' },
+        { key: 'activity', label: 'Activity' },
         { key: 'metrics', label: 'Metrics' },
         { key: 'ops', label: 'Ops' },
         { key: 'diagnostics', label: 'Diagnostics' }
@@ -2136,7 +3910,7 @@ function App() {
       items.push(normalized);
     };
 
-    if (palworldBaseCapacity) {
+    if (hasPalworldBaseTelemetry && palworldBaseCapacity) {
       pushHighlight(`Base pressure ${palworldBaseCapacity.statusLabel.toLowerCase()} at ${palworldBaseCapacity.usagePercent}%`);
       pushHighlight(`${palworldBaseCapacity.estimatedBases} / 240 bases, ${palworldBaseCapacity.remainingCapacity} slots left`);
     }
@@ -2176,6 +3950,7 @@ function App() {
 
     return items.slice(0, 5);
   }, [
+    hasPalworldBaseTelemetry,
     palworldBaseCapacity,
     palworldBaseCapacityAlerts,
     palworldBaseSignalTrend.direction,
@@ -2204,9 +3979,9 @@ function App() {
       pushHighlight(selectedWarningSummary[0].snippet);
     }
 
-    if (selectedServerSummary?.recentEvents[0]) {
-      const event = selectedServerSummary.recentEvents[0];
-      pushHighlight(event.message ?? `${formatEventLabel(event.eventType)} detected`);
+    if (selectedServerSummary?.activityLog[0]) {
+      const item = selectedServerSummary.activityLog[0];
+      pushHighlight(item.description);
     }
 
     const topPlayer = [...(selectedServerSummary?.knownPlayers ?? [])]
@@ -2318,7 +4093,7 @@ function App() {
     : valheimCommunityPulse;
 
   const palworldServerHealthSummary = useMemo(() => {
-    if (!palworldBaseCapacity) {
+    if (!hasPalworldBaseTelemetry || !palworldBaseCapacity) {
       return null;
     }
 
@@ -2329,7 +4104,7 @@ function App() {
       trendLabel: `${palworldBaseSignalTrend.indicator} ${palworldBaseSignalTrend.direction}`,
       summary: palworldBaseCapacity.summary
     };
-  }, [palworldBaseCapacity, palworldBaseSignalTrend.direction, palworldBaseSignalTrend.indicator]);
+  }, [hasPalworldBaseTelemetry, palworldBaseCapacity, palworldBaseSignalTrend.direction, palworldBaseSignalTrend.indicator]);
 
   const serverHealthTone = useMemo(() => {
     if (selectedServer?.game === 'palworld' && palworldServerHealthSummary) {
@@ -2418,6 +4193,12 @@ function App() {
               <span className="status-label">Players</span>
               <span className="status-value">{fleetCounts.activePlayers}</span>
             </div>
+            {lastUpdatedAt ? (
+              <div className="status-pill">
+                <span className="status-label">Updated</span>
+                <span className="status-value">{formatClock(lastUpdatedAt)}</span>
+              </div>
+            ) : null}
             {selectedServer && selectedServerSummary ? (
               <>
                 <div className="status-pill selected-status-pill">
@@ -2425,8 +4206,18 @@ function App() {
                   <span className="status-value">{selectedServerSummary.displayName}</span>
                 </div>
                 <div className="status-pill">
-                  <span className="status-label">State</span>
-                  <span className="status-value">{health?.ok ? `${apiHealthLabel} / ${selectedServerSummary.state}` : selectedServerSummary.state}</span>
+                  <span className="status-label">Configured</span>
+                  <span className="status-value status-good">{selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
+                </div>
+                <div className="status-pill">
+                  <span className="status-label">Connector</span>
+                  <span className={`status-value ${getConnectorStatusTone(selectedServerSummary.operationalStatus.connectorStatus)}`}>
+                    {selectedServerSummary.operationalStatus.connectorStatus}
+                  </span>
+                </div>
+                <div className="status-pill">
+                  <span className="status-label">Telemetry</span>
+                  <span className="status-value">{getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
                 </div>
                 <div className="status-pill">
                   <span className="status-label">Alerts</span>
@@ -2533,7 +4324,28 @@ function App() {
         ) : (
           <>
             {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
-            {detailError ? <p className="error">{detailError}</p> : null}
+            {detailError ? <p className="subtle dashboard-message">{detailError}</p> : null}
+            <DataFreshnessBanner freshness={selectedServerSummary.dataFreshness} />
+            <article className="card connector-status-card">
+              <div className="connector-status-row">
+                <div>
+                  <h2>Connector Status</h2>
+                  <p className="subtle">{selectedServerSummary.operationalStatus.explanation}</p>
+                </div>
+                <span className={`state-pill state-${selectedServerSummary.operationalStatus.connectorStatus}`}>
+                  {selectedServerSummary.operationalStatus.connectorStatus}
+                </span>
+              </div>
+              <div className="connector-status-meta">
+                <span>Configured: {selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
+                <span>Mode: {selectedServerSummary.operationalStatus.connectorMode ?? 'unknown'}</span>
+                <span>Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
+                <span>Last heartbeat: {selectedServerSummary.operationalStatus.lastHeartbeatAt ? formatDurationFromSeconds(selectedServerSummary.operationalStatus.heartbeatAgeSeconds ?? 0) + ' ago' : 'never'}</span>
+              </div>
+            </article>
+            {selectedDashboardTab === 'overview' ? (
+              <ServerAliveRhythmPanel rhythm={selectedServerSummary.serverAliveRhythm} />
+            ) : null}
 
             <section className="game-section">
               {selectedServer.game === 'palworld' && selectedDashboardTab === 'overview' ? (
@@ -2542,12 +4354,12 @@ function App() {
                     <div className="command-summary-main">
                       <span className="summary-label">Command Summary</span>
                       <h2>{selectedServerSummary.displayName}</h2>
-                      <p>{palworldServerHealthSummary ? `${palworldServerHealthSummary.status}: ${palworldServerHealthSummary.summary}` : selectedServerSummary.state}</p>
+                      <p>{palworldServerHealthSummary ? `${palworldServerHealthSummary.status}: ${palworldServerHealthSummary.summary}` : selectedServerSummary.operationalStatus.explanation}</p>
                     </div>
                     <div className="command-summary-meta">
                       <span>{playerProfiles.filter((profile) => profile.isOnline).length || selectedServerSummary.activePlayers} online</span>
-                      <span>{palworldBaseCapacity ? `${palworldBaseCapacity.estimatedBases} / 240` : 'N/A'} bases used</span>
-                      <span>{palworldBaseCapacity?.remainingCapacity ?? 'N/A'} slots left</span>
+                      <span>{hasPalworldBaseTelemetry && palworldBaseCapacity ? `${palworldBaseCapacity.estimatedBases} / 240 bases used` : 'No base telemetry yet'}</span>
+                      <span>{hasPalworldBaseTelemetry ? (palworldBaseCapacity?.remainingCapacity ?? 'N/A') : 'N/A'} slots left</span>
                       <span className="urgent">{palworldUrgentGuildRiskCount} urgent guild risks</span>
                     </div>
                   </article>
@@ -2560,7 +4372,7 @@ function App() {
                       <section className="command-subsection command-subsection-online">
                         <h3>Online Now</h3>
                         <ul className="list review-list">
-                          {nowOnlinePlayerProfiles.length === 0 ? <li className="empty-line">No players online</li> : null}
+                          {nowOnlinePlayerProfiles.length === 0 ? <li className="empty-line">No players observed online yet.</li> : null}
                           {nowOnlinePlayerProfiles.map((profile) => (
                             <OnlinePlayerRow
                               key={`online:${profile.playerId}:${profile.lookupKey ?? 'profile'}`}
@@ -2574,7 +4386,7 @@ function App() {
                       <section className="command-subsection command-subsection-leaders">
                         <h3>7-Day Playtime Leaders</h3>
                         <ul className="list review-list">
-                          {topPlayerProfiles.length === 0 ? <li className="empty-line">No tracked playtime yet</li> : null}
+                          {topPlayerProfiles.length === 0 ? <li className="empty-line">No sessions tracked yet.</li> : null}
                           {topPlayerProfiles.map((profile, index) => (
                             <TopPlayerRow
                               key={`top:${profile.playerId}:${profile.lookupKey ?? 'profile'}`}
@@ -2589,7 +4401,7 @@ function App() {
                       <section className="command-subsection command-subsection-save-rail">
                         <h3>Save Link Needed</h3>
                         <ul className="save-link-needed-list">
-                          {saveLinkNeededPlayerProfiles.length === 0 ? <li className="empty-line">All active saves linked</li> : null}
+                          {saveLinkNeededPlayerProfiles.length === 0 ? <li className="empty-line">No player save links needed yet.</li> : null}
                           {saveLinkNeededPlayerProfiles.map((profile) => (
                             <SaveLinkNeededRow key={`save-link:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} profile={profile} />
                           ))}
@@ -2652,7 +4464,7 @@ function App() {
                       <h2>Server Health</h2>
                       <div className="signal-main">
                         <div className="signal-value">{selectedServerSummary.state}</div>
-                        <div className="signal-caption">{selectedWarningSummary[0]?.snippet ?? 'Server status looks stable.'}</div>
+                        <div className="signal-caption">{selectedWarningSummary[0]?.snippet ?? selectedServerSummary.operationalStatus.explanation}</div>
                       </div>
                       <div className="signal-metric-row">
                         <div className="signal-metric">
@@ -2696,7 +4508,7 @@ function App() {
                     <article className="card">
                       <h2>Core Players</h2>
                       <ul className="list review-list">
-                        {valheimCorePlayers.length === 0 ? <li>Player intelligence not available for Valheim yet.</li> : null}
+                        {valheimCorePlayers.length === 0 ? <li>No players observed yet. Start connector to begin tracking join/leave activity.</li> : null}
                         {valheimCorePlayers.map((player) => (
                           <li key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`} className="review-row">
                             <div className="review-main">
@@ -2729,10 +4541,10 @@ function App() {
                 {selectedServer.game === 'valheim' ? (
                   <>
                     {selectedDashboardTab === 'overview' ? (
-                      <article className="card overview-note-card">
-                        <h2>Overview</h2>
-                        <p className="subtle">Use tabs for player, activity, ops, and diagnostics detail.</p>
-                      </article>
+                      <PlayerEngagementPanel
+                        engagement={selectedServerSummary.playerEngagement}
+                        onSelectPlayer={setSelectedEngagementPlayerId}
+                      />
                     ) : null}
 
                     {selectedDashboardTab === 'highlights' ? (
@@ -2748,10 +4560,27 @@ function App() {
 
                     {selectedDashboardTab === 'players' ? (
                       <>
+                        <PlayerEngagementPanel
+                          engagement={selectedServerSummary.playerEngagement}
+                          onSelectPlayer={setSelectedEngagementPlayerId}
+                        />
+                        <PlayerIntelligencePanel
+                          players={selectedServerSummary.playerIntelligence}
+                          explanation={selectedServerSummary.playerIntelligenceExplanation}
+                          freshness={selectedServerSummary.dataFreshness}
+                          selectedPlayerId={selectedPlayerIntelligenceId}
+                          onSelectPlayer={setSelectedPlayerIntelligenceId}
+                        />
+                        <PlayerDetailPanel
+                          detail={selectedPlayerDetail}
+                          loading={selectedPlayerDetailLoading}
+                          error={selectedPlayerDetailError}
+                        />
+
                         <article className="card">
-                          <h2>Known Players</h2>
+                          <h2>Known Player Details</h2>
                           <ul className="list">
-                            {selectedServerSummary.knownPlayers.length === 0 ? <li>None tracked yet</li> : null}
+                            {selectedServerSummary.knownPlayers.length === 0 ? <li>No named Valheim identity records yet.</li> : null}
                             {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
                               <li
                                 key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
@@ -2802,26 +4631,13 @@ function App() {
 
                     {selectedDashboardTab === 'activity' ? (
                       <>
-                        <article className="card">
-                          <h2>Recent Events</h2>
-                          <ul className="list activity-list">
-                            {selectedServerSummary.recentEvents.length === 0 ? <li>No recent events</li> : null}
-                            {selectedServerSummary.recentEvents.map((event, index) => (
-                              <li key={`${event.eventType}:${event.occurredAt}:${index}`} className="activity-row">
-                                <span className="activity-main">
-                                  <span className={`activity-badge ${getEventBadgeClass(event.eventType)}`}>{formatEventLabel(event.eventType)}</span>
-                                  <span>{event.message ?? event.playerName ?? 'Event'}</span>
-                                </span>
-                                <span className="subtle activity-time">{formatClock(event.occurredAt)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </article>
+                        <SessionTimelinePanel timeline={selectedServerSummary.sessionTimeline} freshness={selectedServerSummary.dataFreshness} />
+                        <ActivityLogPanel items={selectedServerSummary.activityLog} />
 
                         <article className="card">
                           <h2>Active Players</h2>
                           <ul className="list">
-                            {selectedServerSummary.activePlayers === 0 ? <li>None online</li> : null}
+                            {selectedServerSummary.activePlayers === 0 ? <li>Connector has not reported active players yet.</li> : null}
                             {selectedServerSummary.recentEvents
                               .filter((event) => event.eventType === 'PLAYER_JOIN')
                               .slice(0, 8)
@@ -2853,10 +4669,26 @@ function App() {
                     ) : null}
 
                     {selectedDashboardTab === 'ops' ? (
-                      <article className="card">
-                        <h2>Ops</h2>
-                        <p className="subtle">Ops workflows for Valheim remain unchanged. This tab is reserved for future command-center actions.</p>
-                      </article>
+                      <>
+                        <SettingsCapabilityPanel
+                          capabilities={selectedServerSummary.settingsCapabilities}
+                          onOpenObservedSettings={() => setObservedSettingsOpen(true)}
+                        />
+                        {selectedServerSummary.palworldConfigAudit ? (
+                          <PalworldConfigAuditPanel audit={selectedServerSummary.palworldConfigAudit} />
+                        ) : null}
+                        {selectedServerSummary.palworldBackupReadiness ? (
+                          <PalworldBackupReadinessPanel readiness={selectedServerSummary.palworldBackupReadiness} />
+                        ) : null}
+                        <EventTemplateDraftPanel
+                          catalog={selectedServerSummary.eventTemplateDrafts}
+                          onEditDraft={setSelectedEventTemplateDraft}
+                        />
+                        <article className="card">
+                          <h2>Ops</h2>
+                          <p className="subtle">Ops workflows for Valheim remain unchanged. This tab is reserved for future command-center actions.</p>
+                        </article>
+                      </>
                     ) : null}
 
                     {selectedDashboardTab === 'diagnostics' ? (
@@ -2876,7 +4708,7 @@ function App() {
                         <article className="card">
                           <h2>Recent Warnings</h2>
                           <ul className="list">
-                            {selectedWarningSummary.length === 0 ? <li>No recent warnings</li> : null}
+                            {selectedWarningSummary.length === 0 ? <li>No health warnings reported yet.</li> : null}
                             {selectedWarningSummary.map((warning, index) => (
                               <li key={`${warning.signature}:${index}`}>
                                 <span className="warning-main">
@@ -2907,7 +4739,7 @@ function App() {
                         <article className="card">
                           <h2>Current Milestone Feed</h2>
                           <ul className="list review-list">
-                            {palworldMilestoneFeed.length === 0 ? <li>No active milestone signals.</li> : null}
+                            {palworldMilestoneFeed.length === 0 ? <li>No milestone signals yet. Player progression appears after telemetry is reported.</li> : null}
                             {palworldMilestoneFeed.map((entry) => (
                               <li key={`${entry.playerId}:${entry.signalKey}`} className="review-row">
                                 <div className="review-main">
@@ -2927,10 +4759,28 @@ function App() {
 
                     {selectedDashboardTab === 'players' ? (
                       <>
+                        <PlayerEngagementPanel
+                          engagement={selectedServerSummary.playerEngagement}
+                          onSelectPlayer={setSelectedEngagementPlayerId}
+                        />
+                        <PlayerIntelligencePanel
+                          players={selectedServerSummary.playerIntelligence}
+                          explanation={selectedServerSummary.playerIntelligenceExplanation}
+                          freshness={selectedServerSummary.dataFreshness}
+                          selectedPlayerId={selectedPlayerIntelligenceId}
+                          onSelectPlayer={setSelectedPlayerIntelligenceId}
+                        />
+                        <PlayerDetailPanel
+                          detail={selectedPlayerDetail}
+                          loading={selectedPlayerDetailLoading}
+                          error={selectedPlayerDetailError}
+                        />
+
                         <article className="card">
-                          <h2>Player Telemetry</h2>
+                          <h2>Palworld Telemetry</h2>
+                          {palworldPlayerProfilesLoading ? <p className="subtle">Refreshing player intelligence...</p> : null}
                           <ul className="list telemetry-list">
-                            {palworldLatestPlayers.length === 0 ? <li>No player telemetry yet</li> : null}
+                            {palworldLatestPlayers.length === 0 ? <li>No players observed yet. Start connector to begin tracking Palworld activity.</li> : null}
                             {palworldPlayerList.map(({ player, identityState }) => (
                               <li
                                 key={`${player.lookupKey}:${player.lastSeenAt}`}
@@ -2972,8 +4822,8 @@ function App() {
                                   <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
                                   <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
                                   <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
-                                  <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping)}</span></li>
-                                  <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds)}</span></li>
+                                  <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping ?? undefined)}</span></li>
+                                  <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds ?? undefined)}</span></li>
                                   <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.sessionTier ?? 'N/A'}</span></li>
                                   <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
                                   <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.levelTier ?? 'N/A'}</span></li>
@@ -3000,7 +4850,7 @@ function App() {
                               <div className="detail-block">
                                 <h3>History</h3>
                                 <ul className="list compact">
-                                  {selectedPalworldHistory.length === 0 ? <li>No snapshots</li> : null}
+                                  {selectedPalworldHistory.length === 0 ? <li>No telemetry snapshots recorded for this player yet.</li> : null}
                                   {selectedPalworldHistory.map((snapshot) => (
                                     <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
                                       <div className="history-entry">
@@ -3104,7 +4954,7 @@ function App() {
                           Reviewed: {guildActivityProgress.reviewedCount} / {guildActivityProgress.totalCount} {guildActivityProgress.labelSuffix}
                         </div>
                         <ul className="list review-list guild-activity-list">
-                          {!palworldGuildsError && visibleGuildActivity.length === 0 ? <li className="empty-line">No guilds match this filter</li> : null}
+                          {!palworldGuildsError && visibleGuildActivity.length === 0 ? <li className="empty-line">No guild activity parsed yet. Start the save parser to map guild membership.</li> : null}
                           {visibleGuildActivity.map((guild) => (
                             <GuildRiskRow
                               key={`all-guild:${guild.guildName}`}
@@ -3119,11 +4969,18 @@ function App() {
                       </article>
                     ) : null}
 
+                    {selectedDashboardTab === 'activity' ? (
+                      <>
+                        <SessionTimelinePanel timeline={selectedServerSummary.sessionTimeline} freshness={selectedServerSummary.dataFreshness} />
+                        <ActivityLogPanel items={selectedServerSummary.activityLog} />
+                      </>
+                    ) : null}
+
                     {selectedDashboardTab === 'metrics' ? (
                       <>
                         <article className="card">
                           <h2>Base Capacity</h2>
-                          {palworldBaseSignal !== null && palworldBaseCapacity !== null ? (
+                          {hasPalworldBaseTelemetry ? (
                             <>
                               <div><strong>Raw Signal:</strong> {palworldBaseSignal}</div>
                               <div><strong>Estimated Bases:</strong> {palworldBaseCapacity.estimatedBases} / 240</div>
@@ -3134,13 +4991,13 @@ function App() {
                               <div className="subtle"><strong>Last 5 Values:</strong> {palworldBaseSignalTrend.recentValues.length > 0 ? palworldBaseSignalTrend.recentValues.join(', ') : 'No history'}</div>
                               <div className="subtle"><strong>Trend:</strong> {palworldBaseSignalTrend.indicator} {palworldBaseSignalTrend.direction}</div>
                             </>
-                          ) : <p className="subtle">No base capacity signal available.</p>}
+                          ) : <p className="subtle">No base capacity telemetry yet. Start the Palworld save parser to estimate base usage.</p>}
                         </article>
 
                         <article className="card">
                           <h2>Recent Metrics</h2>
                           <ul className="list">
-                            {palworldMetrics.length === 0 ? <li>No metrics snapshots</li> : null}
+                            {palworldMetrics.length === 0 ? <li>Connector has not reported metrics yet.</li> : null}
                             {palworldMetrics.map((metric) => (
                               <li key={metric.observedAt}>
                                 <span>{formatTimestamp(metric.observedAt)}</span>
@@ -3154,6 +5011,20 @@ function App() {
 
                     {selectedDashboardTab === 'ops' ? (
                       <>
+                        <SettingsCapabilityPanel
+                          capabilities={selectedServerSummary.settingsCapabilities}
+                          onOpenObservedSettings={() => setObservedSettingsOpen(true)}
+                        />
+                        {selectedServerSummary.palworldConfigAudit ? (
+                          <PalworldConfigAuditPanel audit={selectedServerSummary.palworldConfigAudit} />
+                        ) : null}
+                        {selectedServerSummary.palworldBackupReadiness ? (
+                          <PalworldBackupReadinessPanel readiness={selectedServerSummary.palworldBackupReadiness} />
+                        ) : null}
+                        <EventTemplateDraftPanel
+                          catalog={selectedServerSummary.eventTemplateDrafts}
+                          onEditDraft={setSelectedEventTemplateDraft}
+                        />
                         <article className="card">
                           <h2>Identity Review Candidates</h2>
                           {palworldIdentityLoading ? <p className="subtle">Loading identity link candidates...</p> : null}
@@ -3306,6 +5177,68 @@ function App() {
           onSubmit={() => void submitDrawerManualLink(selectedPlayerProfile)}
         />
       ) : null}
+      {selectedEngagementDetail ? (
+        <PlayerEngagementDetailDrawer
+          detail={selectedEngagementDetail}
+          loading={selectedEngagementDetailLoading}
+          error={selectedEngagementDetailError}
+          onClose={() => {
+            setSelectedEngagementPlayerId(null);
+            setSelectedEngagementDetail(null);
+            setSelectedEngagementDetailError(null);
+          }}
+        />
+      ) : null}
+      {observedSettingsOpen ? (
+        <ObservedSettingsDrawer
+          observedSettings={observedSettings}
+          loading={observedSettingsLoading}
+          error={observedSettingsError}
+          onClose={() => {
+            setObservedSettingsOpen(false);
+            setObservedSettings(null);
+            setObservedSettingsError(null);
+          }}
+        />
+      ) : null}
+      {selectedEventTemplateDraft ? (
+        <EventTemplateDraftEditDrawer
+          draft={selectedEventTemplateDraft}
+          displayName={eventDraftDisplayName}
+          targetMultiplier={eventDraftTargetMultiplier}
+          targetValue={eventDraftTargetValue}
+          durationHours={eventDraftDurationHours}
+          notes={eventDraftNotes}
+          scheduleLabel={eventDraftScheduleLabel}
+          enabledInDashboard={eventDraftEnabled}
+          saving={eventDraftSaving}
+          error={eventDraftError}
+          success={eventDraftSuccess}
+          configDiffPreview={eventDraftConfigDiffPreview}
+          configDiffLoading={eventDraftConfigDiffLoading}
+          configDiffError={eventDraftConfigDiffError}
+          manualChecklist={eventDraftManualChecklist}
+          manualChecklistLoading={eventDraftManualChecklistLoading}
+          manualChecklistError={eventDraftManualChecklistError}
+          onDisplayNameChange={setEventDraftDisplayName}
+          onTargetMultiplierChange={setEventDraftTargetMultiplier}
+          onTargetValueChange={setEventDraftTargetValue}
+          onDurationHoursChange={setEventDraftDurationHours}
+          onNotesChange={setEventDraftNotes}
+          onScheduleLabelChange={setEventDraftScheduleLabel}
+          onEnabledChange={setEventDraftEnabled}
+          onSave={() => void saveSelectedEventTemplateDraft()}
+          onClose={() => {
+            setSelectedEventTemplateDraft(null);
+            setEventDraftError(null);
+            setEventDraftSuccess(null);
+            setEventDraftConfigDiffPreview(null);
+            setEventDraftConfigDiffError(null);
+            setEventDraftManualChecklist(null);
+            setEventDraftManualChecklistError(null);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
@@ -3349,6 +5282,60 @@ function formatDurationFromSeconds(totalSeconds: number): string {
   }
 
   return `${seconds}s`;
+}
+
+function getPlayerEngagementTrendLabel(detail: PlayerEngagementDetail): string {
+  switch (detail.trendDirection) {
+    case 'up':
+      return 'Up this week';
+    case 'down':
+      return 'Down this week';
+    case 'steady':
+      return 'Steady';
+    case 'unknown':
+      return 'Unknown';
+  }
+}
+
+function formatObservedSettingValue(value: unknown): string {
+  if (value === null) {
+    return 'null';
+  }
+
+  if (Array.isArray(value)) {
+    return `${value.length} item${value.length === 1 ? '' : 's'}`;
+  }
+
+  if (typeof value === 'object') {
+    return 'object';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : 'N/A';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return 'unknown';
+}
+
+function getObservedSettingRiskTone(risk: ObservedSettingsResponse['groups'][number]['settings'][number]['changeRisk']): string {
+  switch (risk) {
+    case 'safe_display':
+      return 'high';
+    case 'gameplay_balance':
+    case 'likely_restart_required':
+      return 'medium';
+    case 'dangerous_access_related':
+    case 'unknown':
+      return 'low';
+  }
 }
 
 function formatDurationMaybe(totalSeconds: number | undefined): string {
@@ -3446,26 +5433,6 @@ function formatWarningCategoryLabel(category: WarningCategory): string {
   return category === 'save_storage' ? 'save' : category;
 }
 
-function formatEventLabel(eventType: string): string {
-  if (eventType === 'PLAYER_JOIN') {
-    return 'join';
-  }
-
-  if (eventType === 'PLAYER_LEAVE') {
-    return 'leave';
-  }
-
-  if (eventType === 'HEALTH_WARN') {
-    return 'warn';
-  }
-
-  if (eventType === 'SERVER_ONLINE') {
-    return 'online';
-  }
-
-  return eventType.toLowerCase();
-}
-
 function formatQuickValue(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) {
     return 'N/A';
@@ -3517,18 +5484,6 @@ function deriveEffectiveServerState(input: {
   }
 
   return input.reportedState;
-}
-
-function getEventBadgeClass(eventType: string): string {
-  if (eventType === 'PLAYER_JOIN') {
-    return 'activity-badge-join';
-  }
-
-  if (eventType === 'PLAYER_LEAVE') {
-    return 'activity-badge-leave';
-  }
-
-  return 'activity-badge-neutral';
 }
 
 export default App;

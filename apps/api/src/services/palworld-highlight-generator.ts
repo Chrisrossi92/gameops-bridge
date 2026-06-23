@@ -74,6 +74,7 @@ function readHighlightState(): Record<string, PalworldHighlightStateRecord> {
               ? Object.fromEntries(
                 Object.entries(candidate.guildMemberCounts as Record<string, unknown>)
                   .filter(([, count]) => typeof count === 'number' && Number.isFinite(count))
+                  .map(([guildKey, count]) => [guildKey, count as number])
               )
               : {}
           }

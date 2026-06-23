@@ -112,6 +112,26 @@ function getDurationSeconds(startedAt, endedAt) {
     }
     return Math.floor((endMs - startMs) / 1000);
 }
+function getEventSourceId(event) {
+    return event.id?.trim()
+        || [
+            event.serverId,
+            event.eventType,
+            event.occurredAt,
+            event.playerName ?? '',
+            event.message ?? ''
+        ].join('|');
+}
+function getJoinConfidence(event) {
+    const rawConfidence = event.raw?.valheimIdentityConfidence;
+    if (rawConfidence === 'low' || rawConfidence === 'medium' || rawConfidence === 'high') {
+        return rawConfidence;
+    }
+    if (event.game === 'palworld' && event.raw?.palworldEventSource === 'rest_players') {
+        return 'high';
+    }
+    return event.playerName ? 'high' : 'medium';
+}
 function getStructuredPlayerCount(event) {
     const value = event.raw?.valheimCurrentPlayerCount;
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
@@ -119,12 +139,15 @@ function getStructuredPlayerCount(event) {
     }
     return value;
 }
-function closeSession(serverId, playerName, session, closedAt, reason) {
+function closeSession(serverId, playerName, session, closedAt, reason, endConfidence, sourceEventId) {
     const durationSeconds = getDurationSeconds(session.startedAt, closedAt);
     const closedSession = sessionRecordSchema.parse({
         ...session,
         endedAt: closedAt,
-        durationSeconds
+        durationSeconds,
+        closeReason: reason,
+        endConfidence,
+        sourceEventIds: Array.from(new Set([...(session.sourceEventIds ?? []), sourceEventId]))
     });
     console.log(`[session] closed server=${serverId} player=${playerName} reason=${reason} duration_s=${durationSeconds}`);
     return closedSession;
@@ -147,7 +170,7 @@ function reconcileByOccupancyCap(event, activeByPlayer, closedSessions, sourceRe
     const closedPlayers = [];
     for (const [playerName, session] of sortedOldestFirst.slice(0, sessionsToClose)) {
         activeByPlayer.delete(playerName);
-        closedSessions.push(closeSession(event.serverId, playerName, session, event.occurredAt, 'occupancy_reconciliation'));
+        closedSessions.push(closeSession(event.serverId, playerName, session, event.occurredAt, 'occupancy_reconciliation', 'low', getEventSourceId(event)));
         closedPlayers.push(playerName);
     }
     if (closedSessions.length > MAX_STORED_CLOSED_SESSIONS) {
@@ -176,13 +199,14 @@ function applySessionTracking(event) {
     }
     const activeByPlayer = getActiveSessionMap(event.serverId);
     const closedSessions = getRecentClosedSessionList(event.serverId);
+    const sourceEventId = getEventSourceId(event);
     if (event.eventType === 'PLAYER_JOIN') {
         if (!event.playerName) {
             return event;
         }
         const existingSession = activeByPlayer.get(event.playerName);
         if (existingSession) {
-            const replacedSession = closeSession(event.serverId, event.playerName, existingSession, event.occurredAt, 'replaced_by_new_join');
+            const replacedSession = closeSession(event.serverId, event.playerName, existingSession, event.occurredAt, 'replaced_by_new_join', 'medium', sourceEventId);
             activeByPlayer.delete(event.playerName);
             closedSessions.push(replacedSession);
             if (closedSessions.length > MAX_STORED_CLOSED_SESSIONS) {
@@ -193,7 +217,9 @@ function applySessionTracking(event) {
         const opened = sessionRecordSchema.parse({
             serverId: event.serverId,
             playerName: event.playerName,
-            startedAt: event.occurredAt
+            startedAt: event.occurredAt,
+            startConfidence: getJoinConfidence(event),
+            sourceEventIds: [sourceEventId]
         });
         activeByPlayer.set(event.playerName, opened);
         return existingSession
@@ -219,7 +245,7 @@ function applySessionTracking(event) {
         }
         else {
             const durationSeconds = getDurationSeconds(existingSession.startedAt, event.occurredAt);
-            const closedSession = closeSession(event.serverId, event.playerName, existingSession, event.occurredAt, triggerReason);
+            const closedSession = closeSession(event.serverId, event.playerName, existingSession, event.occurredAt, triggerReason, triggerReason === 'player_leave' ? 'high' : 'low', sourceEventId);
             activeByPlayer.delete(event.playerName);
             closedSessions.push(closedSession);
             directCloseCount = 1;

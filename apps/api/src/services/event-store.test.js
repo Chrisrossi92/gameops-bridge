@@ -57,6 +57,10 @@ test('PLAYER_LEAVE closes an active session for a known player', async () => {
         assert.equal(closed[0]?.playerName, 'Alice');
         assert.equal(closed[0]?.endedAt, '2026-04-05T12:05:00.000Z');
         assert.equal(closed[0]?.durationSeconds, 300);
+        assert.equal(closed[0]?.closeReason, 'player_leave');
+        assert.equal(closed[0]?.startConfidence, 'high');
+        assert.equal(closed[0]?.endConfidence, 'high');
+        assert.equal((closed[0]?.sourceEventIds ?? []).length, 2);
         assert.equal(recentEvents[0]?.raw?.sessionCloseReason, 'player_leave');
     });
 });
@@ -87,6 +91,8 @@ test('disconnect signal with lower occupancy reconciles oldest active sessions',
         assert.equal(closed.length, 2);
         assert.equal(closedNames.has('Alpha'), true);
         assert.equal(closedNames.has('Bravo'), true);
+        assert.equal(closed.every((session) => session.closeReason === 'occupancy_reconciliation'), true);
+        assert.equal(closed.every((session) => session.endConfidence === 'low'), true);
         assert.equal(recentEvents[0]?.raw?.sessionCloseReason, 'occupancy_reconciliation');
         assert.equal(recentEvents[0]?.raw?.sessionReconciledCount, 2);
     });
@@ -106,6 +112,8 @@ test('PLAYER_JOIN still replaces already-active session with replaced_by_new_joi
         assert.equal(closed.length, 1);
         assert.equal(closed[0]?.playerName, 'Delta');
         assert.equal(closed[0]?.endedAt, '2026-04-05T12:10:00.000Z');
+        assert.equal(closed[0]?.closeReason, 'replaced_by_new_join');
+        assert.equal(closed[0]?.endConfidence, 'medium');
         const replacementEvent = recentEvents.find((event) => event.eventType === 'PLAYER_JOIN' && event.raw?.sessionCloseReason === 'replaced_by_new_join');
         assert.ok(replacementEvent);
         assert.equal(replacementEvent?.raw?.replacedSessionStartedAt, '2026-04-05T12:00:00.000Z');

@@ -29,8 +29,8 @@ import {
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import type { FastifyInstance } from 'fastify';
-import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import {
   getLatestPalworldPlayerForServer,
   getLatestPalworldPlayersForServer,
@@ -116,6 +116,7 @@ const PALWORLD_GUILD_ENGINE_LABELS = [
 ];
 const PALWORLD_BASE_SIGNAL_HISTORY_PATH = '/var/backups/gameops/palworld-parse-output/latest/base-signal-history.json';
 const PALWORLD_BASE_ALERT_STATE_PATH = '/var/backups/gameops/palworld-parse-output/latest/base-alert-state.json';
+const PALWORLD_GUILDS_SUMMARY_PATH = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
 const PALWORLD_LEVEL_STRINGS_PATH = '/tmp/level.strings.txt';
 const PALWORLD_GUID_PATTERN = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})\b/gi;
 const PALWORLD_PALBOX_RISK_DAYS = 30;
@@ -581,6 +582,15 @@ function buildPalworldGuildActivityResponse(
   };
 }
 
+function readPalworldGuildsSummary(): PalworldGuildSummary[] {
+  try {
+    const parsed = JSON.parse(readFileSync(PALWORLD_GUILDS_SUMMARY_PATH, 'utf8')) as unknown;
+    return sanitizePalworldGuilds(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return [];
+  }
+}
+
 function readPalworldBaseSignalHistory(): PalworldBaseSignalHistoryEntry[] {
   try {
     const parsed = JSON.parse(readFileSync(PALWORLD_BASE_SIGNAL_HISTORY_PATH, 'utf8')) as unknown;
@@ -609,7 +619,12 @@ function appendPalworldBaseSignalHistory(baseSignal: number): void {
     }
   ].slice(-100);
 
-  writeFileSync(PALWORLD_BASE_SIGNAL_HISTORY_PATH, `${JSON.stringify(nextHistory, null, 2)}\n`, 'utf8');
+  try {
+    mkdirSync(dirname(PALWORLD_BASE_SIGNAL_HISTORY_PATH), { recursive: true });
+    writeFileSync(PALWORLD_BASE_SIGNAL_HISTORY_PATH, `${JSON.stringify(nextHistory, null, 2)}\n`, 'utf8');
+  } catch {
+    // Base signal history is helpful, but missing write access should not break first-run dashboards.
+  }
 }
 
 function readPalworldBaseAlertStateByServer(): Record<string, PalworldBaseAlertState> {
@@ -644,7 +659,12 @@ function readPalworldBaseAlertStateByServer(): Record<string, PalworldBaseAlertS
 }
 
 function writePalworldBaseAlertStateByServer(value: Record<string, PalworldBaseAlertState>): void {
-  writeFileSync(PALWORLD_BASE_ALERT_STATE_PATH, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  try {
+    mkdirSync(dirname(PALWORLD_BASE_ALERT_STATE_PATH), { recursive: true });
+    writeFileSync(PALWORLD_BASE_ALERT_STATE_PATH, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  } catch {
+    // Alert state persistence is best-effort until durable storage exists.
+  }
 }
 
 function computePalworldBaseSignalTrend(history: PalworldBaseSignalHistoryEntry[]): {
@@ -737,6 +757,7 @@ function estimateRefinedBaseCountFromStrings(content: string, rawBaseSignal: num
 function readCurrentPalworldBaseSignal(): {
   baseSignal: number;
   refinedEstimatedBases: number;
+  sourceAvailable: boolean;
 } {
   try {
     const content = readFileSync(PALWORLD_LEVEL_STRINGS_PATH, 'utf8');
@@ -744,17 +765,14 @@ function readCurrentPalworldBaseSignal(): {
 
     return {
       baseSignal,
-      refinedEstimatedBases: estimateRefinedBaseCountFromStrings(content, baseSignal)
+      refinedEstimatedBases: estimateRefinedBaseCountFromStrings(content, baseSignal),
+      sourceAvailable: true
     };
   } catch {
-    const result = execSync(
-      "grep -c 'BaseCampSaveData' /tmp/level.strings.txt"
-    ).toString().trim();
-    const baseSignal = parseInt(result, 10) || 0;
-
     return {
-      baseSignal,
-      refinedEstimatedBases: Math.round(baseSignal / 3)
+      baseSignal: 0,
+      refinedEstimatedBases: 0,
+      sourceAvailable: false
     };
   }
 }
@@ -1035,14 +1053,7 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
         return { error: 'Invalid serverId' };
       }
 
-      try {
-        const path = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
-        const guilds = sanitizePalworldGuilds(JSON.parse(readFileSync(path, 'utf8')) as unknown[]);
-        return { serverId, guilds };
-      } catch (error) {
-        reply.code(500);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
+      return { serverId, guilds: readPalworldGuildsSummary() };
     }
   );
 
@@ -1056,16 +1067,10 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
         return { error: 'Invalid serverId' };
       }
 
-      try {
-        const path = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
-        const guilds = sanitizePalworldGuilds(JSON.parse(readFileSync(path, 'utf8')) as unknown[]);
-        const profiles = getPalworldPlayerProfileSessionSummariesForServer(serverId, 10_000);
+      const guilds = readPalworldGuildsSummary();
+      const profiles = getPalworldPlayerProfileSessionSummariesForServer(serverId, 10_000);
 
-        return palworldGuildActivityResponseSchema.parse(buildPalworldGuildActivityResponse(serverId, guilds, profiles));
-      } catch (error) {
-        reply.code(500);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
+      return palworldGuildActivityResponseSchema.parse(buildPalworldGuildActivityResponse(serverId, guilds, profiles));
     }
   );
 
@@ -1080,8 +1085,10 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       }
 
       try {
-        const { baseSignal, refinedEstimatedBases } = readCurrentPalworldBaseSignal();
-        appendPalworldBaseSignalHistory(baseSignal);
+        const { baseSignal, refinedEstimatedBases, sourceAvailable } = readCurrentPalworldBaseSignal();
+        if (sourceAvailable) {
+          appendPalworldBaseSignalHistory(baseSignal);
+        }
         const history = readPalworldBaseSignalHistory();
         const alert = buildPalworldBaseAlertResponse(serverId, baseSignal, refinedEstimatedBases, history);
         try {
@@ -1113,13 +1120,13 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       }
 
       try {
-        const { baseSignal, refinedEstimatedBases } = readCurrentPalworldBaseSignal();
+        const { baseSignal, refinedEstimatedBases, sourceAvailable } = readCurrentPalworldBaseSignal();
         const history = [
           ...readPalworldBaseSignalHistory(),
-          {
+          ...(sourceAvailable ? [{
             timestamp: new Date().toISOString(),
             baseSignal
-          }
+          }] : [])
         ].slice(-100);
         const alert = buildPalworldBaseAlertResponse(serverId, baseSignal, refinedEstimatedBases, history);
         try {
@@ -1173,15 +1180,14 @@ export async function registerPalworldTelemetryRoutes(app: FastifyInstance): Pro
       }
 
       try {
-        const path = '/var/backups/gameops/palworld-parse-output/latest/guilds-summary.json';
-        const guilds = sanitizePalworldGuilds(JSON.parse(readFileSync(path, 'utf8')) as unknown[]);
-        const { baseSignal, refinedEstimatedBases } = readCurrentPalworldBaseSignal();
+        const guilds = readPalworldGuildsSummary();
+        const { baseSignal, refinedEstimatedBases, sourceAvailable } = readCurrentPalworldBaseSignal();
         const history = [
           ...readPalworldBaseSignalHistory(),
-          {
+          ...(sourceAvailable ? [{
             timestamp: new Date().toISOString(),
             baseSignal
-          }
+          }] : [])
         ].slice(-100);
         const baseAlert = buildPalworldBaseAlertResponse(serverId, baseSignal, refinedEstimatedBases, history);
 

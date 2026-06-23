@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { getMockServerStatus } from '../services/mock-server-status.js';
+import { getConfiguredServerGame } from '../services/server-config.js';
 
 export async function registerServerStatusRoute(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { serverId: string } }>('/servers/:serverId/status', async (request, reply) => {
@@ -12,6 +13,6 @@ export async function registerServerStatusRoute(app: FastifyInstance): Promise<v
       };
     }
 
-    return getMockServerStatus(serverId);
+    return getMockServerStatus(serverId, getConfiguredServerGame(serverId) ?? 'valheim');
   });
 }

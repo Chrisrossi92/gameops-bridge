@@ -36,6 +36,12 @@ const rawMetricsSnapshotSchema = z.object({
   raw_json: z.record(z.string(), z.unknown())
 });
 
+const rawSettingsSnapshotSchema = z.object({
+  server_id: z.string().min(1),
+  observed_at: z.string().datetime(),
+  raw_json: z.record(z.string(), z.unknown()).or(z.unknown())
+});
+
 const rawPlayerSnapshotSchema = z.object({
   server_id: z.string().min(1),
   observed_at: z.string().datetime(),
@@ -55,7 +61,9 @@ const rawPlayerSnapshotSchema = z.object({
 const rawTelemetryStoreSchema = z.object({
   playerSnapshotHistory: z.array(rawPlayerSnapshotSchema).default([]),
   latestPlayerStates: z.array(rawLatestPlayerStateSchema).default([]),
-  metricsSnapshotHistory: z.array(rawMetricsSnapshotSchema).default([])
+  metricsSnapshotHistory: z.array(rawMetricsSnapshotSchema).default([]),
+  settingsChangeHistory: z.array(rawSettingsSnapshotSchema).default([]),
+  latestSettingsSnapshots: z.array(rawSettingsSnapshotSchema).default([])
 });
 
 const PLAYER_PING_WINDOW = 20;
@@ -128,6 +136,12 @@ function loadStore(): z.infer<typeof rawTelemetryStoreSchema> {
   } catch {
     return rawTelemetryStoreSchema.parse({});
   }
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function toCurrentSessionDurationSeconds(serverId: string, playerName: string | undefined): number | undefined {
@@ -304,4 +318,24 @@ export function getRecentPalworldPlayerSnapshotsForPlayer(
       || normalizeLookup(snapshot.userId ?? '') === normalizedLookup
     ))
     .slice(0, Math.max(1, limit));
+}
+
+export function getLatestPalworldSettingsSnapshotForServer(serverId: string): {
+  serverId: string;
+  observedAt: string;
+  raw: Record<string, unknown>;
+} | null {
+  const snapshot = loadStore().latestSettingsSnapshots
+    .filter((entry) => entry.server_id === serverId)
+    .sort((left, right) => right.observed_at.localeCompare(left.observed_at))[0] ?? null;
+
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    serverId: snapshot.server_id,
+    observedAt: snapshot.observed_at,
+    raw: toRecord(snapshot.raw_json)
+  };
 }

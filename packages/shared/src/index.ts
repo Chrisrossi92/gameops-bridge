@@ -25,8 +25,13 @@ export const palworldConnectorModeSchema = z.enum(['rest', 'rcon', 'query', 'fil
 export type PalworldConnectorMode = z.infer<typeof palworldConnectorModeSchema>;
 
 export const normalizedEventRawSchema = z.object({
+  discordNotify: z.boolean().optional(),
+  ownerActionRequired: z.boolean().optional(),
+  severity: z.enum(['info', 'warning', 'critical']).optional(),
   sessionCloseReason: z.string().optional(),
   sessionReconciledCount: z.number().int().min(0).optional(),
+  sessionClosedPlayers: z.array(z.string()).optional(),
+  sessionDurationSeconds: z.number().int().min(0).optional(),
   replacedSessionStartedAt: z.string().datetime().optional(),
   valheimCurrentPlayerCount: z.number().int().min(0).optional(),
   valheimDisconnectSignal: z.boolean().optional(),
@@ -57,12 +62,19 @@ export const recentEventsResponseSchema = z.object({
 });
 export type RecentEventsResponse = z.infer<typeof recentEventsResponseSchema>;
 
+export const identityConfidenceSchema = z.enum(['low', 'medium', 'high']);
+export type IdentityConfidence = z.infer<typeof identityConfidenceSchema>;
+
 export const sessionRecordSchema = z.object({
   serverId: z.string().min(1),
   playerName: z.string().min(1),
   startedAt: z.string().datetime(),
   endedAt: z.string().datetime().optional(),
-  durationSeconds: z.number().int().min(0).optional()
+  durationSeconds: z.number().int().min(0).optional(),
+  closeReason: z.string().optional(),
+  startConfidence: identityConfidenceSchema.optional(),
+  endConfidence: identityConfidenceSchema.optional(),
+  sourceEventIds: z.array(z.string()).default([])
 });
 export type SessionRecord = z.infer<typeof sessionRecordSchema>;
 
@@ -78,8 +90,29 @@ export const recentSessionsResponseSchema = z.object({
 });
 export type RecentSessionsResponse = z.infer<typeof recentSessionsResponseSchema>;
 
-export const identityConfidenceSchema = z.enum(['low', 'medium', 'high']);
-export type IdentityConfidence = z.infer<typeof identityConfidenceSchema>;
+export const activitySeveritySchema = z.enum(['info', 'warning', 'critical']);
+export type ActivitySeverity = z.infer<typeof activitySeveritySchema>;
+
+export const activityLogItemSchema = z.object({
+  id: z.string().min(1),
+  serverId: z.string().min(1),
+  timestamp: z.string().datetime(),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  severity: activitySeveritySchema,
+  confidence: identityConfidenceSchema,
+  explanation: z.string().min(1),
+  playerName: z.string().optional(),
+  sessionId: z.string().optional(),
+  sourceEventIds: z.array(z.string())
+});
+export type ActivityLogItem = z.infer<typeof activityLogItemSchema>;
+
+export const activityLogResponseSchema = z.object({
+  serverId: z.string().min(1),
+  items: z.array(activityLogItemSchema)
+});
+export type ActivityLogResponse = z.infer<typeof activityLogResponseSchema>;
 
 export const knownPlayerRecordSchema = z.object({
   serverId: z.string().min(1),
@@ -110,6 +143,577 @@ export const knownPlayerProfileResponseSchema = z.object({
   recentSessions: z.array(sessionRecordSchema)
 });
 export type KnownPlayerProfileResponse = z.infer<typeof knownPlayerProfileResponseSchema>;
+
+export const playerIntelligenceConfidenceSchema = z.enum(['unknown', 'low', 'medium', 'high']);
+export type PlayerIntelligenceConfidence = z.infer<typeof playerIntelligenceConfidenceSchema>;
+
+export const playerIntelligenceRecordSchema = z.object({
+  playerId: z.string().min(1),
+  serverId: z.string().min(1),
+  displayName: z.string().min(1),
+  aliases: z.array(z.string()),
+  game: gameKeySchema,
+  identityConfidence: playerIntelligenceConfidenceSchema,
+  identityExplanation: z.string().min(1),
+  firstSeenAt: z.string().datetime().nullable(),
+  lastSeenAt: z.string().datetime().nullable(),
+  isOnline: z.boolean(),
+  activeSessionId: z.string().nullable(),
+  totalTrackedSeconds: z.number().int().min(0),
+  sessionCount: z.number().int().min(0),
+  averageSessionSeconds: z.number().int().min(0),
+  sourceSummary: z.array(z.string()),
+  gameFields: z.record(z.string(), z.unknown()).optional()
+});
+export type PlayerIntelligenceRecord = z.infer<typeof playerIntelligenceRecordSchema>;
+
+export const playerIntelligenceResponseSchema = z.object({
+  serverId: z.string().min(1),
+  explanation: z.string().min(1),
+  players: z.array(playerIntelligenceRecordSchema)
+});
+export type PlayerIntelligenceResponse = z.infer<typeof playerIntelligenceResponseSchema>;
+
+export const playerEngagementPlayerSchema = z.object({
+  playerId: z.string().min(1),
+  displayName: z.string().min(1),
+  isOnline: z.boolean(),
+  lastSeenAt: z.string().datetime().nullable(),
+  firstSeenAt: z.string().datetime().nullable(),
+  sessionCount: z.number().int().min(0),
+  totalTrackedSeconds: z.number().int().min(0),
+  averageSessionSeconds: z.number().int().min(0),
+  confidence: playerIntelligenceConfidenceSchema,
+  reason: z.string().min(1)
+});
+export type PlayerEngagementPlayer = z.infer<typeof playerEngagementPlayerSchema>;
+
+export const playerEngagementWindowSchema = z.object({
+  sessions: z.number().int().min(0),
+  trackedSeconds: z.number().int().min(0),
+  uniquePlayers: z.number().int().min(0)
+});
+export type PlayerEngagementWindow = z.infer<typeof playerEngagementWindowSchema>;
+
+export const playerEngagementActivityShapeSchema = z.object({
+  activeNowCount: z.number().int().min(0),
+  activeNow: z.array(playerEngagementPlayerSchema),
+  today: playerEngagementWindowSchema,
+  sevenDays: playerEngagementWindowSchema,
+  thirtyDays: playerEngagementWindowSchema,
+  lastActivityAt: z.string().datetime().nullable(),
+  peakHourUtc: z.number().int().min(0).max(23).nullable(),
+  peakHourSessionCount: z.number().int().min(0)
+});
+export type PlayerEngagementActivityShape = z.infer<typeof playerEngagementActivityShapeSchema>;
+
+export const playerEngagementSummarySchema = z.object({
+  serverId: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  headline: z.string().min(1),
+  explanation: z.string().min(1),
+  activity: playerEngagementActivityShapeSchema,
+  returningPlayers: z.array(playerEngagementPlayerSchema),
+  mostRecentPlayers: z.array(playerEngagementPlayerSchema),
+  highEngagementPlayers: z.array(playerEngagementPlayerSchema),
+  inactivePlayers: z.array(playerEngagementPlayerSchema),
+  confidence: playerIntelligenceConfidenceSchema,
+  dataWarnings: z.array(z.string().min(1))
+});
+export type PlayerEngagementSummary = z.infer<typeof playerEngagementSummarySchema>;
+
+export const sessionTimelineSourceSchema = z.enum(['live', 'recent', 'stored']);
+export type SessionTimelineSource = z.infer<typeof sessionTimelineSourceSchema>;
+
+export const sessionTimelineItemSchema = z.object({
+  sessionId: z.string().min(1),
+  playerId: z.string().min(1),
+  displayName: z.string().min(1),
+  observedName: z.string().min(1),
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().nullable(),
+  isActive: z.boolean(),
+  durationSeconds: z.number().int().min(0),
+  closeReason: z.string().nullable(),
+  startConfidence: playerIntelligenceConfidenceSchema.nullable(),
+  endConfidence: playerIntelligenceConfidenceSchema.nullable(),
+  explanation: z.string().min(1),
+  source: sessionTimelineSourceSchema
+});
+export type SessionTimelineItem = z.infer<typeof sessionTimelineItemSchema>;
+
+export const sessionTimelineSummarySchema = z.object({
+  activeCount: z.number().int().min(0),
+  sessionsToday: z.number().int().min(0),
+  trackedSecondsToday: z.number().int().min(0),
+  lastActivityAt: z.string().datetime().nullable()
+});
+export type SessionTimelineSummary = z.infer<typeof sessionTimelineSummarySchema>;
+
+export const sessionTimelineResponseSchema = z.object({
+  serverId: z.string().min(1),
+  sessions: z.array(sessionTimelineItemSchema),
+  summary: sessionTimelineSummarySchema,
+  explanation: z.string().min(1)
+});
+export type SessionTimelineResponse = z.infer<typeof sessionTimelineResponseSchema>;
+
+export const playerDetailSessionSchema = z.object({
+  sessionId: z.string().min(1),
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().nullable(),
+  durationSeconds: z.number().int().min(0),
+  closeReason: z.string().nullable(),
+  startConfidence: playerIntelligenceConfidenceSchema.nullable(),
+  endConfidence: playerIntelligenceConfidenceSchema.nullable(),
+  observedName: z.string().min(1),
+  explanation: z.string().min(1)
+});
+export type PlayerDetailSession = z.infer<typeof playerDetailSessionSchema>;
+
+export const playerEngagementStatusSchema = z.enum([
+  'active_now',
+  'recently_active',
+  'inactive',
+  'fading',
+  'unknown'
+]);
+export type PlayerEngagementStatus = z.infer<typeof playerEngagementStatusSchema>;
+
+export const playerEngagementTrendDirectionSchema = z.enum(['up', 'down', 'steady', 'unknown']);
+export type PlayerEngagementTrendDirection = z.infer<typeof playerEngagementTrendDirectionSchema>;
+
+export const playerEngagementDetailSchema = z.object({
+  serverId: z.string().min(1),
+  playerId: z.string().min(1),
+  displayName: z.string().min(1),
+  status: playerEngagementStatusSchema,
+  statusLabel: z.string().min(1),
+  whyTheyMatter: z.array(z.string().min(1)),
+  firstSeenAt: z.string().datetime().nullable(),
+  lastSeenAt: z.string().datetime().nullable(),
+  totalSessions: z.number().int().min(0),
+  totalTrackedSeconds: z.number().int().min(0),
+  averageSessionSeconds: z.number().int().min(0),
+  sevenDays: playerEngagementWindowSchema,
+  thirtyDays: playerEngagementWindowSchema,
+  trendDirection: playerEngagementTrendDirectionSchema,
+  current7dSessions: z.number().int().min(0),
+  previous7dSessions: z.number().int().min(0),
+  current7dPlaySeconds: z.number().int().min(0),
+  previous7dPlaySeconds: z.number().int().min(0),
+  trendReasons: z.array(z.string().min(1)),
+  trendConfidenceWarning: z.string().min(1).nullable(),
+  recentSessions: z.array(playerDetailSessionSchema),
+  confidence: playerIntelligenceConfidenceSchema,
+  confidenceWarnings: z.array(z.string().min(1)),
+  evidenceNotes: z.array(z.string().min(1))
+});
+export type PlayerEngagementDetail = z.infer<typeof playerEngagementDetailSchema>;
+
+export const serverAliveRhythmDaySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dayOfWeek: z.string().min(1),
+  sessions: z.number().int().min(0),
+  trackedSeconds: z.number().int().min(0),
+  uniquePlayers: z.number().int().min(0)
+});
+export type ServerAliveRhythmDay = z.infer<typeof serverAliveRhythmDaySchema>;
+
+export const serverAliveRhythmPeriodSchema = z.object({
+  totalSessions: z.number().int().min(0),
+  totalTrackedSeconds: z.number().int().min(0),
+  uniqueActivePlayers: z.number().int().min(0),
+  busiestDays: z.array(serverAliveRhythmDaySchema),
+  quietDays: z.array(serverAliveRhythmDaySchema)
+});
+export type ServerAliveRhythmPeriod = z.infer<typeof serverAliveRhythmPeriodSchema>;
+
+export const serverAliveRhythmDayPatternSchema = z.object({
+  dayOfWeek: z.string().min(1),
+  observedDays: z.number().int().min(0),
+  totalSessions: z.number().int().min(0),
+  totalTrackedSeconds: z.number().int().min(0),
+  averageSessions: z.number().min(0),
+  averageTrackedSeconds: z.number().min(0)
+});
+export type ServerAliveRhythmDayPattern = z.infer<typeof serverAliveRhythmDayPatternSchema>;
+
+export const serverAliveRhythmHourlyPatternSchema = z.object({
+  status: z.enum(['available', 'unknown']),
+  busiestUtcHours: z.array(z.object({
+    hourUtc: z.number().int().min(0).max(23),
+    sessions: z.number().int().min(0),
+    trackedSeconds: z.number().int().min(0)
+  })),
+  explanation: z.string().min(1)
+});
+export type ServerAliveRhythmHourlyPattern = z.infer<typeof serverAliveRhythmHourlyPatternSchema>;
+
+export const serverAliveRhythmSummarySchema = z.object({
+  serverId: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  summary: z.string().min(1),
+  sevenDays: serverAliveRhythmPeriodSchema,
+  thirtyDays: serverAliveRhythmPeriodSchema,
+  bestDayOfWeekPattern: serverAliveRhythmDayPatternSchema.nullable(),
+  hourlyPattern: serverAliveRhythmHourlyPatternSchema,
+  confidence: playerIntelligenceConfidenceSchema,
+  confidenceWarnings: z.array(z.string().min(1))
+});
+export type ServerAliveRhythmSummary = z.infer<typeof serverAliveRhythmSummarySchema>;
+
+export const settingsCapabilityStateSchema = z.enum(['yes', 'no', 'unknown']);
+export type SettingsCapabilityState = z.infer<typeof settingsCapabilityStateSchema>;
+
+export const settingsReadSourceSchema = z.enum(['Palworld REST', 'config file', 'unavailable', 'unknown']);
+export type SettingsReadSource = z.infer<typeof settingsReadSourceSchema>;
+
+export const settingsWritePathStatusSchema = z.enum([
+  'not_supported',
+  'unknown',
+  'possible_needs_validation',
+  'blocked_missing_config'
+]);
+export type SettingsWritePathStatus = z.infer<typeof settingsWritePathStatusSchema>;
+
+export const settingsCandidateWritePathSchema = z.enum(['rest', 'rcon', 'file_edit', 'manual']);
+export type SettingsCandidateWritePath = z.infer<typeof settingsCandidateWritePathSchema>;
+
+export const supportedSettingGroupSchema = z.enum([
+  'rates',
+  'egg/incubation',
+  'spawn/world',
+  'difficulty',
+  'whitelist/access',
+  'unknown/unmapped'
+]);
+export type SupportedSettingGroup = z.infer<typeof supportedSettingGroupSchema>;
+
+export const serverSettingsCapabilitySummarySchema = z.object({
+  serverId: z.string().min(1),
+  serverName: z.string().min(1).nullable(),
+  game: gameKeySchema.nullable(),
+  connectorMode: z.enum(['file', 'journal', 'rest', 'rcon', 'query']).nullable(),
+  canReadSettings: settingsCapabilityStateSchema,
+  readSource: settingsReadSourceSchema,
+  lastSettingsSnapshotAt: z.string().datetime().nullable(),
+  canWriteSettings: settingsCapabilityStateSchema,
+  writePathStatus: settingsWritePathStatusSchema,
+  candidateWritePaths: z.array(settingsCandidateWritePathSchema),
+  requiresRestart: settingsCapabilityStateSchema,
+  supportedSettingGroups: z.array(supportedSettingGroupSchema),
+  validationSteps: z.array(z.string().min(1)),
+  rollbackRequirements: z.array(z.string().min(1)),
+  unresolvedQuestions: z.array(z.string().min(1)),
+  safetyNotes: z.array(z.string().min(1)),
+  missingRequirements: z.array(z.string().min(1)),
+  nextSafeStep: z.string().min(1)
+});
+export type ServerSettingsCapabilitySummary = z.infer<typeof serverSettingsCapabilitySummarySchema>;
+
+export const palworldConfigAuditDiscoveryStatusSchema = z.enum([
+  'unsupported',
+  'no_config_path',
+  'candidate_not_found',
+  'found'
+]);
+export type PalworldConfigAuditDiscoveryStatus = z.infer<typeof palworldConfigAuditDiscoveryStatusSchema>;
+
+export const palworldConfigAuditParseStatusSchema = z.enum([
+  'not_attempted',
+  'parsed',
+  'failed',
+  'unreadable'
+]);
+export type PalworldConfigAuditParseStatus = z.infer<typeof palworldConfigAuditParseStatusSchema>;
+
+export const palworldConfigFileEditViabilitySchema = z.enum([
+  'not_viable',
+  'unknown',
+  'possible_needs_backup_restart_validation'
+]);
+export type PalworldConfigFileEditViability = z.infer<typeof palworldConfigFileEditViabilitySchema>;
+
+export const palworldConfigAuditMatchedSettingSchema = z.object({
+  key: z.string().min(1),
+  fileValue: z.unknown(),
+  restValue: z.unknown(),
+  valuesMatch: z.boolean()
+});
+export type PalworldConfigAuditMatchedSetting = z.infer<typeof palworldConfigAuditMatchedSettingSchema>;
+
+export const palworldConfigAuditSchema = z.object({
+  serverId: z.string().min(1),
+  serverName: z.string().min(1).nullable(),
+  discoveryStatus: palworldConfigAuditDiscoveryStatusSchema,
+  candidatePaths: z.array(z.string().min(1)),
+  selectedPath: z.string().min(1).nullable(),
+  canReadFile: z.boolean(),
+  parseStatus: palworldConfigAuditParseStatusSchema,
+  parsedSettingCount: z.number().int().min(0),
+  matchedRestSettings: z.array(palworldConfigAuditMatchedSettingSchema),
+  unmatchedFileSettings: z.array(z.string().min(1)),
+  unmatchedRestSettings: z.array(z.string().min(1)),
+  fileEditViability: palworldConfigFileEditViabilitySchema,
+  safetyWarnings: z.array(z.string().min(1)),
+  nextValidationSteps: z.array(z.string().min(1))
+});
+export type PalworldConfigAudit = z.infer<typeof palworldConfigAuditSchema>;
+
+export const eventTemplateConfigDiffPreviewStatusSchema = z.enum(['available', 'limited', 'unavailable']);
+export type EventTemplateConfigDiffPreviewStatus = z.infer<typeof eventTemplateConfigDiffPreviewStatusSchema>;
+
+export const eventTemplateConfigDiffChangeSchema = z.object({
+  key: z.string().min(1),
+  currentFileValue: z.unknown(),
+  currentObservedValue: z.unknown().nullable(),
+  proposedValue: z.unknown().nullable(),
+  valueType: z.enum(['string', 'number', 'boolean', 'object', 'array', 'null', 'unknown']),
+  riskLabel: z.string().min(1),
+  warningNotes: z.array(z.string().min(1))
+});
+export type EventTemplateConfigDiffChange = z.infer<typeof eventTemplateConfigDiffChangeSchema>;
+
+export const eventTemplateConfigDiffPreviewSchema = z.object({
+  serverId: z.string().min(1),
+  templateId: z.string().min(1),
+  selectedConfigPath: z.string().min(1).nullable(),
+  previewStatus: eventTemplateConfigDiffPreviewStatusSchema,
+  changes: z.array(eventTemplateConfigDiffChangeSchema),
+  missingKeys: z.array(z.string().min(1)),
+  unmappedSettings: z.array(z.string().min(1)),
+  safetyWarnings: z.array(z.string().min(1)),
+  canApply: z.literal(false),
+  reasonApplyDisabled: z.string().min(1)
+});
+export type EventTemplateConfigDiffPreview = z.infer<typeof eventTemplateConfigDiffPreviewSchema>;
+
+export const palworldBackupReadinessStatusSchema = z.enum([
+  'ready_for_manual_backup_plan',
+  'blocked_missing_config_file',
+  'blocked_unreadable_file',
+  'unknown'
+]);
+export type PalworldBackupReadinessStatus = z.infer<typeof palworldBackupReadinessStatusSchema>;
+
+export const palworldBackupReadinessFileSchema = z.object({
+  path: z.string().min(1),
+  exists: z.boolean(),
+  readable: z.boolean(),
+  reason: z.string().min(1)
+});
+export type PalworldBackupReadinessFile = z.infer<typeof palworldBackupReadinessFileSchema>;
+
+export const palworldBackupReadinessSchema = z.object({
+  serverId: z.string().min(1),
+  serverName: z.string().min(1).nullable(),
+  readinessStatus: palworldBackupReadinessStatusSchema,
+  filesToBackup: z.array(palworldBackupReadinessFileSchema),
+  proposedBackupDirectory: z.string().min(1).nullable(),
+  proposedBackupFilenamePattern: z.string().min(1).nullable(),
+  rollbackRequirements: z.array(z.string().min(1)),
+  validationSteps: z.array(z.string().min(1)),
+  safetyWarnings: z.array(z.string().min(1)),
+  canCreateBackup: z.literal(false),
+  reasonCreateBackupDisabled: z.string().min(1)
+});
+export type PalworldBackupReadiness = z.infer<typeof palworldBackupReadinessSchema>;
+
+export const eventTemplateManualChecklistStatusSchema = z.enum(['ready_for_manual_review', 'blocked', 'limited']);
+export type EventTemplateManualChecklistStatus = z.infer<typeof eventTemplateManualChecklistStatusSchema>;
+
+export const eventTemplateManualChecklistItemStatusSchema = z.enum(['pass', 'warning', 'blocked', 'info']);
+export type EventTemplateManualChecklistItemStatus = z.infer<typeof eventTemplateManualChecklistItemStatusSchema>;
+
+export const eventTemplateManualChecklistItemSchema = z.object({
+  label: z.string().min(1),
+  status: eventTemplateManualChecklistItemStatusSchema,
+  detail: z.string().min(1)
+});
+export type EventTemplateManualChecklistItem = z.infer<typeof eventTemplateManualChecklistItemSchema>;
+
+export const eventTemplateManualChangeChecklistSchema = z.object({
+  serverId: z.string().min(1),
+  templateId: z.string().min(1),
+  checklistStatus: eventTemplateManualChecklistStatusSchema,
+  checklistItems: z.array(eventTemplateManualChecklistItemSchema),
+  requiredManualSteps: z.array(z.string().min(1)),
+  ownerConfirmationText: z.string().min(1),
+  canApply: z.literal(false),
+  reasonApplyDisabled: z.string().min(1)
+});
+export type EventTemplateManualChangeChecklist = z.infer<typeof eventTemplateManualChangeChecklistSchema>;
+
+export const observedSettingValueTypeSchema = z.enum(['string', 'number', 'boolean', 'object', 'array', 'null', 'unknown']);
+export type ObservedSettingValueType = z.infer<typeof observedSettingValueTypeSchema>;
+
+export const observedSettingChangeRiskSchema = z.enum([
+  'safe_display',
+  'likely_restart_required',
+  'dangerous_access_related',
+  'gameplay_balance',
+  'unknown'
+]);
+export type ObservedSettingChangeRisk = z.infer<typeof observedSettingChangeRiskSchema>;
+
+export const observedSettingRecommendedHandlingSchema = z.enum([
+  'read_only',
+  'template_candidate',
+  'manual_review',
+  'never_auto_change',
+  'unknown'
+]);
+export type ObservedSettingRecommendedHandling = z.infer<typeof observedSettingRecommendedHandlingSchema>;
+
+export const observedSettingValueSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  group: supportedSettingGroupSchema,
+  value: z.unknown(),
+  valueType: observedSettingValueTypeSchema,
+  sensitive: z.boolean(),
+  safetyNote: z.string().min(1),
+  writable: z.literal(false),
+  requiresRestart: settingsCapabilityStateSchema,
+  changeRisk: observedSettingChangeRiskSchema,
+  riskLabel: z.string().min(1),
+  riskNote: z.string().min(1),
+  recommendedHandling: observedSettingRecommendedHandlingSchema
+});
+export type ObservedSettingValue = z.infer<typeof observedSettingValueSchema>;
+
+export const observedSettingsGroupSchema = z.object({
+  group: supportedSettingGroupSchema,
+  settings: z.array(observedSettingValueSchema)
+});
+export type ObservedSettingsGroup = z.infer<typeof observedSettingsGroupSchema>;
+
+export const observedSettingsResponseSchema = z.object({
+  serverId: z.string().min(1),
+  serverName: z.string().min(1).nullable(),
+  game: gameKeySchema.nullable(),
+  connectorMode: z.enum(['file', 'journal', 'rest', 'rcon', 'query']).nullable(),
+  available: z.boolean(),
+  source: settingsReadSourceSchema,
+  snapshotAt: z.string().datetime().nullable(),
+  groups: z.array(observedSettingsGroupSchema),
+  safetyNotes: z.array(z.string().min(1)),
+  emptyState: z.string().min(1).nullable()
+});
+export type ObservedSettingsResponse = z.infer<typeof observedSettingsResponseSchema>;
+
+export const eventTemplateDraftMatchedSettingSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  group: supportedSettingGroupSchema,
+  value: z.unknown(),
+  valueType: observedSettingValueTypeSchema,
+  changeRisk: observedSettingChangeRiskSchema,
+  riskLabel: z.string().min(1),
+  recommendedHandling: observedSettingRecommendedHandlingSchema
+});
+export type EventTemplateDraftMatchedSetting = z.infer<typeof eventTemplateDraftMatchedSettingSchema>;
+
+export const eventTemplateDraftChangePreviewSchema = z.object({
+  settingKey: z.string().min(1),
+  settingLabel: z.string().min(1),
+  currentValue: z.unknown(),
+  proposedValue: z.unknown().nullable(),
+  proposedLabel: z.string().min(1),
+  differenceLabel: z.string().min(1),
+  changeRisk: observedSettingChangeRiskSchema,
+  riskLabel: z.string().min(1),
+  recommendedHandling: observedSettingRecommendedHandlingSchema,
+  canPreview: z.boolean(),
+  previewWarnings: z.array(z.string().min(1))
+});
+export type EventTemplateDraftChangePreview = z.infer<typeof eventTemplateDraftChangePreviewSchema>;
+
+export const eventTemplateDraftSchema = z.object({
+  templateId: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  status: z.literal('draft_only'),
+  enabledInDashboard: z.boolean(),
+  displayName: z.string().min(1).nullable(),
+  targetMultiplier: z.number().positive().nullable(),
+  targetValue: z.union([z.string(), z.number(), z.boolean()]).nullable(),
+  durationHours: z.number().positive().nullable(),
+  notes: z.string().nullable(),
+  scheduleLabel: z.string().nullable(),
+  updatedAt: z.string().datetime().nullable(),
+  matchedSettings: z.array(eventTemplateDraftMatchedSettingSchema),
+  changePreviews: z.array(eventTemplateDraftChangePreviewSchema),
+  missingSettings: z.array(z.string().min(1)),
+  safetyNotes: z.array(z.string().min(1)),
+  requiresRestart: z.enum(['unknown', 'manual_review']),
+  canApply: z.literal(false),
+  reasonApplyDisabled: z.string().min(1)
+});
+export type EventTemplateDraft = z.infer<typeof eventTemplateDraftSchema>;
+
+export const eventTemplateDraftCatalogSchema = z.object({
+  serverId: z.string().min(1),
+  serverName: z.string().min(1).nullable(),
+  game: gameKeySchema.nullable(),
+  sourceSnapshotAt: z.string().datetime().nullable(),
+  status: z.enum(['available', 'empty', 'unavailable']),
+  explanation: z.string().min(1),
+  drafts: z.array(eventTemplateDraftSchema),
+  safetyNotes: z.array(z.string().min(1))
+});
+export type EventTemplateDraftCatalog = z.infer<typeof eventTemplateDraftCatalogSchema>;
+
+export const eventTemplateDraftOverrideRequestSchema = z.object({
+  enabledInDashboard: z.boolean().optional(),
+  displayName: z.string().trim().min(1).max(120).nullable().optional(),
+  targetMultiplier: z.number().positive().max(1000).nullable().optional(),
+  targetValue: z.union([z.string().trim().max(200), z.number(), z.boolean()]).nullable().optional(),
+  durationHours: z.number().positive().max(24 * 30).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  scheduleLabel: z.string().trim().max(120).nullable().optional()
+});
+export type EventTemplateDraftOverrideRequest = z.infer<typeof eventTemplateDraftOverrideRequestSchema>;
+
+export const playerDetailEvidenceSchema = z.object({
+  type: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().min(1),
+  confidence: playerIntelligenceConfidenceSchema,
+  observedAt: z.string().datetime().nullable()
+});
+export type PlayerDetailEvidence = z.infer<typeof playerDetailEvidenceSchema>;
+
+export const playerDetailSummarySchema = z.object({
+  playerId: z.string().min(1),
+  serverId: z.string().min(1),
+  displayName: z.string().min(1),
+  aliases: z.array(z.string()),
+  game: gameKeySchema,
+  isOnline: z.boolean(),
+  activeSessionId: z.string().nullable(),
+  firstSeenAt: z.string().datetime().nullable(),
+  lastSeenAt: z.string().datetime().nullable(),
+  trackedPlaytimeSeconds: z.number().int().min(0),
+  sessionCount: z.number().int().min(0),
+  averageSessionSeconds: z.number().int().min(0),
+  identityConfidence: playerIntelligenceConfidenceSchema,
+  identityExplanation: z.string().min(1),
+  sourceSummary: z.array(z.string()),
+  gameFields: z.record(z.string(), z.unknown()).optional()
+});
+export type PlayerDetailSummary = z.infer<typeof playerDetailSummarySchema>;
+
+export const playerDetailResponseSchema = z.object({
+  serverId: z.string().min(1),
+  player: playerDetailSummarySchema,
+  recentSessions: z.array(playerDetailSessionSchema),
+  evidence: z.array(playerDetailEvidenceSchema),
+  status: z.string().min(1),
+  explanation: z.string().min(1)
+});
+export type PlayerDetailResponse = z.infer<typeof playerDetailResponseSchema>;
 
 export const identityObservationSchema = z.object({
   serverId: z.string().min(1),
@@ -164,6 +768,71 @@ export const serverStatusSchema = z.object({
   message: z.string().optional()
 });
 export type ServerStatus = z.infer<typeof serverStatusSchema>;
+
+export const connectorModeSchema = z.enum(['file', 'journal', 'rest', 'rcon', 'query']);
+export type ConnectorMode = z.infer<typeof connectorModeSchema>;
+
+export const connectorHeartbeatStatusSchema = z.enum(['running', 'degraded', 'error']);
+export type ConnectorHeartbeatStatus = z.infer<typeof connectorHeartbeatStatusSchema>;
+
+export const connectorHeartbeatSchema = z.object({
+  serverId: z.string().min(1),
+  game: gameKeySchema,
+  connectorMode: connectorModeSchema,
+  observedAt: z.string().datetime(),
+  status: connectorHeartbeatStatusSchema,
+  message: z.string().min(1),
+  lastSuccessfulPollAt: z.string().datetime().optional(),
+  consecutiveFailureCount: z.number().int().min(0).optional(),
+  capabilities: z.array(z.string().min(1)).default([])
+});
+export type ConnectorHeartbeat = z.infer<typeof connectorHeartbeatSchema>;
+
+export const connectorHeartbeatRequestSchema = connectorHeartbeatSchema;
+export type ConnectorHeartbeatRequest = z.infer<typeof connectorHeartbeatRequestSchema>;
+
+export const connectorHeartbeatResponseSchema = z.object({
+  ok: z.literal(true),
+  accepted: z.literal(true)
+});
+export type ConnectorHeartbeatResponse = z.infer<typeof connectorHeartbeatResponseSchema>;
+
+export const connectorOperationalStatusSchema = z.enum(['unknown', 'running', 'stale', 'degraded', 'error']);
+export type ConnectorOperationalStatus = z.infer<typeof connectorOperationalStatusSchema>;
+
+export const serverOperationalStatusSchema = z.object({
+  serverId: z.string().min(1),
+  configured: z.boolean(),
+  connectorStatus: connectorOperationalStatusSchema,
+  lastHeartbeatAt: z.string().datetime().nullable(),
+  lastSuccessfulPollAt: z.string().datetime().nullable(),
+  explanation: z.string().min(1),
+  heartbeatAgeSeconds: z.number().int().min(0).nullable(),
+  consecutiveFailureCount: z.number().int().min(0).nullable(),
+  connectorMode: connectorModeSchema.nullable(),
+  capabilities: z.array(z.string())
+});
+export type ServerOperationalStatus = z.infer<typeof serverOperationalStatusSchema>;
+
+export const dataFreshnessStatusSchema = z.enum(['live', 'stale', 'historical', 'not_started', 'error']);
+export type DataFreshnessStatus = z.infer<typeof dataFreshnessStatusSchema>;
+
+export const dataFreshnessResponseSchema = z.object({
+  serverId: z.string().min(1),
+  status: dataFreshnessStatusSchema,
+  headline: z.string().min(1),
+  explanation: z.string().min(1),
+  lastHeartbeatAt: z.string().datetime().nullable(),
+  heartbeatAgeSeconds: z.number().int().min(0).nullable(),
+  lastSuccessfulPollAt: z.string().datetime().nullable(),
+  lastEventAt: z.string().datetime().nullable(),
+  lastSessionActivityAt: z.string().datetime().nullable(),
+  connectorStatus: connectorOperationalStatusSchema,
+  confidence: identityConfidenceSchema,
+  trustWarnings: z.array(z.string().min(1)),
+  recommendedAction: z.string().min(1)
+});
+export type DataFreshnessResponse = z.infer<typeof dataFreshnessResponseSchema>;
 
 export const configuredServerSummarySchema = z.object({
   id: z.string().min(1),

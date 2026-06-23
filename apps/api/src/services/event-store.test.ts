@@ -27,8 +27,12 @@ async function withFreshEventStore(run: (store: EventStoreModule) => Promise<voi
   const tempDir = mkdtempSync(join(tmpdir(), 'gameops-event-store-test-'));
   const statePath = join(tempDir, 'session-state.json');
   const previousPath = process.env.SESSION_STATE_STORE_PATH;
+  const previousPlayerIntelligencePath = process.env.PLAYER_INTELLIGENCE_STORE_PATH;
+  const previousPlayerEngagementPath = process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
 
   process.env.SESSION_STATE_STORE_PATH = statePath;
+  process.env.PLAYER_INTELLIGENCE_STORE_PATH = join(tempDir, 'player-intelligence-state.json');
+  process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = join(tempDir, 'player-engagement-rollups.json');
 
   try {
     const modulePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
@@ -39,6 +43,18 @@ async function withFreshEventStore(run: (store: EventStoreModule) => Promise<voi
       delete process.env.SESSION_STATE_STORE_PATH;
     } else {
       process.env.SESSION_STATE_STORE_PATH = previousPath;
+    }
+
+    if (previousPlayerIntelligencePath === undefined) {
+      delete process.env.PLAYER_INTELLIGENCE_STORE_PATH;
+    } else {
+      process.env.PLAYER_INTELLIGENCE_STORE_PATH = previousPlayerIntelligencePath;
+    }
+
+    if (previousPlayerEngagementPath === undefined) {
+      delete process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
+    } else {
+      process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = previousPlayerEngagementPath;
     }
 
     rmSync(tempDir, { recursive: true, force: true });
@@ -72,6 +88,10 @@ test('PLAYER_LEAVE closes an active session for a known player', async () => {
     assert.equal(closed[0]?.playerName, 'Alice');
     assert.equal(closed[0]?.endedAt, '2026-04-05T12:05:00.000Z');
     assert.equal(closed[0]?.durationSeconds, 300);
+    assert.equal(closed[0]?.closeReason, 'player_leave');
+    assert.equal(closed[0]?.startConfidence, 'high');
+    assert.equal(closed[0]?.endConfidence, 'high');
+    assert.equal((closed[0]?.sourceEventIds ?? []).length, 2);
     assert.equal(recentEvents[0]?.raw?.sessionCloseReason, 'player_leave');
   });
 });
@@ -107,6 +127,8 @@ test('disconnect signal with lower occupancy reconciles oldest active sessions',
     assert.equal(closed.length, 2);
     assert.equal(closedNames.has('Alpha'), true);
     assert.equal(closedNames.has('Bravo'), true);
+    assert.equal(closed.every((session) => session.closeReason === 'occupancy_reconciliation'), true);
+    assert.equal(closed.every((session) => session.endConfidence === 'low'), true);
 
     assert.equal(recentEvents[0]?.raw?.sessionCloseReason, 'occupancy_reconciliation');
     assert.equal(recentEvents[0]?.raw?.sessionReconciledCount, 2);
@@ -131,6 +153,8 @@ test('PLAYER_JOIN still replaces already-active session with replaced_by_new_joi
     assert.equal(closed.length, 1);
     assert.equal(closed[0]?.playerName, 'Delta');
     assert.equal(closed[0]?.endedAt, '2026-04-05T12:10:00.000Z');
+    assert.equal(closed[0]?.closeReason, 'replaced_by_new_join');
+    assert.equal(closed[0]?.endConfidence, 'medium');
 
     const replacementEvent = recentEvents.find((event) => event.eventType === 'PLAYER_JOIN' && event.raw?.sessionCloseReason === 'replaced_by_new_join');
     assert.ok(replacementEvent);
