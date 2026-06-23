@@ -464,6 +464,9 @@ export type PalworldConfigAudit = z.infer<typeof palworldConfigAuditSchema>;
 export const eventTemplateConfigDiffPreviewStatusSchema = z.enum(['available', 'limited', 'unavailable']);
 export type EventTemplateConfigDiffPreviewStatus = z.infer<typeof eventTemplateConfigDiffPreviewStatusSchema>;
 
+export const palworldRuntimeConfigAlignmentStatusSchema = z.enum(['matched', 'mismatched', 'unknown', 'unreadable']);
+export type PalworldRuntimeConfigAlignmentStatus = z.infer<typeof palworldRuntimeConfigAlignmentStatusSchema>;
+
 export const eventTemplateConfigDiffChangeSchema = z.object({
   key: z.string().min(1),
   currentFileValue: z.unknown(),
@@ -479,6 +482,10 @@ export const eventTemplateConfigDiffPreviewSchema = z.object({
   serverId: z.string().min(1),
   templateId: z.string().min(1),
   selectedConfigPath: z.string().min(1).nullable(),
+  targetConfigPath: z.string().min(1).nullable(),
+  activeRuntimeConfigPath: z.string().min(1).nullable(),
+  runtimeConfigMatchesSelected: z.boolean(),
+  runtimeAlignmentStatus: palworldRuntimeConfigAlignmentStatusSchema,
   previewStatus: eventTemplateConfigDiffPreviewStatusSchema,
   changes: z.array(eventTemplateConfigDiffChangeSchema),
   missingKeys: z.array(z.string().min(1)),
@@ -512,6 +519,9 @@ export const palworldBackupReadinessSchema = z.object({
   filesToBackup: z.array(palworldBackupReadinessFileSchema),
   proposedBackupDirectory: z.string().min(1).nullable(),
   proposedBackupFilenamePattern: z.string().min(1).nullable(),
+  activeRuntimeConfigPath: z.string().min(1).nullable(),
+  runtimeConfigMatchesSelected: z.boolean(),
+  runtimeAlignmentStatus: palworldRuntimeConfigAlignmentStatusSchema,
   rollbackRequirements: z.array(z.string().min(1)),
   validationSteps: z.array(z.string().min(1)),
   safetyWarnings: z.array(z.string().min(1)),
@@ -544,6 +554,57 @@ export const eventTemplateManualChangeChecklistSchema = z.object({
   reasonApplyDisabled: z.string().min(1)
 });
 export type EventTemplateManualChangeChecklist = z.infer<typeof eventTemplateManualChangeChecklistSchema>;
+
+export const eventTemplateManualEditPlanStatusSchema = z.enum(['available', 'limited', 'blocked']);
+export type EventTemplateManualEditPlanStatus = z.infer<typeof eventTemplateManualEditPlanStatusSchema>;
+
+export const eventTemplateManualEditPlanChangeSchema = z.object({
+  key: z.string().min(1),
+  fromValue: z.unknown(),
+  toValue: z.unknown().nullable()
+});
+export type EventTemplateManualEditPlanChange = z.infer<typeof eventTemplateManualEditPlanChangeSchema>;
+
+export const eventTemplateManualEditPlanSchema = z.object({
+  serverId: z.string().min(1),
+  templateId: z.string().min(1),
+  planStatus: eventTemplateManualEditPlanStatusSchema,
+  targetConfigPath: z.string().min(1).nullable(),
+  backupRecommendation: z.string().min(1),
+  exactChanges: z.array(eventTemplateManualEditPlanChangeSchema),
+  manualSteps: z.array(z.string().min(1)),
+  copyableText: z.string().min(1),
+  warnings: z.array(z.string().min(1)),
+  canApply: z.literal(false)
+});
+export type EventTemplateManualEditPlan = z.infer<typeof eventTemplateManualEditPlanSchema>;
+
+export const palworldRuntimeAuditStatusSchema = z.enum([
+  'matched_active_config',
+  'mismatched_config',
+  'missing_systemd_service',
+  'missing_working_directory',
+  'active_config_unreadable',
+  'unknown'
+]);
+export type PalworldRuntimeAuditStatus = z.infer<typeof palworldRuntimeAuditStatusSchema>;
+
+export const palworldRuntimeAuditSchema = z.object({
+  serverId: z.string().min(1),
+  servicePath: z.string().min(1),
+  serviceReadable: z.boolean(),
+  workingDirectory: z.string().min(1).nullable(),
+  execStart: z.string().min(1).nullable(),
+  inferredActiveConfigPath: z.string().min(1).nullable(),
+  inferredActiveConfigExists: z.boolean(),
+  inferredActiveConfigReadable: z.boolean(),
+  selectedConfigAuditPath: z.string().min(1).nullable(),
+  pathsMatch: z.boolean(),
+  runtimeAuditStatus: palworldRuntimeAuditStatusSchema,
+  summary: z.string().min(1),
+  safetyWarnings: z.array(z.string().min(1))
+});
+export type PalworldRuntimeAudit = z.infer<typeof palworldRuntimeAuditSchema>;
 
 export const observedSettingValueTypeSchema = z.enum(['string', 'number', 'boolean', 'object', 'array', 'null', 'unknown']);
 export type ObservedSettingValueType = z.infer<typeof observedSettingValueTypeSchema>;

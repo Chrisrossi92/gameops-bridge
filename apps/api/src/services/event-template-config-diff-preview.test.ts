@@ -89,6 +89,18 @@ function writePalworldSettings(savePath: string, settingsLine: string): void {
   ].join('\n'), 'utf8');
 }
 
+function writeSystemdService(path: string, workingDirectory: string): void {
+  writeFileSync(path, [
+    '[Service]',
+    `WorkingDirectory=${workingDirectory}`,
+    'ExecStart=/opt/steamcmd/palserver PalServer.sh'
+  ].join('\n'), 'utf8');
+}
+
+function activeConfigPath(workingDirectory: string): string {
+  return join(workingDirectory, 'Pal', 'Saved', 'Config', 'LinuxServer', 'PalWorldSettings.ini');
+}
+
 async function withFreshPreview(run: (modules: {
   preview: PreviewModule;
   settings: SettingsModule;
@@ -98,10 +110,12 @@ async function withFreshPreview(run: (modules: {
   const previousConfigPath = process.env.GAMEOPS_CONFIG_PATH;
   const previousTelemetryPath = process.env.PALWORLD_TELEMETRY_STORE_PATH;
   const previousDraftStorePath = process.env.EVENT_TEMPLATE_DRAFT_STORE_PATH;
+  const previousServicePath = process.env.PALWORLD_SYSTEMD_SERVICE_PATH;
 
   process.env.GAMEOPS_CONFIG_PATH = join(tempDir, 'gameops.config.json');
   process.env.PALWORLD_TELEMETRY_STORE_PATH = join(tempDir, 'palworld-telemetry.json');
   process.env.EVENT_TEMPLATE_DRAFT_STORE_PATH = join(tempDir, 'event-template-drafts.json');
+  process.env.PALWORLD_SYSTEMD_SERVICE_PATH = join(tempDir, 'palworld.service');
 
   try {
     const nonce = `${Date.now()}-${Math.random()}`;
@@ -119,6 +133,9 @@ async function withFreshPreview(run: (modules: {
 
     if (previousDraftStorePath === undefined) delete process.env.EVENT_TEMPLATE_DRAFT_STORE_PATH;
     else process.env.EVENT_TEMPLATE_DRAFT_STORE_PATH = previousDraftStorePath;
+
+    if (previousServicePath === undefined) delete process.env.PALWORLD_SYSTEMD_SERVICE_PATH;
+    else process.env.PALWORLD_SYSTEMD_SERVICE_PATH = previousServicePath;
 
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -144,7 +161,62 @@ test('config diff preview is available when config file and draft target match',
     assert.equal(result?.changes[0]?.currentFileValue, 1);
     assert.equal(result?.changes[0]?.currentObservedValue, 1);
     assert.equal(result?.changes[0]?.proposedValue, 2);
+    assert.equal(result?.runtimeAlignmentStatus, 'unknown');
+    assert.equal(result?.targetConfigPath, join(savePath, 'Config', 'LinuxServer', 'PalWorldSettings.ini'));
     assert.equal(result?.canApply, false);
+  });
+});
+
+test('config diff preview targets active runtime config when paths match', async () => {
+  await withFreshPreview(({ preview, settings, tempDir }) => {
+    const serverId = 'palworld-diff-runtime-match';
+    const workingDirectory = join(tempDir, 'pal1');
+    const savePath = join(workingDirectory, 'Pal', 'Saved');
+    writeConfig(join(tempDir, 'gameops.config.json'), palworldRestServer({ id: serverId, savePath }));
+    writeTelemetry(join(tempDir, 'palworld-telemetry.json'), serverId, { ExpRate: 1 });
+    writePalworldSettings(savePath, 'OptionSettings=(ExpRate=1.000000)');
+    writeSystemdService(join(tempDir, 'palworld.service'), workingDirectory);
+    settings.saveEventTemplateDraftCustomization({
+      serverId,
+      templateId: 'xp-boost-event',
+      override: { targetMultiplier: 2 }
+    });
+
+    const result = preview.getEventTemplateConfigDiffPreview(serverId, 'xp-boost-event');
+
+    assert.equal(result?.previewStatus, 'available');
+    assert.equal(result?.activeRuntimeConfigPath, activeConfigPath(workingDirectory));
+    assert.equal(result?.targetConfigPath, activeConfigPath(workingDirectory));
+    assert.equal(result?.runtimeConfigMatchesSelected, true);
+    assert.equal(result?.runtimeAlignmentStatus, 'matched');
+    assert.equal(result?.canApply, false);
+  });
+});
+
+test('config diff preview warns when runtime config mismatches discovery path', async () => {
+  await withFreshPreview(({ preview, settings, tempDir }) => {
+    const serverId = 'palworld-diff-runtime-mismatch';
+    const workingDirectory = join(tempDir, 'pal1');
+    const savePath = join(tempDir, 'pal2', 'Pal', 'Saved');
+    writeConfig(join(tempDir, 'gameops.config.json'), palworldRestServer({ id: serverId, savePath }));
+    writeTelemetry(join(tempDir, 'palworld-telemetry.json'), serverId, { ExpRate: 1 });
+    writePalworldSettings(savePath, 'OptionSettings=(ExpRate=1.000000)');
+    writePalworldSettings(join(workingDirectory, 'Pal', 'Saved'), 'OptionSettings=(ExpRate=1.000000)');
+    writeSystemdService(join(tempDir, 'palworld.service'), workingDirectory);
+    settings.saveEventTemplateDraftCustomization({
+      serverId,
+      templateId: 'xp-boost-event',
+      override: { targetMultiplier: 2 }
+    });
+
+    const result = preview.getEventTemplateConfigDiffPreview(serverId, 'xp-boost-event');
+
+    assert.equal(result?.previewStatus, 'limited');
+    assert.equal(result?.runtimeConfigMatchesSelected, false);
+    assert.equal(result?.runtimeAlignmentStatus, 'mismatched');
+    assert.equal(result?.activeRuntimeConfigPath, activeConfigPath(workingDirectory));
+    assert.equal(result?.canApply, false);
+    assert.equal(result?.safetyWarnings.some((warning) => /active runtime config/i.test(warning)), true);
   });
 });
 

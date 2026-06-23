@@ -2,9 +2,11 @@ import {
   eventTemplateConfigDiffPreviewSchema,
   type EventTemplateConfigDiffPreview,
   type EventTemplateDraft,
-  type ObservedSettingValueType
+  type ObservedSettingValueType,
+  type PalworldRuntimeConfigAlignmentStatus
 } from '@gameops/shared';
 import { getPalworldParsedConfigContext, normalizePalworldSettingKey } from './palworld-config-audit.js';
+import { getPalworldRuntimeAudit } from './palworld-runtime-audit.js';
 import { getEventTemplateDraftCatalog } from './settings-capabilities.js';
 
 function getValueType(value: unknown): ObservedSettingValueType {
@@ -81,23 +83,90 @@ function unavailable(input: {
   serverId: string;
   templateId: string;
   selectedConfigPath: string | null;
+  targetConfigPath: string | null;
+  activeRuntimeConfigPath: string | null;
+  runtimeConfigMatchesSelected: boolean;
+  runtimeAlignmentStatus: PalworldRuntimeConfigAlignmentStatus;
+  runtimeWarnings: string[];
   reason: string;
 }): EventTemplateConfigDiffPreview {
   return eventTemplateConfigDiffPreviewSchema.parse({
     serverId: input.serverId,
     templateId: input.templateId,
     selectedConfigPath: input.selectedConfigPath,
+    targetConfigPath: input.targetConfigPath,
+    activeRuntimeConfigPath: input.activeRuntimeConfigPath,
+    runtimeConfigMatchesSelected: input.runtimeConfigMatchesSelected,
+    runtimeAlignmentStatus: input.runtimeAlignmentStatus,
     previewStatus: 'unavailable',
     changes: [],
     missingKeys: [],
     unmappedSettings: [],
     safetyWarnings: [
+      ...input.runtimeWarnings,
       input.reason,
       'Read-only preview only. GameOps cannot apply config file changes.'
     ],
     canApply: false,
     reasonApplyDisabled: 'No config write path, backup workflow, or restart validation has been proven.'
   });
+}
+
+function getRuntimeAlignment(serverId: string, selectedConfigPath: string | null): {
+  targetConfigPath: string | null;
+  activeRuntimeConfigPath: string | null;
+  runtimeConfigMatchesSelected: boolean;
+  runtimeAlignmentStatus: PalworldRuntimeConfigAlignmentStatus;
+  runtimeWarnings: string[];
+} {
+  const runtimeAudit = getPalworldRuntimeAudit(serverId);
+  const activeRuntimeConfigPath = runtimeAudit.inferredActiveConfigPath;
+
+  if (runtimeAudit.runtimeAuditStatus === 'matched_active_config' && activeRuntimeConfigPath) {
+    return {
+      targetConfigPath: activeRuntimeConfigPath,
+      activeRuntimeConfigPath,
+      runtimeConfigMatchesSelected: true,
+      runtimeAlignmentStatus: 'matched',
+      runtimeWarnings: []
+    };
+  }
+
+  if (runtimeAudit.runtimeAuditStatus === 'mismatched_config' && activeRuntimeConfigPath) {
+    return {
+      targetConfigPath: selectedConfigPath,
+      activeRuntimeConfigPath,
+      runtimeConfigMatchesSelected: false,
+      runtimeAlignmentStatus: 'mismatched',
+      runtimeWarnings: [
+        `Active runtime config appears to be ${activeRuntimeConfigPath}, but GameOps selected ${selectedConfigPath ?? 'no config file'}.`,
+        'Manual preflight is blocked until the configured savePath points at the active Palworld server config.'
+      ]
+    };
+  }
+
+  if (runtimeAudit.runtimeAuditStatus === 'active_config_unreadable' && activeRuntimeConfigPath) {
+    return {
+      targetConfigPath: selectedConfigPath,
+      activeRuntimeConfigPath,
+      runtimeConfigMatchesSelected: runtimeAudit.pathsMatch,
+      runtimeAlignmentStatus: 'unreadable',
+      runtimeWarnings: [
+        `Active runtime config appears to be ${activeRuntimeConfigPath}, but GameOps cannot read it.`,
+        'Manual preflight is limited until the active config file can be read.'
+      ]
+    };
+  }
+
+  return {
+    targetConfigPath: selectedConfigPath,
+    activeRuntimeConfigPath,
+    runtimeConfigMatchesSelected: false,
+    runtimeAlignmentStatus: 'unknown',
+    runtimeWarnings: [
+      'Active runtime config could not be identified from systemd, so GameOps is falling back to config discovery.'
+    ]
+  };
 }
 
 export function getEventTemplateConfigDiffPreview(serverId: string, templateId: string): EventTemplateConfigDiffPreview | null {
@@ -109,12 +178,14 @@ export function getEventTemplateConfigDiffPreview(serverId: string, templateId: 
   }
 
   const context = getPalworldParsedConfigContext(serverId);
+  const runtimeAlignment = getRuntimeAlignment(serverId, context.audit.selectedPath);
 
   if (context.audit.parseStatus !== 'parsed' || !context.audit.selectedPath) {
     return unavailable({
       serverId,
       templateId,
       selectedConfigPath: context.audit.selectedPath,
+      ...runtimeAlignment,
       reason: 'No readable parsed PalWorldSettings.ini file is available for this server.'
     });
   }
@@ -155,17 +226,24 @@ export function getEventTemplateConfigDiffPreview(serverId: string, templateId: 
   const limited = missingKeys.length > 0
     || unmappedSettings.length > 0
     || changes.length === 0
-    || changes.some((change) => change.proposedValue === null || change.warningNotes.length > 0);
+    || changes.some((change) => change.proposedValue === null || change.warningNotes.length > 0)
+    || runtimeAlignment.runtimeAlignmentStatus === 'mismatched'
+    || runtimeAlignment.runtimeAlignmentStatus === 'unreadable';
 
   return eventTemplateConfigDiffPreviewSchema.parse({
     serverId,
     templateId,
     selectedConfigPath: context.audit.selectedPath,
+    targetConfigPath: runtimeAlignment.targetConfigPath,
+    activeRuntimeConfigPath: runtimeAlignment.activeRuntimeConfigPath,
+    runtimeConfigMatchesSelected: runtimeAlignment.runtimeConfigMatchesSelected,
+    runtimeAlignmentStatus: runtimeAlignment.runtimeAlignmentStatus,
     previewStatus: limited ? 'limited' : 'available',
     changes,
     missingKeys: Array.from(new Set(missingKeys)).sort(),
     unmappedSettings: Array.from(new Set(unmappedSettings)).sort(),
     safetyWarnings: [
+      ...runtimeAlignment.runtimeWarnings,
       'Read-only preview only. GameOps will not edit PalWorldSettings.ini.',
       'A diff preview does not prove file editing is safe or live-reloadable.',
       'Backup, rollback, and restart validation are still required before any write path.'

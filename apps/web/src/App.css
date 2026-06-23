@@ -1607,6 +1607,19 @@
   font-weight: 800;
 }
 
+.manual-edit-plan-text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 12rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 0.45rem;
+  padding: 0.65rem;
+  background: #f8fafc;
+  color: #1e293b;
+  font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
 .homepage-player-main {
   min-width: 0;
   flex: 1;

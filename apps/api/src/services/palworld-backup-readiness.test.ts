@@ -76,9 +76,11 @@ async function withFreshBackupReadiness(run: (modules: {
   const tempDir = mkdtempSync(join(tmpdir(), 'gameops-palworld-backup-readiness-test-'));
   const previousConfigPath = process.env.GAMEOPS_CONFIG_PATH;
   const previousTelemetryPath = process.env.PALWORLD_TELEMETRY_STORE_PATH;
+  const previousServicePath = process.env.PALWORLD_SYSTEMD_SERVICE_PATH;
 
   process.env.GAMEOPS_CONFIG_PATH = join(tempDir, 'gameops.config.json');
   process.env.PALWORLD_TELEMETRY_STORE_PATH = join(tempDir, 'palworld-telemetry.json');
+  process.env.PALWORLD_SYSTEMD_SERVICE_PATH = join(tempDir, 'palworld.service');
 
   try {
     const nonce = `${Date.now()}-${Math.random()}`;
@@ -91,6 +93,9 @@ async function withFreshBackupReadiness(run: (modules: {
 
     if (previousTelemetryPath === undefined) delete process.env.PALWORLD_TELEMETRY_STORE_PATH;
     else process.env.PALWORLD_TELEMETRY_STORE_PATH = previousTelemetryPath;
+
+    if (previousServicePath === undefined) delete process.env.PALWORLD_SYSTEMD_SERVICE_PATH;
+    else process.env.PALWORLD_SYSTEMD_SERVICE_PATH = previousServicePath;
 
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -109,6 +114,7 @@ test('Palworld backup readiness reports readable config file', async () => {
     assert.equal(result.filesToBackup[0]?.readable, true);
     assert.equal(result.proposedBackupDirectory, join(savePath, 'Config', 'LinuxServer', 'gameops-backups'));
     assert.equal(result.proposedBackupFilenamePattern, 'PalWorldSettings.ini.{timestamp}.bak');
+    assert.equal(result.runtimeAlignmentStatus, 'unknown');
     assert.equal(result.canCreateBackup, false);
   });
 });

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { palworldBackupReadinessSchema, type PalworldBackupReadiness } from '@gameops/shared';
 import { getPalworldConfigAudit } from './palworld-config-audit.js';
+import { getPalworldRuntimeAudit } from './palworld-runtime-audit.js';
 
 const ROLLBACK_REQUIREMENTS = [
   'Backup the selected PalWorldSettings.ini before any future config change.',
@@ -36,9 +37,28 @@ function getReadable(path: string): boolean {
 
 export function getPalworldBackupReadiness(serverId: string): PalworldBackupReadiness {
   const audit = getPalworldConfigAudit(serverId);
+  const runtimeAudit = getPalworldRuntimeAudit(serverId);
   const selectedPath = audit.selectedPath;
   const proposedBackupDirectory = selectedPath ? join(dirname(selectedPath), 'gameops-backups') : null;
   const proposedBackupFilenamePattern = selectedPath ? 'PalWorldSettings.ini.{timestamp}.bak' : null;
+  const runtimeAlignmentStatus = runtimeAudit.runtimeAuditStatus === 'matched_active_config'
+    ? 'matched'
+    : runtimeAudit.runtimeAuditStatus === 'mismatched_config'
+      ? 'mismatched'
+      : runtimeAudit.runtimeAuditStatus === 'active_config_unreadable'
+        ? 'unreadable'
+        : 'unknown';
+  const runtimeSafetyWarnings = [
+    ...(runtimeAlignmentStatus === 'mismatched'
+      ? [`Active runtime config appears to be ${runtimeAudit.inferredActiveConfigPath}, but backup readiness selected ${selectedPath ?? 'no config file'}.`]
+      : []),
+    ...(runtimeAlignmentStatus === 'unknown'
+      ? ['Active runtime config could not be identified from systemd; backup readiness is based on config discovery only.']
+      : []),
+    ...(runtimeAlignmentStatus === 'unreadable'
+      ? ['Active runtime config matches discovery but is not readable.']
+      : [])
+  ];
 
   if (!selectedPath) {
     return palworldBackupReadinessSchema.parse({
@@ -53,10 +73,14 @@ export function getPalworldBackupReadiness(serverId: string): PalworldBackupRead
       })),
       proposedBackupDirectory,
       proposedBackupFilenamePattern,
+      activeRuntimeConfigPath: runtimeAudit.inferredActiveConfigPath,
+      runtimeConfigMatchesSelected: runtimeAudit.pathsMatch,
+      runtimeAlignmentStatus,
       rollbackRequirements: ROLLBACK_REQUIREMENTS,
       validationSteps: VALIDATION_STEPS,
       safetyWarnings: [
         ...SAFETY_WARNINGS,
+        ...runtimeSafetyWarnings,
         'No selected config file is available to include in a backup plan.'
       ],
       canCreateBackup: false,
@@ -66,7 +90,9 @@ export function getPalworldBackupReadiness(serverId: string): PalworldBackupRead
 
   const exists = existsSync(selectedPath);
   const readable = exists ? getReadable(selectedPath) : false;
-  const readinessStatus = !exists
+  const readinessStatus = runtimeAlignmentStatus === 'mismatched'
+    ? 'unknown'
+    : !exists
     ? 'blocked_missing_config_file'
     : readable
       ? 'ready_for_manual_backup_plan'
@@ -88,9 +114,15 @@ export function getPalworldBackupReadiness(serverId: string): PalworldBackupRead
     }],
     proposedBackupDirectory,
     proposedBackupFilenamePattern,
+    activeRuntimeConfigPath: runtimeAudit.inferredActiveConfigPath,
+    runtimeConfigMatchesSelected: runtimeAudit.pathsMatch,
+    runtimeAlignmentStatus,
     rollbackRequirements: ROLLBACK_REQUIREMENTS,
     validationSteps: VALIDATION_STEPS,
-    safetyWarnings: SAFETY_WARNINGS,
+    safetyWarnings: [
+      ...SAFETY_WARNINGS,
+      ...runtimeSafetyWarnings
+    ],
     canCreateBackup: false,
     reasonCreateBackupDisabled: 'Backup creation is not implemented. This endpoint only audits readiness.'
   });

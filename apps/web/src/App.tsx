@@ -5,6 +5,7 @@ import {
   dataFreshnessResponseSchema,
   eventTemplateDraftCatalogSchema,
   eventTemplateConfigDiffPreviewSchema,
+  eventTemplateManualEditPlanSchema,
   eventTemplateManualChangeChecklistSchema,
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
@@ -14,6 +15,7 @@ import {
   palworldIdentityLinksResponseSchema,
   palworldGuildActivityResponseSchema,
   palworldConfigAuditSchema,
+  palworldRuntimeAuditSchema,
   palworldLatestPlayersResponseSchema,
   palworldMilestoneFeedResponseSchema,
   palworldMetricsSummariesResponseSchema,
@@ -36,11 +38,13 @@ import {
   type DataFreshnessResponse,
   type EventTemplateDraftCatalog,
   type EventTemplateConfigDiffPreview,
+  type EventTemplateManualEditPlan,
   type EventTemplateManualChangeChecklist,
   type ServerOperationalStatus,
   type PalworldGuildActivityEntry,
   type PalworldGuildActivityMember,
   type PalworldConfigAudit,
+  type PalworldRuntimeAudit,
   type KnownPlayerProfileResponse,
   type NormalizedEvent,
   type ObservedSettingsResponse,
@@ -111,6 +115,7 @@ interface ServerSummary {
   eventTemplateDrafts: EventTemplateDraftCatalog;
   palworldConfigAudit: PalworldConfigAudit | null;
   palworldBackupReadiness: PalworldBackupReadiness | null;
+  palworldRuntimeAudit: PalworldRuntimeAudit | null;
   sessionTimeline: SessionTimelineResponse;
   knownPlayers: KnownPlayerEntry[];
   palworldLatestPlayers: PalworldLatestPlayerTelemetry[];
@@ -828,6 +833,72 @@ function PalworldConfigAuditPanel({ audit }: PalworldConfigAuditPanelProps) {
   );
 }
 
+interface PalworldRuntimeAuditPanelProps {
+  audit: PalworldRuntimeAudit;
+}
+
+function getRuntimeAuditTone(audit: PalworldRuntimeAudit): string {
+  if (audit.runtimeAuditStatus === 'matched_active_config') {
+    return 'high';
+  }
+
+  if (audit.runtimeAuditStatus === 'mismatched_config' || audit.runtimeAuditStatus === 'active_config_unreadable') {
+    return 'low';
+  }
+
+  return 'medium';
+}
+
+function PalworldRuntimeAuditPanel({ audit }: PalworldRuntimeAuditPanelProps) {
+  return (
+    <article className="card settings-capability-card">
+      <div className="panel-title-row">
+        <div>
+          <h2>Active Palworld Runtime</h2>
+          <p className="subtle">{audit.summary}</p>
+        </div>
+        <span className={`confidence-badge confidence-${getRuntimeAuditTone(audit)}`}>
+          {audit.runtimeAuditStatus}
+        </span>
+      </div>
+
+      <div className="detail-grid">
+        <section className="detail-block">
+          <h3>Systemd service</h3>
+          <ul className="list compact">
+            <li><span>Path</span><span>{audit.servicePath}</span></li>
+            <li><span>Readable</span><span>{audit.serviceReadable ? 'yes' : 'no'}</span></li>
+            <li><span>Working dir</span><span>{audit.workingDirectory ?? 'unknown'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Active config</h3>
+          <ul className="list compact">
+            <li><span>Inferred path</span><span>{audit.inferredActiveConfigPath ?? 'unknown'}</span></li>
+            <li><span>Exists</span><span>{audit.inferredActiveConfigExists ? 'yes' : 'no'}</span></li>
+            <li><span>Readable</span><span>{audit.inferredActiveConfigReadable ? 'yes' : 'no'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>GameOps selected</h3>
+          <ul className="list compact">
+            <li><span>Config audit path</span><span>{audit.selectedConfigAuditPath ?? 'none selected'}</span></li>
+            <li><span>Matches runtime</span><span>{audit.pathsMatch ? 'yes' : 'no'}</span></li>
+          </ul>
+        </section>
+      </div>
+
+      <div className="trust-warning-row">
+        {audit.safetyWarnings.slice(0, 3).map((warning) => (
+          <span key={warning}>{warning}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 interface PalworldBackupReadinessPanelProps {
   readiness: PalworldBackupReadiness;
 }
@@ -860,6 +931,8 @@ function PalworldBackupReadinessPanel({ readiness }: PalworldBackupReadinessPane
           <h3>File to back up</h3>
           <ul className="list compact">
             <li><span>Path</span><span>{primaryFile?.path ?? 'none selected'}</span></li>
+            <li><span>Active runtime config</span><span>{readiness.activeRuntimeConfigPath ?? 'unknown'}</span></li>
+            <li><span>Runtime alignment</span><span>{readiness.runtimeAlignmentStatus}</span></li>
             <li><span>Exists</span><span>{primaryFile ? (primaryFile.exists ? 'yes' : 'no') : 'unknown'}</span></li>
             <li><span>Readable</span><span>{primaryFile ? (primaryFile.readable ? 'yes' : 'no') : 'unknown'}</span></li>
           </ul>
@@ -1041,6 +1114,9 @@ interface EventTemplateDraftEditDrawerProps {
   manualChecklist: EventTemplateManualChangeChecklist | null;
   manualChecklistLoading: boolean;
   manualChecklistError: string | null;
+  manualEditPlan: EventTemplateManualEditPlan | null;
+  manualEditPlanLoading: boolean;
+  manualEditPlanError: string | null;
   onDisplayNameChange: (value: string) => void;
   onTargetMultiplierChange: (value: string) => void;
   onTargetValueChange: (value: string) => void;
@@ -1070,6 +1146,9 @@ function EventTemplateDraftEditDrawer({
   manualChecklist,
   manualChecklistLoading,
   manualChecklistError,
+  manualEditPlan,
+  manualEditPlanLoading,
+  manualEditPlanError,
   onDisplayNameChange,
   onTargetMultiplierChange,
   onTargetValueChange,
@@ -1164,7 +1243,9 @@ function EventTemplateDraftEditDrawer({
               <>
                 <ul>
                   <li><span>Status</span><span>{configDiffPreview.previewStatus}</span></li>
-                  <li><span>Config file</span><span>{configDiffPreview.selectedConfigPath ?? 'none selected'}</span></li>
+                  <li><span>Target config</span><span>{configDiffPreview.targetConfigPath ?? 'none selected'}</span></li>
+                  <li><span>Discovered config</span><span>{configDiffPreview.selectedConfigPath ?? 'none selected'}</span></li>
+                  <li><span>Runtime alignment</span><span>{configDiffPreview.runtimeAlignmentStatus}</span></li>
                   {configDiffPreview.changes.slice(0, 6).map((change) => (
                     <li key={change.key}>
                       <span>{change.key}</span>
@@ -1182,6 +1263,9 @@ function EventTemplateDraftEditDrawer({
                   {configDiffPreview.unmappedSettings.length > 0 ? (
                     <li><span>Unmapped</span><span>{configDiffPreview.unmappedSettings.join(', ')}</span></li>
                   ) : null}
+                  {configDiffPreview.safetyWarnings.slice(0, 2).map((warning) => (
+                    <li key={warning}><span className="subtle">{warning}</span></li>
+                  ))}
                 </ul>
                 <p className="subtle">{configDiffPreview.reasonApplyDisabled}</p>
               </>
@@ -1216,6 +1300,38 @@ function EventTemplateDraftEditDrawer({
                 </ul>
                 <p className="subtle">{manualChecklist.ownerConfirmationText}</p>
                 <p className="subtle">{manualChecklist.reasonApplyDisabled}</p>
+              </>
+            ) : null}
+          </section>
+          <section className="event-draft-preview">
+            <h3>Manual Edit Plan</h3>
+            <p className="subtle">This is instructions only. GameOps will not change the server.</p>
+            {manualEditPlanLoading ? <p className="subtle">Loading manual edit plan...</p> : null}
+            {manualEditPlanError ? <p className="player-drawer-error">{manualEditPlanError}</p> : null}
+            {!manualEditPlanLoading && !manualEditPlanError && !manualEditPlan ? (
+              <p className="subtle">No manual edit plan loaded.</p>
+            ) : null}
+            {manualEditPlan ? (
+              <>
+                <ul>
+                  <li><span>Status</span><span>{manualEditPlan.planStatus}</span></li>
+                  <li><span>Target config</span><span>{manualEditPlan.targetConfigPath ?? 'unknown'}</span></li>
+                  <li><span>Changes</span><span>{manualEditPlan.exactChanges.length}</span></li>
+                </ul>
+                <textarea
+                  className="manual-edit-plan-text"
+                  value={manualEditPlan.copyableText}
+                  readOnly
+                  aria-label="Copyable manual edit plan"
+                  rows={12}
+                />
+                {manualEditPlan.warnings.length > 0 ? (
+                  <ul>
+                    {manualEditPlan.warnings.slice(0, 3).map((warning) => (
+                      <li key={warning}><span className="subtle">{warning}</span></li>
+                    ))}
+                  </ul>
+                ) : null}
               </>
             ) : null}
           </section>
@@ -1929,6 +2045,9 @@ function App() {
   const [eventDraftManualChecklist, setEventDraftManualChecklist] = useState<EventTemplateManualChangeChecklist | null>(null);
   const [eventDraftManualChecklistLoading, setEventDraftManualChecklistLoading] = useState(false);
   const [eventDraftManualChecklistError, setEventDraftManualChecklistError] = useState<string | null>(null);
+  const [eventDraftManualEditPlan, setEventDraftManualEditPlan] = useState<EventTemplateManualEditPlan | null>(null);
+  const [eventDraftManualEditPlanLoading, setEventDraftManualEditPlanLoading] = useState(false);
+  const [eventDraftManualEditPlanError, setEventDraftManualEditPlanError] = useState<string | null>(null);
   const [playerProfiles, setPlayerProfiles] = useState<PalworldPlayerProfileSessionSummary[]>([]);
   const [palworldPlayerProfiles, setPalworldPlayerProfiles] = useState<PalworldUnifiedPlayerProfile[]>([]);
   const [palworldPlayerProfilesLoading, setPalworldPlayerProfilesLoading] = useState(false);
@@ -2188,7 +2307,8 @@ function App() {
                 fetch(`${apiBaseUrl}/servers/${server.id}/palworld/players/latest?limit=8`),
                 fetch(`${apiBaseUrl}/servers/${server.id}/palworld/metrics/recent?limit=8`),
                 fetch(`${apiBaseUrl}/servers/${server.id}/palworld-config-audit`),
-                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-backup-readiness`)
+                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-backup-readiness`),
+                fetch(`${apiBaseUrl}/servers/${server.id}/palworld-runtime-audit`)
               ]
             : [];
           const responses = await Promise.all([...sharedRequests, ...palworldRequests]);
@@ -2209,6 +2329,7 @@ function App() {
           const palworldMetricsResponse = server.game === 'palworld' ? responses[14] : null;
           const palworldConfigAuditResponse = server.game === 'palworld' ? responses[15] : null;
           const palworldBackupReadinessResponse = server.game === 'palworld' ? responses[16] : null;
+          const palworldRuntimeAuditResponse = server.game === 'palworld' ? responses[17] : null;
 
           if (!statusResponse.ok || !sessionsResponse.ok || !knownPlayersResponse.ok || !eventsResponse.ok || !activityLogResponse.ok || !operationalStatusResponse.ok || !dataFreshnessResponse.ok || !playerIntelligenceResponse.ok || !playerEngagementResponse.ok || !serverAliveRhythmResponse.ok || !settingsCapabilitiesResponse.ok || !eventTemplateDraftsResponse.ok || !sessionTimelineResponse.ok) {
             const statusCode = [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse, activityLogResponse, operationalStatusResponse, dataFreshnessResponse, playerIntelligenceResponse, playerEngagementResponse, serverAliveRhythmResponse, settingsCapabilitiesResponse, eventTemplateDraftsResponse, sessionTimelineResponse]
@@ -2232,7 +2353,11 @@ function App() {
             throw new Error(`Server ${server.id} Palworld backup readiness fetch failed with status ${palworldBackupReadinessResponse.status}`);
           }
 
-          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, dataFreshnessPayload, playerIntelligencePayload, playerEngagementPayload, serverAliveRhythmPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload, palworldLatestPlayersPayload, palworldMetricsPayload, palworldConfigAuditPayload, palworldBackupReadinessPayload] = await Promise.all([
+          if (palworldRuntimeAuditResponse && !palworldRuntimeAuditResponse.ok) {
+            throw new Error(`Server ${server.id} Palworld runtime audit fetch failed with status ${palworldRuntimeAuditResponse.status}`);
+          }
+
+          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, dataFreshnessPayload, playerIntelligencePayload, playerEngagementPayload, serverAliveRhythmPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload, palworldLatestPlayersPayload, palworldMetricsPayload, palworldConfigAuditPayload, palworldBackupReadinessPayload, palworldRuntimeAuditPayload] = await Promise.all([
             statusResponse.json(),
             sessionsResponse.json(),
             knownPlayersResponse.json(),
@@ -2249,7 +2374,8 @@ function App() {
             palworldLatestPlayersResponse ? palworldLatestPlayersResponse.json() : Promise.resolve(null),
             palworldMetricsResponse ? palworldMetricsResponse.json() : Promise.resolve(null),
             palworldConfigAuditResponse ? palworldConfigAuditResponse.json() : Promise.resolve(null),
-            palworldBackupReadinessResponse ? palworldBackupReadinessResponse.json() : Promise.resolve(null)
+            palworldBackupReadinessResponse ? palworldBackupReadinessResponse.json() : Promise.resolve(null),
+            palworldRuntimeAuditResponse ? palworldRuntimeAuditResponse.json() : Promise.resolve(null)
           ]);
 
           const statusParsed = serverStatusSchema.safeParse(statusPayload);
@@ -2277,6 +2403,9 @@ function App() {
           const palworldBackupReadinessParsed = server.game === 'palworld'
             ? palworldBackupReadinessSchema.safeParse(palworldBackupReadinessPayload)
             : null;
+          const palworldRuntimeAuditParsed = server.game === 'palworld'
+            ? palworldRuntimeAuditSchema.safeParse(palworldRuntimeAuditPayload)
+            : null;
 
           if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success || !activityLogParsed.success || !operationalStatusParsed.success || !dataFreshnessParsed.success || !playerIntelligenceParsed.success || !playerEngagementParsed.success || !serverAliveRhythmParsed.success || !settingsCapabilitiesParsed.success || !eventTemplateDraftsParsed.success || !sessionTimelineParsed.success) {
             throw new Error(`Server ${server.id} payload validation failed.`);
@@ -2298,6 +2427,10 @@ function App() {
             throw new Error(`Server ${server.id} Palworld backup readiness payload validation failed.`);
           }
 
+          if (palworldRuntimeAuditParsed && !palworldRuntimeAuditParsed.success) {
+            throw new Error(`Server ${server.id} Palworld runtime audit payload validation failed.`);
+          }
+
           const recentEvents = [...eventsParsed.data.events]
             .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
             .slice(0, 10);
@@ -2308,6 +2441,7 @@ function App() {
           const palworldRecentMetrics = palworldMetricsParsed?.data.metrics ?? [];
           const palworldConfigAudit = palworldConfigAuditParsed?.data ?? null;
           const palworldBackupReadiness = palworldBackupReadinessParsed?.data ?? null;
+          const palworldRuntimeAudit = palworldRuntimeAuditParsed?.data ?? null;
           const effectiveState = deriveEffectiveServerState({
             reportedState: statusParsed.data.state,
             game: server.game,
@@ -2340,6 +2474,7 @@ function App() {
             eventTemplateDrafts: eventTemplateDraftsParsed.data,
             palworldConfigAudit,
             palworldBackupReadiness,
+            palworldRuntimeAudit,
             sessionTimeline: sessionTimelineParsed.data,
             knownPlayers: knownPlayersParsed.data.players.map((player) => ({
               displayName: player.displayName,
@@ -2406,6 +2541,9 @@ function App() {
       setEventDraftManualChecklist(null);
       setEventDraftManualChecklistError(null);
       setEventDraftManualChecklistLoading(false);
+      setEventDraftManualEditPlan(null);
+      setEventDraftManualEditPlanError(null);
+      setEventDraftManualEditPlanLoading(false);
       return;
     }
 
@@ -2419,10 +2557,13 @@ function App() {
         setEventDraftConfigDiffError(null);
         setEventDraftManualChecklistLoading(true);
         setEventDraftManualChecklistError(null);
+        setEventDraftManualEditPlanLoading(true);
+        setEventDraftManualEditPlanError(null);
 
-        const [diffResponse, checklistResponse] = await Promise.all([
+        const [diffResponse, checklistResponse, planResponse] = await Promise.all([
           fetch(`${apiBaseUrl}/servers/${serverId}/event-template-drafts/${encodeURIComponent(templateId)}/config-diff-preview`),
-          fetch(`${apiBaseUrl}/servers/${serverId}/event-template-drafts/${encodeURIComponent(templateId)}/manual-change-checklist`)
+          fetch(`${apiBaseUrl}/servers/${serverId}/event-template-drafts/${encodeURIComponent(templateId)}/manual-change-checklist`),
+          fetch(`${apiBaseUrl}/servers/${serverId}/event-template-drafts/${encodeURIComponent(templateId)}/manual-edit-plan`)
         ]);
 
         if (!diffResponse.ok) {
@@ -2433,12 +2574,18 @@ function App() {
           throw new Error(`Manual checklist failed with status ${checklistResponse.status}`);
         }
 
-        const [diffPayload, checklistPayload] = await Promise.all([
+        if (!planResponse.ok) {
+          throw new Error(`Manual edit plan failed with status ${planResponse.status}`);
+        }
+
+        const [diffPayload, checklistPayload, planPayload] = await Promise.all([
           diffResponse.json(),
-          checklistResponse.json()
+          checklistResponse.json(),
+          planResponse.json()
         ]);
         const parsed = eventTemplateConfigDiffPreviewSchema.safeParse(diffPayload);
         const checklistParsed = eventTemplateManualChangeChecklistSchema.safeParse(checklistPayload);
+        const planParsed = eventTemplateManualEditPlanSchema.safeParse(planPayload);
 
         if (!parsed.success) {
           throw new Error('Config diff preview payload validation failed.');
@@ -2448,12 +2595,17 @@ function App() {
           throw new Error('Manual checklist payload validation failed.');
         }
 
+        if (!planParsed.success) {
+          throw new Error('Manual edit plan payload validation failed.');
+        }
+
         if (!isMounted) {
           return;
         }
 
         setEventDraftConfigDiffPreview(parsed.data);
         setEventDraftManualChecklist(checklistParsed.data);
+        setEventDraftManualEditPlan(planParsed.data);
       } catch (caughtError) {
         if (!isMounted) {
           return;
@@ -2464,10 +2616,13 @@ function App() {
         setEventDraftConfigDiffError(message);
         setEventDraftManualChecklist(null);
         setEventDraftManualChecklistError(message);
+        setEventDraftManualEditPlan(null);
+        setEventDraftManualEditPlanError(message);
       } finally {
         if (isMounted) {
           setEventDraftConfigDiffLoading(false);
           setEventDraftManualChecklistLoading(false);
+          setEventDraftManualEditPlanLoading(false);
         }
       }
     }
@@ -2492,6 +2647,8 @@ function App() {
     setSelectedEventTemplateDraft(null);
     setEventDraftError(null);
     setEventDraftSuccess(null);
+    setEventDraftManualEditPlan(null);
+    setEventDraftManualEditPlanError(null);
   }, [selectedServerId]);
 
   useEffect(() => {
@@ -4674,6 +4831,9 @@ function App() {
                           capabilities={selectedServerSummary.settingsCapabilities}
                           onOpenObservedSettings={() => setObservedSettingsOpen(true)}
                         />
+                        {selectedServerSummary.palworldRuntimeAudit ? (
+                          <PalworldRuntimeAuditPanel audit={selectedServerSummary.palworldRuntimeAudit} />
+                        ) : null}
                         {selectedServerSummary.palworldConfigAudit ? (
                           <PalworldConfigAuditPanel audit={selectedServerSummary.palworldConfigAudit} />
                         ) : null}
@@ -5015,6 +5175,9 @@ function App() {
                           capabilities={selectedServerSummary.settingsCapabilities}
                           onOpenObservedSettings={() => setObservedSettingsOpen(true)}
                         />
+                        {selectedServerSummary.palworldRuntimeAudit ? (
+                          <PalworldRuntimeAuditPanel audit={selectedServerSummary.palworldRuntimeAudit} />
+                        ) : null}
                         {selectedServerSummary.palworldConfigAudit ? (
                           <PalworldConfigAuditPanel audit={selectedServerSummary.palworldConfigAudit} />
                         ) : null}
@@ -5220,6 +5383,9 @@ function App() {
           manualChecklist={eventDraftManualChecklist}
           manualChecklistLoading={eventDraftManualChecklistLoading}
           manualChecklistError={eventDraftManualChecklistError}
+          manualEditPlan={eventDraftManualEditPlan}
+          manualEditPlanLoading={eventDraftManualEditPlanLoading}
+          manualEditPlanError={eventDraftManualEditPlanError}
           onDisplayNameChange={setEventDraftDisplayName}
           onTargetMultiplierChange={setEventDraftTargetMultiplier}
           onTargetValueChange={setEventDraftTargetValue}

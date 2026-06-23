@@ -6,6 +6,7 @@ import {
 import { getEventTemplateConfigDiffPreview } from './event-template-config-diff-preview.js';
 import { getPalworldBackupReadiness } from './palworld-backup-readiness.js';
 import { getPalworldConfigAudit } from './palworld-config-audit.js';
+import { getPalworldRuntimeAudit } from './palworld-runtime-audit.js';
 import { getEventTemplateDraftCatalog, getServerSettingsCapabilitySummary } from './settings-capabilities.js';
 
 const REQUIRED_MANUAL_STEPS = [
@@ -43,6 +44,7 @@ export function getEventTemplateManualChangeChecklist(serverId: string, template
 
   const configAudit = getPalworldConfigAudit(serverId);
   const backupReadiness = getPalworldBackupReadiness(serverId);
+  const runtimeAudit = getPalworldRuntimeAudit(serverId);
   const capabilities = getServerSettingsCapabilitySummary(serverId);
   const diffPreview = getEventTemplateConfigDiffPreview(serverId, templateId);
   const items: EventTemplateManualChecklistItem[] = [];
@@ -63,6 +65,42 @@ export function getEventTemplateManualChangeChecklist(serverId: string, template
     detail: configAudit.selectedPath
       ? `Selected config file: ${configAudit.selectedPath}`
       : 'No readable parsed PalWorldSettings.ini file is selected.'
+  });
+
+  items.push({
+    label: 'Active runtime config identified',
+    status: runtimeAudit.inferredActiveConfigPath ? 'pass' : 'warning',
+    detail: runtimeAudit.inferredActiveConfigPath
+      ? `Active runtime config appears to be ${runtimeAudit.inferredActiveConfigPath}.`
+      : 'Active runtime config could not be identified from systemd. Falling back to config discovery.'
+  });
+
+  items.push({
+    label: 'Draft targets active server config',
+    status: runtimeAudit.inferredActiveConfigPath
+      ? diffPreview?.targetConfigPath === runtimeAudit.inferredActiveConfigPath && runtimeAudit.pathsMatch
+        ? 'pass'
+        : 'blocked'
+      : 'warning',
+    detail: runtimeAudit.inferredActiveConfigPath
+      ? diffPreview?.targetConfigPath === runtimeAudit.inferredActiveConfigPath && runtimeAudit.pathsMatch
+        ? `Target config: ${runtimeAudit.inferredActiveConfigPath}`
+        : `Draft target is ${diffPreview?.targetConfigPath ?? 'unknown'}, but active runtime config appears to be ${runtimeAudit.inferredActiveConfigPath}.`
+      : `Target config: ${diffPreview?.targetConfigPath ?? configAudit.selectedPath ?? 'unknown'}. Runtime audit is unavailable.`
+  });
+
+  items.push({
+    label: 'Runtime/config audit path match',
+    status: runtimeAudit.inferredActiveConfigPath
+      ? runtimeAudit.pathsMatch
+        ? 'pass'
+        : 'blocked'
+      : 'warning',
+    detail: runtimeAudit.inferredActiveConfigPath
+      ? runtimeAudit.pathsMatch
+        ? 'The systemd WorkingDirectory config path matches the config discovery path.'
+        : `Runtime path ${runtimeAudit.inferredActiveConfigPath} does not match selected config ${runtimeAudit.selectedConfigAuditPath ?? 'none'}.`
+      : 'Cannot compare runtime and config discovery paths without a readable systemd WorkingDirectory.'
   });
 
   items.push({
