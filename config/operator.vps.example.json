@@ -1,0 +1,62 @@
+{
+  "logPaths": [
+    {
+      "label": "GameOps API PM2 log",
+      "path": "/home/gameops/.pm2/logs/gameops-api-out.log"
+    },
+    {
+      "label": "GameOps API PM2 errors",
+      "path": "/home/gameops/.pm2/logs/gameops-api-error.log"
+    },
+    {
+      "label": "GameOps Dashboard PM2 log",
+      "path": "/home/gameops/.pm2/logs/gameops-dashboard-out.log"
+    },
+    {
+      "label": "GameOps Dashboard PM2 errors",
+      "path": "/home/gameops/.pm2/logs/gameops-dashboard-error.log"
+    },
+    {
+      "label": "Palworld bot PM2 errors",
+      "path": "/home/gameops/.pm2/logs/palworld-bot-error.log"
+    }
+  ],
+  "projectRepos": [
+    {
+      "label": "GameOps Bridge API and dashboard",
+      "path": "/srv/gameops-bridge"
+    },
+    {
+      "label": "Palworld dashboard and bot",
+      "path": "/srv/palworld-dashboard"
+    }
+  ],
+  "diskPaths": [
+    {
+      "label": "Root filesystem",
+      "path": "/"
+    },
+    {
+      "label": "Application volume",
+      "path": "/srv"
+    },
+    {
+      "label": "Palworld saves volume",
+      "path": "/srv/palworld"
+    }
+  ],
+  "healthChecks": [
+    {
+      "label": "Local GameOps API",
+      "url": "http://127.0.0.1:3001/health"
+    },
+    {
+      "label": "Local dashboard",
+      "url": "http://127.0.0.1:4173"
+    },
+    {
+      "label": "Local Caddy",
+      "url": "http://127.0.0.1"
+    }
+  ]
+}

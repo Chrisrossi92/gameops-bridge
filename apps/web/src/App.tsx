@@ -323,9 +323,14 @@ function AiOperatorPanel({ brief, loading, error }: AiOperatorPanelProps) {
       </div>
 
       {loading ? <p className="subtle">Refreshing operator brief...</p> : null}
-      {error ? <p className="error">Operator brief unavailable: {error}</p> : null}
+      {error ? (
+        <div className="operator-unavailable">
+          <strong>Operator unavailable</strong>
+          <span>Read-only server intelligence is not available from this browser session.</span>
+        </div>
+      ) : null}
 
-      {brief ? (
+      {brief && !error ? (
         <div className="ai-operator-grid">
           <section>
             <h3>Risks</h3>
@@ -2622,11 +2627,9 @@ function App() {
 
         setOperatorBrief(parsed.data);
         setOperatorBriefError(null);
-      } catch (caughtError) {
-        const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
-
+      } catch {
         if (isMounted) {
-          setOperatorBriefError(message);
+          setOperatorBriefError('Operator unavailable');
         }
       } finally {
         if (isMounted && isInitialLoad) {
