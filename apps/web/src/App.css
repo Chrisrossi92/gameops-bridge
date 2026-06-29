@@ -350,6 +350,66 @@
   color: #334155;
 }
 
+.operator-summary-card {
+  grid-column: 1 / -1;
+  margin-bottom: 0.75rem;
+  border-top-width: 3px;
+  border-top-color: #64748b;
+}
+
+.operator-summary-main,
+.operator-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.operator-summary-main h2,
+.operator-workspace-header h2 {
+  margin: 0.12rem 0 0.18rem;
+}
+
+.operator-summary-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.operator-summary-footer .fleet-toggle-button {
+  margin-left: auto;
+}
+
+.operator-summary-unavailable {
+  margin-top: 0.5rem;
+}
+
+.operator-workspace {
+  display: grid;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+}
+
+.operator-workspace-header {
+  margin-bottom: 0;
+  border-top-width: 3px;
+  border-top-color: #64748b;
+}
+
+.operator-workspace-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.operator-workspace-grid > .card {
+  margin-bottom: 0;
+}
+
 .operator-daily-brief-card {
   grid-column: 1 / -1;
   margin-bottom: 0.75rem;
@@ -435,6 +495,85 @@
 .operator-next-action strong {
   color: #1e3a8a;
   font-size: 0.88rem;
+}
+
+.operator-changes-card {
+  grid-column: 1 / -1;
+  margin-bottom: 0.75rem;
+}
+
+.operator-changes-body {
+  margin-top: 0.6rem;
+}
+
+.operator-insights-card {
+  grid-column: 1 / -1;
+  margin-bottom: 0.75rem;
+}
+
+.operator-insight-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.operator-insight {
+  border: 1px solid #e5eaf2;
+  border-radius: 0.55rem;
+  padding: 0.6rem;
+  background: #fff;
+  min-width: 0;
+}
+
+.operator-insight-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.operator-insight-critical {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.operator-insight-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.operator-insight-title-row strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.operator-insight-title-row span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.operator-insight p {
+  margin: 0.25rem 0;
+  color: #475569;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.operator-insight-evidence li {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.operator-insight-action {
+  margin-top: 0.4rem;
+  border-top: 1px solid #e5eaf2;
+  padding-top: 0.38rem;
+  color: #1e3a8a;
+  font-size: 0.8rem;
+  font-weight: 800;
 }
 
 .operator-timeline-card {

@@ -81,12 +81,8 @@ import {
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { deriveOperatorSignals, groupOperatorEvents, isImportantOperatorRecommendation } from './ai-operator-brief.ts';
 import { resolveApiBaseUrl } from './api-base-url.ts';
-import { OperatorChangesCard } from './operator-changes-card.tsx';
-import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
-import { OperatorInsightsCard } from './operator-insights-card.tsx';
-import { OperatorTimelineCard } from './operator-timeline-card.tsx';
+import { OperatorSummaryCard, OperatorWorkspace } from './operator-workspace.tsx';
 import './App.css';
 
 interface HealthResponse {
@@ -312,96 +308,6 @@ function DataFreshnessBanner({ freshness }: DataFreshnessBannerProps) {
             <span key={warning}>{warning}</span>
           ))}
         </div>
-      ) : null}
-    </article>
-  );
-}
-
-interface AiOperatorPanelProps {
-  brief: OperatorBriefResponse | null;
-  loading: boolean;
-  error: string | null;
-}
-
-function AiOperatorPanel({ brief, loading, error }: AiOperatorPanelProps) {
-  const groupedEvents = brief ? groupOperatorEvents(brief.recentEvents) : [];
-  const signals = brief ? deriveOperatorSignals(brief) : [];
-  const healthLabel = brief?.health === 'ok' ? 'OK' : brief?.health === 'unknown' ? 'Unavailable' : 'Warning';
-
-  return (
-    <article className={`card ai-operator-card ai-operator-${brief?.health ?? 'unknown'}`}>
-      <div className="ai-operator-heading">
-        <div>
-          <span className="summary-label">AI Operator</span>
-          <h2>Read-only server intelligence</h2>
-          <p className="subtle">{brief?.summary ?? 'Collecting safe server context for operator review.'}</p>
-        </div>
-        <div className="ai-operator-badges">
-          {brief ? <span className={`operator-health-badge operator-health-${brief.health}`}>{healthLabel}</span> : null}
-          <span className="state-pill state-warning">read-only</span>
-        </div>
-      </div>
-
-      {loading ? <p className="operator-loading">Refreshing operator brief...</p> : null}
-      {error ? (
-        <div className="operator-unavailable">
-          <strong>Operator unavailable</strong>
-          <span>Read-only server intelligence is not available from this browser session.</span>
-        </div>
-      ) : null}
-
-      {brief && !error ? (
-        <>
-          <div className="operator-signal-row" aria-label="AI Operator signal status">
-            {signals.map((signal) => (
-              <span key={signal.key} className={`operator-signal operator-signal-${signal.status.toLowerCase()}`}>
-                <strong>{signal.label}</strong>
-                <span>{signal.status}</span>
-              </span>
-            ))}
-          </div>
-
-          <div className="ai-operator-grid">
-          <section className="operator-panel-section">
-            <h3>Risks</h3>
-            <ul className="list compact">
-              {brief.risks.length === 0 ? <li className="operator-positive"><span>No immediate risks detected.</span></li> : null}
-              {brief.risks.map((risk) => <li key={risk}><span>{risk}</span></li>)}
-            </ul>
-          </section>
-
-          <section className="operator-panel-section operator-events-section">
-            <h3>Recent Events</h3>
-            {groupedEvents.length === 0 ? <p className="subtle">No configured log or repo events yet.</p> : null}
-            <div className="operator-event-groups">
-              {groupedEvents.map((group) => (
-                <div key={group.key} className={`operator-event-group operator-event-group-${group.key}`}>
-                  <h4>{group.label}</h4>
-                  <ul className="list compact">
-                    {group.events.slice(0, 4).map((event) => <li key={event}><span>{event}</span></li>)}
-                    {group.events.length > 4 ? <li className="subtle"><span>{group.events.length - 4} more {group.label} events</span></li> : null}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="operator-panel-section">
-            <h3>Recommendations</h3>
-            <ul className="list compact operator-recommendations">
-              {brief.recommendations.length === 0 ? <li className="operator-positive"><span>No immediate action recommended.</span></li> : null}
-              {brief.recommendations.map((recommendation) => (
-                <li
-                  key={recommendation}
-                  className={isImportantOperatorRecommendation(recommendation) ? 'operator-recommendation-important' : ''}
-                >
-                  <span>{recommendation}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-          </div>
-        </>
       ) : null}
     </article>
   );
@@ -2015,7 +1921,7 @@ interface PalworldBaseSignalHistoryEntry {
   baseSignal: number;
 }
 
-type DashboardTab = 'overview' | 'highlights' | 'players' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
+type DashboardTab = 'overview' | 'operator' | 'highlights' | 'players' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
 
 const apiBaseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const REFRESH_INTERVAL_MS = 15_000;
@@ -4409,6 +4315,7 @@ function App() {
     if (selectedServer?.game === 'palworld') {
       return [
         { key: 'overview', label: 'Overview' },
+        { key: 'operator', label: 'Operator' },
         { key: 'highlights', label: 'Highlights' },
         { key: 'players', label: 'Players' },
         { key: 'review-saves', label: 'Review Saves' },
@@ -4422,6 +4329,7 @@ function App() {
 
     return [
       { key: 'overview', label: 'Overview' },
+      { key: 'operator', label: 'Operator' },
       { key: 'highlights', label: 'Highlights' },
       { key: 'players', label: 'Players' },
       { key: 'activity', label: 'Activity' },
@@ -4898,31 +4806,32 @@ function App() {
                 <span>Last heartbeat: {selectedServerSummary.operationalStatus.lastHeartbeatAt ? formatDurationFromSeconds(selectedServerSummary.operationalStatus.heartbeatAgeSeconds ?? 0) + ' ago' : 'never'}</span>
               </div>
             </article>
-            <AiOperatorPanel
-              brief={operatorBrief}
-              loading={operatorBriefLoading}
-              error={operatorBriefError}
-            />
-            <OperatorDailyBriefCard
-              brief={operatorDailyBrief}
-              loading={operatorDailyBriefLoading}
-              error={operatorDailyBriefError}
-            />
-            <OperatorChangesCard
-              changes={operatorChanges}
-              loading={operatorChangesLoading}
-              error={operatorChangesError}
-            />
-            <OperatorInsightsCard
-              insights={operatorInsights}
-              loading={operatorInsightsLoading}
-              error={operatorInsightsError}
-            />
-            <OperatorTimelineCard
-              events={operatorTimelineEvents}
-              loading={operatorTimelineLoading}
-              error={operatorTimelineError}
-            />
+            {selectedDashboardTab === 'operator' ? (
+              <OperatorWorkspace
+                brief={operatorBrief}
+                briefLoading={operatorBriefLoading}
+                briefError={operatorBriefError}
+                dailyBrief={operatorDailyBrief}
+                dailyBriefLoading={operatorDailyBriefLoading}
+                dailyBriefError={operatorDailyBriefError}
+                changes={operatorChanges}
+                changesLoading={operatorChangesLoading}
+                changesError={operatorChangesError}
+                insights={operatorInsights}
+                insightsLoading={operatorInsightsLoading}
+                insightsError={operatorInsightsError}
+                timelineEvents={operatorTimelineEvents}
+                timelineLoading={operatorTimelineLoading}
+                timelineError={operatorTimelineError}
+              />
+            ) : (
+              <OperatorSummaryCard
+                brief={operatorBrief}
+                loading={operatorBriefLoading}
+                error={operatorBriefError}
+                onOpen={() => setSelectedDashboardTab('operator')}
+              />
+            )}
             {selectedDashboardTab === 'overview' ? (
               <ServerAliveRhythmPanel rhythm={selectedServerSummary.serverAliveRhythm} />
             ) : null}
