@@ -1123,6 +1123,41 @@ export const operatorInsightsResponseSchema = z.object({
 });
 export type OperatorInsightsResponse = z.infer<typeof operatorInsightsResponseSchema>;
 
+export const operatorAskIntentSchema = z.enum([
+  'changes',
+  'daily-brief',
+  'insights',
+  'timeline',
+  'current-state',
+  'unsupported'
+]);
+export type OperatorAskIntent = z.infer<typeof operatorAskIntentSchema>;
+
+export const operatorAskSourceSchema = z.enum([
+  'daily-brief',
+  'changes',
+  'insights',
+  'timeline',
+  'current-state'
+]);
+export type OperatorAskSource = z.infer<typeof operatorAskSourceSchema>;
+
+export const operatorAskRequestSchema = z.object({
+  question: z.string().min(1).max(240)
+});
+export type OperatorAskRequest = z.infer<typeof operatorAskRequestSchema>;
+
+export const operatorAskResponseSchema = z.object({
+  question: z.string().min(1),
+  intent: operatorAskIntentSchema,
+  headline: z.string().min(1),
+  bullets: z.array(z.string().min(1)).min(1).max(6),
+  confidence: operatorDailyBriefConfidenceSchema,
+  source: operatorAskSourceSchema,
+  readOnly: z.literal(true)
+});
+export type OperatorAskResponse = z.infer<typeof operatorAskResponseSchema>;
+
 export const palworldLatestPlayerTelemetrySchema = z.object({
   serverId: z.string().min(1),
   lookupKey: z.string().min(1),

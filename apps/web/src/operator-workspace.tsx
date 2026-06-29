@@ -6,6 +6,8 @@ import type {
   OperatorInsightsResponse,
   OperatorTimelineEvent
 } from '@gameops/shared';
+import React from 'react';
+import { OperatorAskCard } from './operator-ask-card.tsx';
 import { OperatorChangesCard } from './operator-changes-card.tsx';
 import { OperatorCurrentStateCard } from './operator-current-state-card.tsx';
 import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
@@ -20,6 +22,7 @@ interface OperatorSummaryCardProps {
 }
 
 interface OperatorWorkspaceProps {
+  apiBaseUrl: string;
   brief: OperatorBriefResponse | null;
   briefLoading: boolean;
   briefError: string | null;
@@ -101,6 +104,7 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
       </article>
 
       <div className="operator-workspace-grid">
+        <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />
         <OperatorDailyBriefCard
           brief={props.dailyBrief}
           loading={props.dailyBriefLoading}
