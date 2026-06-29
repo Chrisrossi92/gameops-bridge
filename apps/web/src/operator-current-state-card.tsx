@@ -1,5 +1,5 @@
+/* @jsxRuntime classic */
 import type { OperatorBriefResponse } from '@gameops/shared';
-import React from 'react';
 import { deriveOperatorSignals, groupOperatorEvents, isImportantOperatorRecommendation } from './ai-operator-brief.ts';
 
 interface OperatorCurrentStateCardProps {
@@ -102,4 +102,3 @@ export function OperatorCurrentStateCard({ brief, loading, error }: OperatorCurr
     </article>
   );
 }
-

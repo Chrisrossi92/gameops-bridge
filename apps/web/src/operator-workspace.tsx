@@ -1,3 +1,4 @@
+/* @jsxRuntime classic */
 import type {
   OperatorBriefResponse,
   OperatorChangesSummaryResponse,
@@ -5,7 +6,6 @@ import type {
   OperatorInsightsResponse,
   OperatorTimelineEvent
 } from '@gameops/shared';
-import React from 'react';
 import { OperatorChangesCard } from './operator-changes-card.tsx';
 import { OperatorCurrentStateCard } from './operator-current-state-card.tsx';
 import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
@@ -130,4 +130,3 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
     </section>
   );
 }
-
