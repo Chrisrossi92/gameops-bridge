@@ -1,5 +1,4 @@
 import type { OperatorInsight, OperatorInsightsResponse } from '@gameops/shared';
-import React from 'react';
 
 interface OperatorInsightsCardProps {
   insights: OperatorInsightsResponse | null;

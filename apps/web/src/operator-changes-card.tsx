@@ -1,5 +1,4 @@
 import type { OperatorChangesSummaryResponse } from '@gameops/shared';
-import React from 'react';
 
 interface OperatorChangesCardProps {
   changes: OperatorChangesSummaryResponse | null;

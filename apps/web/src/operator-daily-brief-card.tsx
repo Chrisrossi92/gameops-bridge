@@ -1,5 +1,4 @@
 import type { OperatorDailyBriefResponse } from '@gameops/shared';
-import React from 'react';
 
 interface OperatorDailyBriefCardProps {
   brief: OperatorDailyBriefResponse | null;

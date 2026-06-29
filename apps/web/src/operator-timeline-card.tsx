@@ -1,5 +1,4 @@
 import type { OperatorTimelineEvent } from '@gameops/shared';
-import React from 'react';
 
 interface OperatorTimelineCardProps {
   events: OperatorTimelineEvent[];
