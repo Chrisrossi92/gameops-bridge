@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { operatorAskRequestSchema, operatorAskResponseSchema, operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextPackResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorInsightsResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
+import { operatorAskRequestSchema, operatorAskResponseSchema, operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextPackResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorInsightsResponseSchema, operatorReasonRequestSchema, operatorReasonResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
 import { getAllowedCorsOrigins } from '../services/cors-origin.js';
 import { answerOperatorQuestion } from '../services/operator-ask.js';
 import { buildOperatorChangesSummaryFromState } from '../services/operator-changes.js';
@@ -7,10 +7,11 @@ import { buildDashboardOperatorBrief, buildOperatorBrief, collectOperatorContext
 import { buildOperatorContextPack } from '../services/operator-context-pack.js';
 import { buildOperatorDailyBriefFromStore } from '../services/operator-daily-brief.js';
 import { buildOperatorInsights } from '../services/operator-insights.js';
+import { buildOperatorReasoningResponse } from '../services/operator-reasoning-gateway.js';
 import { getDashboardOperatorAccessStatus, getOperatorAuthDiagnostics, getOperatorAuthStatus } from '../services/operator-auth.js';
 import { redactSecrets } from '../services/operator-redaction.js';
 import { appendOperatorTimelineEvents, OperatorTimelineStore } from '../services/operator-timeline.js';
-import type { OperatorBrief, OperatorContext } from '@gameops/shared';
+import type { OperatorBrief, OperatorContext, OperatorContextPackResponse } from '@gameops/shared';
 
 interface RegisterOperatorRoutesOptions {
   collectContext?: () => Promise<OperatorContext>;
@@ -94,6 +95,34 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
     }
   }
 
+  async function buildInternalContextPack(): Promise<OperatorContextPackResponse> {
+    const context = await collectContext();
+    const brief = buildOperatorBrief(context);
+    recordTimeline(context, brief);
+    const dailyBrief = buildOperatorDailyBriefFromStore(timelineStore);
+    const changes = buildOperatorChangesSummaryFromState({
+      context,
+      brief,
+      store: timelineStore
+    });
+    const timelineEvents = timelineStore.recentEvents(50);
+    const insights = buildOperatorInsights({
+      brief,
+      dailyBrief,
+      changes,
+      timelineEvents
+    });
+
+    return operatorContextPackResponseSchema.parse(buildOperatorContextPack({
+      context,
+      brief,
+      dailyBrief,
+      changes,
+      insights,
+      timelineEvents
+    }));
+  }
+
   app.get('/api/operator/context', async (request) => {
     assertOperatorAuthorized(request.headers, app.log);
     const context = await collectContext();
@@ -122,30 +151,17 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
 
   app.get('/api/operator/context-pack', async (request) => {
     assertOperatorAuthorized(request.headers, app.log);
-    const context = await collectContext();
-    const brief = buildOperatorBrief(context);
-    recordTimeline(context, brief);
-    const dailyBrief = buildOperatorDailyBriefFromStore(timelineStore);
-    const changes = buildOperatorChangesSummaryFromState({
-      context,
-      brief,
-      store: timelineStore
-    });
-    const timelineEvents = timelineStore.recentEvents(50);
-    const insights = buildOperatorInsights({
-      brief,
-      dailyBrief,
-      changes,
-      timelineEvents
-    });
+    return buildInternalContextPack();
+  });
 
-    return operatorContextPackResponseSchema.parse(buildOperatorContextPack({
-      context,
-      brief,
-      dailyBrief,
-      changes,
-      insights,
-      timelineEvents
+  app.post('/api/operator/reason', async (request) => {
+    assertOperatorAuthorized(request.headers, app.log);
+    const body = operatorReasonRequestSchema.parse(request.body);
+    const contextPack = await buildInternalContextPack();
+
+    return operatorReasonResponseSchema.parse(buildOperatorReasoningResponse({
+      request: body,
+      contextPack
     }));
   });
 

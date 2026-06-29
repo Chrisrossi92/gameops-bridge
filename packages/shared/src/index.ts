@@ -1182,6 +1182,32 @@ export const operatorContextPackResponseSchema = z.object({
 });
 export type OperatorContextPackResponse = z.infer<typeof operatorContextPackResponseSchema>;
 
+export const operatorReasonRequestSchema = z.object({
+  request: z.literal('analyze-current-context'),
+  question: z.string().min(1).max(240).optional()
+});
+export type OperatorReasonRequest = z.infer<typeof operatorReasonRequestSchema>;
+
+export const operatorReasonEvidenceSchema = z.object({
+  source: z.string().min(1),
+  detail: z.string().min(1)
+});
+export type OperatorReasonEvidence = z.infer<typeof operatorReasonEvidenceSchema>;
+
+export const operatorReasonResponseSchema = z.object({
+  generatedAt: z.string().datetime(),
+  readOnly: z.literal(true),
+  engine: z.literal('placeholder'),
+  question: z.string().min(1),
+  answerHeadline: z.string().min(1),
+  answerBullets: z.array(z.string().min(1)).min(1).max(8),
+  evidence: z.array(operatorReasonEvidenceSchema).max(12),
+  limitations: z.array(z.string().min(1)).min(1).max(6),
+  recommendedNextActions: z.array(z.string().min(1)).max(6),
+  confidence: operatorDailyBriefConfidenceSchema
+});
+export type OperatorReasonResponse = z.infer<typeof operatorReasonResponseSchema>;
+
 export const palworldLatestPlayerTelemetrySchema = z.object({
   serverId: z.string().min(1),
   lookupKey: z.string().min(1),

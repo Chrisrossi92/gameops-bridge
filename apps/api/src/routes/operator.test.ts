@@ -81,10 +81,10 @@ const mockContext: OperatorContext = {
   collectionWarnings: []
 };
 
-async function buildTestApp(): Promise<FastifyInstance> {
+async function buildTestApp(context: OperatorContext = mockContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await registerOperatorRoutes(app, {
-    collectContext: async () => mockContext,
+    collectContext: async () => context,
     allowedOrigins: ['https://servers.cdawgbot.xyz'],
     timelineStore: new OperatorTimelineStore({
       path: join(mkdtempSync(join(tmpdir(), 'gameops-operator-route-timeline-')), 'timeline.json')
@@ -344,6 +344,173 @@ test('operator context pack returns sanitized admin context', async () => {
     assert(body.evidence.length > 0);
     assert(!response.body.includes('super-secret-token-value'));
     assert(!response.body.includes('normal startup line'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('raw operator reason requires key in production', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/operator/reason',
+      payload: {
+        request: 'analyze-current-context'
+      }
+    });
+
+    assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('operator reason builds context pack internally and returns placeholder analysis', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/operator/reason',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      },
+      payload: {
+        request: 'analyze-current-context'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      engine: string;
+      answerBullets: string[];
+      evidence: Array<{ source: string; detail: string }>;
+      limitations: string[];
+      recommendedNextActions: string[];
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert.equal(body.engine, 'placeholder');
+    assert(body.answerBullets.some((bullet) => bullet.includes('Top attention')));
+    assert(body.evidence.some((item) => item.source === 'repo-state' || item.detail.includes('GameOps Bridge')));
+    assert(body.limitations.some((limitation) => limitation.includes('no Codex call')));
+    assert(body.recommendedNextActions.length > 0);
+    assert(!response.body.includes('server-only-key'));
+    assert(!response.body.includes('super-secret-token-value'));
+    assert(!response.body.includes('normal startup line'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('operator reason caps evidence and keeps sanitized output', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp({
+    ...mockContext,
+    repos: Array.from({ length: 20 }, (_, index) => ({
+      ...mockContext.repos[0]!,
+      label: `Repo ${index}`,
+      modifiedCount: index + 1,
+      lastCommit: {
+        hash: `abcdef${index}`,
+        date: mockContext.generatedAt,
+        message: `Commit with DISCORD_TOKEN=super-secret-token-value ${index}`
+      }
+    })),
+    collectionWarnings: Array.from({ length: 20 }, (_, index) => `Warning ${index} Bearer super-secret-token-value`)
+  });
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/operator/reason',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      },
+      payload: {
+        request: 'analyze-current-context',
+        question: 'analyze current deployment safety'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      question: string;
+      evidence: unknown[];
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.question, 'analyze current deployment safety');
+    assert(body.evidence.length <= 12);
+    assert(!response.body.includes('super-secret-token-value'));
+    assert(!response.body.includes('DISCORD_TOKEN='));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('operator reason handles empty context safely', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp({
+    ...mockContext,
+    pm2: {
+      status: 'unavailable',
+      processCount: 0,
+      processes: [],
+      message: 'pm2 unavailable'
+    },
+    disks: [],
+    logs: [],
+    repos: [],
+    healthChecks: [],
+    collectionWarnings: []
+  });
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/operator/reason',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      },
+      payload: {
+        request: 'analyze-current-context'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      engine: string;
+      answerBullets: string[];
+      confidence: string;
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert.equal(body.engine, 'placeholder');
+    assert(body.answerBullets.length > 0);
+    assert(['low', 'medium', 'high'].includes(body.confidence));
   } finally {
     await app.close();
     restoreEnv('NODE_ENV', previousNodeEnv);
