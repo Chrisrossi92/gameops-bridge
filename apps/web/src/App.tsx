@@ -73,6 +73,7 @@ import {
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { deriveOperatorSignals, groupOperatorEvents, isImportantOperatorRecommendation } from './ai-operator-brief.ts';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import './App.css';
 
@@ -311,6 +312,10 @@ interface AiOperatorPanelProps {
 }
 
 function AiOperatorPanel({ brief, loading, error }: AiOperatorPanelProps) {
+  const groupedEvents = brief ? groupOperatorEvents(brief.recentEvents) : [];
+  const signals = brief ? deriveOperatorSignals(brief) : [];
+  const healthLabel = brief?.health === 'ok' ? 'OK' : brief?.health === 'unknown' ? 'Unavailable' : 'Warning';
+
   return (
     <article className={`card ai-operator-card ai-operator-${brief?.health ?? 'unknown'}`}>
       <div className="ai-operator-heading">
@@ -319,10 +324,13 @@ function AiOperatorPanel({ brief, loading, error }: AiOperatorPanelProps) {
           <h2>Read-only server intelligence</h2>
           <p className="subtle">{brief?.summary ?? 'Collecting safe server context for operator review.'}</p>
         </div>
-        <span className="state-pill state-warning">read-only</span>
+        <div className="ai-operator-badges">
+          {brief ? <span className={`operator-health-badge operator-health-${brief.health}`}>{healthLabel}</span> : null}
+          <span className="state-pill state-warning">read-only</span>
+        </div>
       </div>
 
-      {loading ? <p className="subtle">Refreshing operator brief...</p> : null}
+      {loading ? <p className="operator-loading">Refreshing operator brief...</p> : null}
       {error ? (
         <div className="operator-unavailable">
           <strong>Operator unavailable</strong>
@@ -331,28 +339,57 @@ function AiOperatorPanel({ brief, loading, error }: AiOperatorPanelProps) {
       ) : null}
 
       {brief && !error ? (
-        <div className="ai-operator-grid">
-          <section>
+        <>
+          <div className="operator-signal-row" aria-label="AI Operator signal status">
+            {signals.map((signal) => (
+              <span key={signal.key} className={`operator-signal operator-signal-${signal.status.toLowerCase()}`}>
+                <strong>{signal.label}</strong>
+                <span>{signal.status}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="ai-operator-grid">
+          <section className="operator-panel-section">
             <h3>Risks</h3>
             <ul className="list compact">
-              {brief.risks.length === 0 ? <li><span>No immediate risks detected.</span></li> : null}
+              {brief.risks.length === 0 ? <li className="operator-positive"><span>No immediate risks detected.</span></li> : null}
               {brief.risks.map((risk) => <li key={risk}><span>{risk}</span></li>)}
             </ul>
           </section>
-          <section>
+
+          <section className="operator-panel-section operator-events-section">
             <h3>Recent Events</h3>
-            <ul className="list compact">
-              {brief.recentEvents.length === 0 ? <li><span>No configured log or repo events yet.</span></li> : null}
-              {brief.recentEvents.map((event) => <li key={event}><span>{event}</span></li>)}
-            </ul>
+            {groupedEvents.length === 0 ? <p className="subtle">No configured log or repo events yet.</p> : null}
+            <div className="operator-event-groups">
+              {groupedEvents.map((group) => (
+                <div key={group.key} className={`operator-event-group operator-event-group-${group.key}`}>
+                  <h4>{group.label}</h4>
+                  <ul className="list compact">
+                    {group.events.slice(0, 4).map((event) => <li key={event}><span>{event}</span></li>)}
+                    {group.events.length > 4 ? <li className="subtle"><span>{group.events.length - 4} more {group.label} events</span></li> : null}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </section>
-          <section>
+
+          <section className="operator-panel-section">
             <h3>Recommendations</h3>
-            <ul className="list compact">
-              {brief.recommendations.map((recommendation) => <li key={recommendation}><span>{recommendation}</span></li>)}
+            <ul className="list compact operator-recommendations">
+              {brief.recommendations.length === 0 ? <li className="operator-positive"><span>No immediate action recommended.</span></li> : null}
+              {brief.recommendations.map((recommendation) => (
+                <li
+                  key={recommendation}
+                  className={isImportantOperatorRecommendation(recommendation) ? 'operator-recommendation-important' : ''}
+                >
+                  <span>{recommendation}</span>
+                </li>
+              ))}
             </ul>
           </section>
-        </div>
+          </div>
+        </>
       ) : null}
     </article>
   );

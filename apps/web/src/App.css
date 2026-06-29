@@ -168,6 +168,45 @@
   gap: 1rem;
 }
 
+.ai-operator-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.operator-health-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #dbe4ee;
+  padding: 0.16rem 0.46rem;
+  background: #f8fbff;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.operator-health-ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.operator-health-warning,
+.operator-health-critical {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.operator-health-unknown {
+  border-color: #e5e7eb;
+  background: #f8fafc;
+  color: #475569;
+}
+
 .ai-operator-heading h2 {
   margin: 0.12rem 0 0.18rem;
 }
@@ -188,6 +227,110 @@
 .ai-operator-grid .list li {
   justify-content: flex-start;
   line-height: 1.35;
+}
+
+.operator-signal-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 0.38rem;
+  margin-top: 0.65rem;
+}
+
+.operator-signal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 0.5rem;
+  padding: 0.38rem 0.48rem;
+  background: #fff;
+  color: #475569;
+  font-size: 0.78rem;
+}
+
+.operator-signal strong {
+  color: #0f172a;
+}
+
+.operator-signal-ok span {
+  color: #15803d;
+  font-weight: 800;
+}
+
+.operator-signal-warning span {
+  color: #b45309;
+  font-weight: 800;
+}
+
+.operator-signal-unavailable span {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.operator-panel-section {
+  min-width: 0;
+}
+
+.operator-events-section {
+  grid-column: span 2;
+}
+
+.operator-event-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.55rem;
+}
+
+.operator-event-group {
+  border: 1px solid #e5eaf2;
+  border-radius: 0.55rem;
+  padding: 0.48rem 0.55rem;
+  background: #fff;
+  min-width: 0;
+}
+
+.operator-event-group h4 {
+  margin: 0 0 0.28rem;
+  color: #334155;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.operator-event-group .list {
+  margin-top: 0;
+}
+
+.operator-event-group .list li {
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.operator-event-group-git {
+  background: #fbfdff;
+}
+
+.operator-recommendations li {
+  border-radius: 0.45rem;
+  padding: 0.18rem 0.25rem;
+}
+
+.operator-recommendation-important {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+  font-weight: 750;
+}
+
+.operator-positive {
+  color: #166534;
+  font-weight: 750;
+}
+
+.operator-loading {
+  margin: 0.65rem 0 0;
+  color: #64748b;
+  font-size: 0.84rem;
 }
 
 .operator-unavailable {
