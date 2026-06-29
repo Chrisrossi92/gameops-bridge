@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { OperatorContext } from '@gameops/shared';
+import { OperatorTimelineStore } from '../services/operator-timeline.js';
 import { registerOperatorRoutes } from './operator.js';
 
 const mockContext: OperatorContext = {
@@ -51,10 +55,21 @@ const mockContext: OperatorContext = {
     label: 'GameOps Bridge',
     status: 'available',
     branch: 'main',
+    upstream: 'origin/main',
     isDirty: true,
     ahead: 0,
     behind: 0,
-    changes: [' M apps/api/src/index.ts']
+    modifiedCount: 1,
+    stagedCount: 0,
+    untrackedCount: 0,
+    changedFilePaths: ['apps/api/src/index.ts'],
+    changes: [' M apps/api/src/index.ts'],
+    lastCommit: {
+      hash: 'abcdef123456',
+      date: '2026-06-29T12:00:00.000Z',
+      message: 'Test commit'
+    },
+    recommendations: ['local-changes-review']
   }],
   healthChecks: [{
     label: 'Local API',
@@ -70,7 +85,10 @@ async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await registerOperatorRoutes(app, {
     collectContext: async () => mockContext,
-    allowedOrigins: ['https://servers.cdawgbot.xyz']
+    allowedOrigins: ['https://servers.cdawgbot.xyz'],
+    timelineStore: new OperatorTimelineStore({
+      path: join(mkdtempSync(join(tmpdir(), 'gameops-operator-route-timeline-')), 'timeline.json')
+    })
   });
   return app;
 }
@@ -82,7 +100,10 @@ async function buildLoggedTestApp(logs: Record<string, unknown>[]): Promise<Fast
   };
   await registerOperatorRoutes(app, {
     collectContext: async () => mockContext,
-    allowedOrigins: ['https://servers.cdawgbot.xyz']
+    allowedOrigins: ['https://servers.cdawgbot.xyz'],
+    timelineStore: new OperatorTimelineStore({
+      path: join(mkdtempSync(join(tmpdir(), 'gameops-operator-route-timeline-')), 'timeline.json')
+    })
   });
   return app;
 }
@@ -212,6 +233,324 @@ test('dashboard operator brief requires allowed dashboard origin in production',
     const response = await app.inject({
       method: 'GET',
       url: '/api/dashboard/operator/brief'
+    });
+
+    assert.equal(response.statusCode, 403);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('raw operator timeline requires key in production', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/operator/timeline' });
+
+    assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('operator timeline returns structured read-only events after brief collection', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const briefResponse = await app.inject({
+      method: 'GET',
+      url: '/api/operator/brief',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      }
+    });
+    const timelineResponse = await app.inject({
+      method: 'GET',
+      url: '/api/operator/timeline',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      }
+    });
+    const body = JSON.parse(timelineResponse.body) as { readOnly: boolean; events: Array<{ type: string; summary: string }> };
+
+    assert.equal(briefResponse.statusCode, 200);
+    assert.equal(timelineResponse.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert(body.events.some((event) => event.type === 'git'));
+    assert(!timelineResponse.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('raw operator context pack requires key in production', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/operator/context-pack' });
+
+    assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('operator context pack returns sanitized admin context', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/operator/context-pack',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      redactionApplied: boolean;
+      sections: Array<{ title: string }>;
+      evidence: unknown[];
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert.equal(body.redactionApplied, true);
+    assert(body.sections.some((section) => section.title === 'Current operator brief'));
+    assert(body.evidence.length > 0);
+    assert(!response.body.includes('super-secret-token-value'));
+    assert(!response.body.includes('normal startup line'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('dashboard operator timeline does not require browser to send operator key', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/brief',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/timeline',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert(!response.body.includes('DISCORD_TOKEN'));
+    assert(!response.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('dashboard operator daily brief summarizes timeline without browser operator key', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/brief',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/daily-brief',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      headline: string;
+      recommendations: string[];
+      confidence: string;
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert(body.headline.length > 0);
+    assert(body.recommendations.length > 0);
+    assert(['high', 'medium', 'low'].includes(body.confidence));
+    assert(!response.body.includes('server-only-key'));
+    assert(!response.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('dashboard operator changes summarizes timeline and current state without browser operator key', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/changes',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      headline: string;
+      meaningfulChanges: string[];
+      recommendedNextAction: string;
+      confidence: string;
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert(body.headline.length > 0);
+    assert(body.meaningfulChanges.length > 0);
+    assert(body.recommendedNextAction.length > 0);
+    assert(['high', 'medium', 'low'].includes(body.confidence));
+    assert(!response.body.includes('server-only-key'));
+    assert(!response.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('dashboard operator insights summarizes safe signals without browser operator key', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/insights',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      insights: Array<{ title: string; summary: string; evidence: string[] }>;
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert(body.insights.length > 0);
+    assert(body.insights[0]?.title.length);
+    assert(!response.body.includes('server-only-key'));
+    assert(!response.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('dashboard operator ask answers supported questions without browser operator key', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/dashboard/operator/ask',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      },
+      payload: {
+        question: 'what changed?'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      intent: string;
+      source: string;
+      bullets: string[];
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert.equal(body.intent, 'changes');
+    assert.equal(body.source, 'changes');
+    assert(body.bullets.length > 0);
+    assert(!response.body.includes('server-only-key'));
+    assert(!response.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('dashboard operator ask rejects unsupported dashboard origins in production', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/dashboard/operator/ask',
+      payload: {
+        question: 'health'
+      }
     });
 
     assert.equal(response.statusCode, 403);
