@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import type { OperatorContext } from '@gameops/shared';
 import { registerOperatorRoutes } from './operator.js';
 
@@ -66,8 +66,20 @@ const mockContext: OperatorContext = {
   collectionWarnings: []
 };
 
-async function buildTestApp(): Promise<ReturnType<typeof Fastify>> {
+async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+  await registerOperatorRoutes(app, {
+    collectContext: async () => mockContext,
+    allowedOrigins: ['https://servers.cdawgbot.xyz']
+  });
+  return app;
+}
+
+async function buildLoggedTestApp(logs: Record<string, unknown>[]): Promise<FastifyInstance> {
+  const app = Fastify({ logger: false });
+  (app.log as { warn: (payload: Record<string, unknown>, message?: string) => void }).warn = (payload) => {
+    logs.push(payload);
+  };
   await registerOperatorRoutes(app, {
     collectContext: async () => mockContext,
     allowedOrigins: ['https://servers.cdawgbot.xyz']
@@ -97,6 +109,38 @@ test('raw operator endpoints require key in production', async () => {
 
     assert.equal(contextResponse.statusCode, 401);
     assert.equal(briefResponse.statusCode, 401);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('raw operator 503 logs missing key diagnostics without exposing secrets', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  const logs: Record<string, unknown>[] = [];
+  process.env.NODE_ENV = 'production';
+  delete process.env.GAMEOPS_OPERATOR_KEY;
+  const app = await buildLoggedTestApp(logs);
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/operator/brief',
+      headers: {
+        'x-gameops-operator-key': 'provided-secret'
+      }
+    });
+
+    assert.equal(response.statusCode, 503);
+    assert(logs.some((entry) => (
+      entry.authStatus === 'misconfigured'
+        && entry.configuredKeyState === 'missing'
+        && entry.providedHeaderState === 'provided'
+        && entry.nodeEnv === 'production'
+    )));
+    assert(!JSON.stringify(logs).includes('provided-secret'));
   } finally {
     await app.close();
     restoreEnv('NODE_ENV', previousNodeEnv);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getOperatorAuthStatus } from './operator-auth.js';
+import { getOperatorAuthDiagnostics, getOperatorAuthStatus } from './operator-auth.js';
 
 test('allows local operator access when no key is configured', () => {
   assert.equal(getOperatorAuthStatus({
@@ -38,4 +38,26 @@ test('accepts the first repeated operator key header value', () => {
     providedHeader: ['expected-key', 'ignored-key'],
     nodeEnv: 'production'
   }), 'allowed');
+});
+
+test('reports safe diagnostics for missing and blank operator keys', () => {
+  assert.deepEqual(getOperatorAuthDiagnostics({
+    configuredKey: undefined,
+    providedHeader: undefined,
+    nodeEnv: 'production'
+  }), {
+    nodeEnv: 'production',
+    configuredKeyState: 'missing',
+    providedHeaderState: 'missing'
+  });
+
+  assert.deepEqual(getOperatorAuthDiagnostics({
+    configuredKey: '   ',
+    providedHeader: '   ',
+    nodeEnv: 'production'
+  }), {
+    nodeEnv: 'production',
+    configuredKeyState: 'blank',
+    providedHeaderState: 'blank'
+  });
 });

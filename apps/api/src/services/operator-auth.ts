@@ -2,6 +2,14 @@ import { timingSafeEqual } from 'node:crypto';
 
 export type OperatorAuthStatus = 'allowed' | 'unauthorized' | 'misconfigured';
 export type DashboardOperatorAccessStatus = 'allowed' | 'unavailable';
+export type OperatorKeyState = 'missing' | 'blank' | 'configured';
+export type OperatorHeaderState = 'missing' | 'blank' | 'provided';
+
+export interface OperatorAuthDiagnostics {
+  nodeEnv: string;
+  configuredKeyState: OperatorKeyState;
+  providedHeaderState: OperatorHeaderState;
+}
 
 function getHeaderValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
@@ -20,6 +28,34 @@ function timingSafeStringEqual(left: string, right: string): boolean {
   }
 
   return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getOperatorKeyState(value: string | undefined): OperatorKeyState {
+  if (value === undefined) {
+    return 'missing';
+  }
+
+  return value.trim() ? 'configured' : 'blank';
+}
+
+function getOperatorHeaderState(value: string | string[] | undefined): OperatorHeaderState {
+  if (value === undefined) {
+    return 'missing';
+  }
+
+  return getHeaderValue(value) ? 'provided' : 'blank';
+}
+
+export function getOperatorAuthDiagnostics(params: {
+  configuredKey: string | undefined;
+  providedHeader: string | string[] | undefined;
+  nodeEnv: string | undefined;
+}): OperatorAuthDiagnostics {
+  return {
+    nodeEnv: params.nodeEnv ?? 'undefined',
+    configuredKeyState: getOperatorKeyState(params.configuredKey),
+    providedHeaderState: getOperatorHeaderState(params.providedHeader)
+  };
 }
 
 export function getOperatorAuthStatus(params: {
