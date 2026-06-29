@@ -1106,6 +1106,23 @@ export type OperatorChangesSummary = z.infer<typeof operatorChangesSummarySchema
 export const operatorChangesSummaryResponseSchema = operatorChangesSummarySchema;
 export type OperatorChangesSummaryResponse = z.infer<typeof operatorChangesSummaryResponseSchema>;
 
+export const operatorInsightSchema = z.object({
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  severity: operatorTimelineEventSeveritySchema,
+  confidence: operatorDailyBriefConfidenceSchema,
+  evidence: z.array(z.string().min(1)).max(5),
+  recommendedAction: z.string().min(1).optional()
+});
+export type OperatorInsight = z.infer<typeof operatorInsightSchema>;
+
+export const operatorInsightsResponseSchema = z.object({
+  generatedAt: z.string().datetime(),
+  readOnly: z.literal(true),
+  insights: z.array(operatorInsightSchema).min(1).max(5)
+});
+export type OperatorInsightsResponse = z.infer<typeof operatorInsightsResponseSchema>;
+
 export const palworldLatestPlayerTelemetrySchema = z.object({
   serverId: z.string().min(1),
   lookupKey: z.string().min(1),

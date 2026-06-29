@@ -12,6 +12,7 @@ import {
   observedSettingsResponseSchema,
   operatorChangesSummaryResponseSchema,
   operatorDailyBriefResponseSchema,
+  operatorInsightsResponseSchema,
   operatorBriefResponseSchema,
   operatorTimelineResponseSchema,
   palworldBackupReadinessSchema,
@@ -54,6 +55,7 @@ import {
   type ObservedSettingsResponse,
   type OperatorChangesSummaryResponse,
   type OperatorDailyBriefResponse,
+  type OperatorInsightsResponse,
   type OperatorBriefResponse,
   type OperatorTimelineEvent,
   type PalworldBackupReadiness,
@@ -83,6 +85,7 @@ import { deriveOperatorSignals, groupOperatorEvents, isImportantOperatorRecommen
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorChangesCard } from './operator-changes-card.tsx';
 import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
+import { OperatorInsightsCard } from './operator-insights-card.tsx';
 import { OperatorTimelineCard } from './operator-timeline-card.tsx';
 import './App.css';
 
@@ -2131,6 +2134,9 @@ function App() {
   const [operatorChanges, setOperatorChanges] = useState<OperatorChangesSummaryResponse | null>(null);
   const [operatorChangesLoading, setOperatorChangesLoading] = useState(false);
   const [operatorChangesError, setOperatorChangesError] = useState<string | null>(null);
+  const [operatorInsights, setOperatorInsights] = useState<OperatorInsightsResponse | null>(null);
+  const [operatorInsightsLoading, setOperatorInsightsLoading] = useState(false);
+  const [operatorInsightsError, setOperatorInsightsError] = useState<string | null>(null);
   const [operatorTimelineEvents, setOperatorTimelineEvents] = useState<OperatorTimelineEvent[]>([]);
   const [operatorTimelineLoading, setOperatorTimelineLoading] = useState(false);
   const [operatorTimelineError, setOperatorTimelineError] = useState<string | null>(null);
@@ -2696,6 +2702,60 @@ function App() {
     void loadOperatorBrief(true);
     const interval = setInterval(() => {
       void loadOperatorBrief(false);
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOperatorInsights(isInitialLoad: boolean): Promise<void> {
+      try {
+        if (isInitialLoad) {
+          setOperatorInsightsLoading(true);
+        }
+
+        const response = await fetchOptionalDashboardResource(`${apiBaseUrl}/api/dashboard/operator/insights`);
+
+        if (!response) {
+          throw new Error('request timed out');
+        }
+
+        if (!response.ok) {
+          throw new Error(`request failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = operatorInsightsResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('payload validation failed');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setOperatorInsights(parsed.data);
+        setOperatorInsightsError(null);
+      } catch {
+        if (isMounted) {
+          setOperatorInsightsError('Insights unavailable');
+        }
+      } finally {
+        if (isMounted && isInitialLoad) {
+          setOperatorInsightsLoading(false);
+        }
+      }
+    }
+
+    void loadOperatorInsights(true);
+    const interval = setInterval(() => {
+      void loadOperatorInsights(false);
     }, REFRESH_INTERVAL_MS);
 
     return () => {
@@ -4852,6 +4912,11 @@ function App() {
               changes={operatorChanges}
               loading={operatorChangesLoading}
               error={operatorChangesError}
+            />
+            <OperatorInsightsCard
+              insights={operatorInsights}
+              loading={operatorInsightsLoading}
+              error={operatorInsightsError}
             />
             <OperatorTimelineCard
               events={operatorTimelineEvents}

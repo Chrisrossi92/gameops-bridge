@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
+import { operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorInsightsResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
 import { getAllowedCorsOrigins } from '../services/cors-origin.js';
 import { buildOperatorChangesSummaryFromState } from '../services/operator-changes.js';
 import { buildDashboardOperatorBrief, buildOperatorBrief, collectOperatorContext } from '../services/operator-collector.js';
 import { buildOperatorDailyBriefFromStore } from '../services/operator-daily-brief.js';
+import { buildOperatorInsights } from '../services/operator-insights.js';
 import { getDashboardOperatorAccessStatus, getOperatorAuthDiagnostics, getOperatorAuthStatus } from '../services/operator-auth.js';
 import { redactSecrets } from '../services/operator-redaction.js';
 import { appendOperatorTimelineEvents, OperatorTimelineStore } from '../services/operator-timeline.js';
@@ -150,6 +151,27 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
       context,
       brief,
       store: timelineStore
+    }));
+  });
+
+  app.get('/api/dashboard/operator/insights', async (request) => {
+    assertDashboardOperatorAllowed(request.headers, options.allowedOrigins);
+    const context = await collectContext();
+    const brief = buildDashboardOperatorBrief(context);
+    recordTimeline(context, brief);
+    const dailyBrief = buildOperatorDailyBriefFromStore(timelineStore);
+    const changes = buildOperatorChangesSummaryFromState({
+      context,
+      brief,
+      store: timelineStore
+    });
+    const timelineEvents = timelineStore.recentEvents(50);
+
+    return operatorInsightsResponseSchema.parse(buildOperatorInsights({
+      brief,
+      dailyBrief,
+      changes,
+      timelineEvents
     }));
   });
 }
