@@ -10,6 +10,7 @@ import {
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
   observedSettingsResponseSchema,
+  operatorChangesSummaryResponseSchema,
   operatorDailyBriefResponseSchema,
   operatorBriefResponseSchema,
   operatorTimelineResponseSchema,
@@ -51,6 +52,7 @@ import {
   type KnownPlayerProfileResponse,
   type NormalizedEvent,
   type ObservedSettingsResponse,
+  type OperatorChangesSummaryResponse,
   type OperatorDailyBriefResponse,
   type OperatorBriefResponse,
   type OperatorTimelineEvent,
@@ -79,6 +81,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { deriveOperatorSignals, groupOperatorEvents, isImportantOperatorRecommendation } from './ai-operator-brief.ts';
 import { resolveApiBaseUrl } from './api-base-url.ts';
+import { OperatorChangesCard } from './operator-changes-card.tsx';
 import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
 import { OperatorTimelineCard } from './operator-timeline-card.tsx';
 import './App.css';
@@ -2125,6 +2128,9 @@ function App() {
   const [operatorDailyBrief, setOperatorDailyBrief] = useState<OperatorDailyBriefResponse | null>(null);
   const [operatorDailyBriefLoading, setOperatorDailyBriefLoading] = useState(false);
   const [operatorDailyBriefError, setOperatorDailyBriefError] = useState<string | null>(null);
+  const [operatorChanges, setOperatorChanges] = useState<OperatorChangesSummaryResponse | null>(null);
+  const [operatorChangesLoading, setOperatorChangesLoading] = useState(false);
+  const [operatorChangesError, setOperatorChangesError] = useState<string | null>(null);
   const [operatorTimelineEvents, setOperatorTimelineEvents] = useState<OperatorTimelineEvent[]>([]);
   const [operatorTimelineLoading, setOperatorTimelineLoading] = useState(false);
   const [operatorTimelineError, setOperatorTimelineError] = useState<string | null>(null);
@@ -2690,6 +2696,60 @@ function App() {
     void loadOperatorBrief(true);
     const interval = setInterval(() => {
       void loadOperatorBrief(false);
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOperatorChanges(isInitialLoad: boolean): Promise<void> {
+      try {
+        if (isInitialLoad) {
+          setOperatorChangesLoading(true);
+        }
+
+        const response = await fetchOptionalDashboardResource(`${apiBaseUrl}/api/dashboard/operator/changes`);
+
+        if (!response) {
+          throw new Error('request timed out');
+        }
+
+        if (!response.ok) {
+          throw new Error(`request failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = operatorChangesSummaryResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('payload validation failed');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setOperatorChanges(parsed.data);
+        setOperatorChangesError(null);
+      } catch {
+        if (isMounted) {
+          setOperatorChangesError('Change summary unavailable');
+        }
+      } finally {
+        if (isMounted && isInitialLoad) {
+          setOperatorChangesLoading(false);
+        }
+      }
+    }
+
+    void loadOperatorChanges(true);
+    const interval = setInterval(() => {
+      void loadOperatorChanges(false);
     }, REFRESH_INTERVAL_MS);
 
     return () => {
@@ -4787,6 +4847,11 @@ function App() {
               brief={operatorDailyBrief}
               loading={operatorDailyBriefLoading}
               error={operatorDailyBriefError}
+            />
+            <OperatorChangesCard
+              changes={operatorChanges}
+              loading={operatorChangesLoading}
+              error={operatorChangesError}
             />
             <OperatorTimelineCard
               events={operatorTimelineEvents}

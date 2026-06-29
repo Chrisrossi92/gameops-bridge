@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { operatorBriefResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
+import { operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
 import { getAllowedCorsOrigins } from '../services/cors-origin.js';
+import { buildOperatorChangesSummaryFromState } from '../services/operator-changes.js';
 import { buildDashboardOperatorBrief, buildOperatorBrief, collectOperatorContext } from '../services/operator-collector.js';
 import { buildOperatorDailyBriefFromStore } from '../services/operator-daily-brief.js';
 import { getDashboardOperatorAccessStatus, getOperatorAuthDiagnostics, getOperatorAuthStatus } from '../services/operator-auth.js';
@@ -138,5 +139,17 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
   app.get('/api/dashboard/operator/daily-brief', async (request) => {
     assertDashboardOperatorAllowed(request.headers, options.allowedOrigins);
     return operatorDailyBriefResponseSchema.parse(buildOperatorDailyBriefFromStore(timelineStore));
+  });
+
+  app.get('/api/dashboard/operator/changes', async (request) => {
+    assertDashboardOperatorAllowed(request.headers, options.allowedOrigins);
+    const context = await collectContext();
+    const brief = buildDashboardOperatorBrief(context);
+    recordTimeline(context, brief);
+    return operatorChangesSummaryResponseSchema.parse(buildOperatorChangesSummaryFromState({
+      context,
+      brief,
+      store: timelineStore
+    }));
   });
 }

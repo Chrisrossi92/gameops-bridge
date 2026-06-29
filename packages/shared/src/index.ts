@@ -1086,6 +1086,26 @@ export type OperatorDailyBrief = z.infer<typeof operatorDailyBriefSchema>;
 export const operatorDailyBriefResponseSchema = operatorDailyBriefSchema;
 export type OperatorDailyBriefResponse = z.infer<typeof operatorDailyBriefResponseSchema>;
 
+export const operatorChangesSummarySchema = z.object({
+  generatedAt: z.string().datetime(),
+  readOnly: z.literal(true),
+  range: z.object({
+    from: z.string().datetime(),
+    to: z.string().datetime()
+  }),
+  headline: z.string().min(1),
+  meaningfulChanges: z.array(z.string().min(1)),
+  unchangedSignals: z.array(z.string().min(1)),
+  newWarnings: z.array(z.string().min(1)),
+  resolvedWarnings: z.array(z.string().min(1)),
+  recommendedNextAction: z.string().min(1),
+  confidence: operatorDailyBriefConfidenceSchema
+});
+export type OperatorChangesSummary = z.infer<typeof operatorChangesSummarySchema>;
+
+export const operatorChangesSummaryResponseSchema = operatorChangesSummarySchema;
+export type OperatorChangesSummaryResponse = z.infer<typeof operatorChangesSummaryResponseSchema>;
+
 export const palworldLatestPlayerTelemetrySchema = z.object({
   serverId: z.string().min(1),
   lookupKey: z.string().min(1),
