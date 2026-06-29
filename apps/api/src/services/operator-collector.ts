@@ -33,6 +33,10 @@ export type OperatorCommandRunner = (
   options?: { timeoutMs?: number }
 ) => Promise<OperatorCommandResult>;
 
+export interface OperatorCollectorLogger {
+  warn: (payload: Record<string, unknown>, message?: string) => void;
+}
+
 export const defaultOperatorCommandRunner: OperatorCommandRunner = (command, args, options = {}) => {
   return new Promise((resolve) => {
     execFile(command, args, {
@@ -56,6 +60,17 @@ export const defaultOperatorCommandRunner: OperatorCommandRunner = (command, arg
 function optionalMessage(value: string): { message?: string } {
   const cleaned = redactSecrets(value).trim();
   return cleaned ? { message: cleaned.slice(0, 240) } : {};
+}
+
+function logCollectorWarning(
+  logger: OperatorCollectorLogger | undefined,
+  collector: string,
+  detail: string
+): void {
+  logger?.warn({
+    collector,
+    detail: redactSecrets(detail).slice(0, 240)
+  }, 'AI Operator collector warning');
 }
 
 function parsePm2Status(stdout: string): OperatorPm2Status {
@@ -123,14 +138,44 @@ export async function collectPm2Status(runCommand: OperatorCommandRunner = defau
 }
 
 export function collectSystemStatus(): OperatorContext['system'] {
-  const total = totalmem();
-  const free = freemem();
+  let uptimeSeconds = 0;
+  let systemLoadAverage: [number, number, number] = [0, 0, 0];
+  let cpuCount = 1;
+  let total = 0;
+  let free = 0;
+
+  try {
+    uptimeSeconds = Math.floor(uptime());
+  } catch {
+    uptimeSeconds = 0;
+  }
+
+  try {
+    systemLoadAverage = loadavg() as [number, number, number];
+  } catch {
+    systemLoadAverage = [0, 0, 0];
+  }
+
+  try {
+    cpuCount = Math.max(1, cpus().length);
+  } catch {
+    cpuCount = 1;
+  }
+
+  try {
+    total = totalmem();
+    free = freemem();
+  } catch {
+    total = 0;
+    free = 0;
+  }
+
   const used = Math.max(0, total - free);
 
   return {
-    uptimeSeconds: Math.floor(uptime()),
-    loadAverage: loadavg() as [number, number, number],
-    cpuCount: Math.max(1, cpus().length),
+    uptimeSeconds,
+    loadAverage: systemLoadAverage,
+    cpuCount,
     memory: {
       totalBytes: total,
       freeBytes: free,
@@ -320,8 +365,25 @@ export async function collectHealthChecks(healthChecks: OperatorConfig['healthCh
 export async function collectOperatorContext(options: {
   config?: OperatorConfig;
   runCommand?: OperatorCommandRunner;
+  logger?: OperatorCollectorLogger;
 } = {}): Promise<OperatorContext> {
-  const config = options.config ?? loadOperatorConfig();
+  const collectionWarnings: string[] = [];
+  let config: OperatorConfig;
+
+  try {
+    config = options.config ?? loadOperatorConfig();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Unable to load operator config.';
+    logCollectorWarning(options.logger, 'operator-config', detail);
+    collectionWarnings.push('Operator config could not be loaded; using empty safe defaults.');
+    config = {
+      logPaths: [],
+      projectRepos: [],
+      diskPaths: [],
+      healthChecks: []
+    };
+  }
+
   const runCommand = options.runCommand ?? defaultOperatorCommandRunner;
   const [pm2, disks, repos, healthChecks] = await Promise.all([
     collectPm2Status(runCommand),
@@ -330,7 +392,34 @@ export async function collectOperatorContext(options: {
     collectHealthChecks(config.healthChecks)
   ]);
   const logs = collectConfiguredLogs(config.logPaths);
-  const collectionWarnings: string[] = [];
+
+  if (pm2.status !== 'available') {
+    logCollectorWarning(options.logger, 'pm2', pm2.message ?? pm2.status);
+  }
+
+  for (const disk of disks) {
+    if (disk.status !== 'available') {
+      logCollectorWarning(options.logger, 'disk', `${disk.label}: ${disk.message ?? disk.status}`);
+    }
+  }
+
+  for (const repo of repos) {
+    if (repo.status !== 'available') {
+      logCollectorWarning(options.logger, 'git', `${repo.label}: ${repo.message ?? repo.status}`);
+    }
+  }
+
+  for (const check of healthChecks) {
+    if (check.status !== 'ok') {
+      logCollectorWarning(options.logger, 'health', `${check.label}: ${check.message ?? check.status}`);
+    }
+  }
+
+  for (const log of logs) {
+    if (log.status !== 'available') {
+      logCollectorWarning(options.logger, 'logs', `${log.label}: ${log.message ?? log.status}`);
+    }
+  }
 
   if (config.logPaths.length === 0) {
     collectionWarnings.push('No safe log paths are configured.');
@@ -366,6 +455,9 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
   const highDisk = context.disks.filter((disk) => (disk.usedPercent ?? 0) >= 90);
   const stoppedProcesses = context.pm2.processes.filter((process) => process.status !== 'online');
   const dirtyRepos = context.repos.filter((repo) => repo.isDirty);
+  const unavailableRepos = context.repos.filter((repo) => repo.status !== 'available');
+  const unavailableDisks = context.disks.filter((disk) => disk.status !== 'available');
+  const unavailableLogs = context.logs.filter((log) => log.status !== 'available');
   const failedHealth = context.healthChecks.filter((check) => check.status !== 'ok');
   const warningCount = [overloaded, highMemory, highDisk.length > 0, stoppedProcesses.length > 0, failedHealth.length > 0].filter(Boolean).length;
 
@@ -388,12 +480,41 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
     risks.push(`${process.name} is ${process.status} in PM2.`);
   }
 
+  if (context.pm2.status !== 'available') {
+    risks.push(`PM2 status is ${context.pm2.status}.`);
+  }
+
+  for (const disk of unavailableDisks.slice(0, 3)) {
+    risks.push(`${disk.label} disk check is ${disk.status}.`);
+  }
+
   for (const check of failedHealth.slice(0, 3)) {
     risks.push(`${check.label} health is ${check.status}${check.httpStatus ? ` (${check.httpStatus})` : ''}.`);
   }
 
+  for (const repo of unavailableRepos.slice(0, 3)) {
+    risks.push(`${repo.label} git status is ${repo.status}.`);
+  }
+
   for (const repo of dirtyRepos.slice(0, 3)) {
     recentEvents.push(`${repo.label} has ${repo.changes.length} uncommitted file change${repo.changes.length === 1 ? '' : 's'}.`);
+  }
+
+  if (context.pm2.status === 'available') {
+    const offlineCount = stoppedProcesses.length;
+    recentEvents.push(`PM2: ${context.pm2.processCount} process${context.pm2.processCount === 1 ? '' : 'es'} observed, ${offlineCount} non-online.`);
+  }
+
+  const highestDisk = [...context.disks]
+    .filter((disk) => disk.usedPercent !== null)
+    .sort((left, right) => (right.usedPercent ?? 0) - (left.usedPercent ?? 0))[0];
+
+  if (highestDisk?.usedPercent !== null && highestDisk?.usedPercent !== undefined) {
+    recentEvents.push(`Disk: ${highestDisk.label} is ${highestDisk.usedPercent}% used.`);
+  }
+
+  for (const repo of context.repos.filter((repo) => repo.status === 'available').slice(0, 3)) {
+    recentEvents.push(`Git: ${repo.label} is ${repo.isDirty ? 'dirty' : 'clean'} on ${repo.branch ?? 'unknown branch'}.`);
   }
 
   for (const log of context.logs) {
@@ -409,6 +530,26 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
     recommendations.push('Install or expose PM2 only if this VPS is expected to use it.');
   }
 
+  if (stoppedProcesses.length > 0) {
+    recommendations.push('Review PM2 process status from the VPS before taking manual action.');
+  }
+
+  if (failedHealth.length > 0) {
+    recommendations.push('Check local health endpoints and Caddy routing from the VPS.');
+  }
+
+  if (dirtyRepos.length > 0 || unavailableRepos.length > 0) {
+    recommendations.push('Review repository state before deploying or pulling updates.');
+  }
+
+  if (highDisk.length > 0 || unavailableDisks.length > 0) {
+    recommendations.push('Review disk mounts and free space before changing services.');
+  }
+
+  if (unavailableLogs.length > 0) {
+    recommendations.push('Review configured operator log paths on the VPS.');
+  }
+
   if (context.collectionWarnings.length > 0) {
     recommendations.push('Complete operator config with explicit safe log paths, repositories, and health URLs.');
   }
@@ -422,10 +563,45 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
     readOnly: true,
     health: risks.some((risk) => risk.toLowerCase().includes('critical')) ? 'critical' : (risks.length > 0 || warningCount > 0 ? 'warning' : 'ok'),
     summary: risks.length === 0
-      ? 'Read-only operator signals are stable.'
-      : `${risks.length} operator risk${risks.length === 1 ? '' : 's'} detected from read-only signals.`,
+      ? `Server health stable. PM2 ${context.pm2.status}; ${context.disks.length} disk check${context.disks.length === 1 ? '' : 's'}; ${context.repos.length} repo check${context.repos.length === 1 ? '' : 's'}; ${failedHealth.length} health warning${failedHealth.length === 1 ? '' : 's'}.`
+      : `${risks.length} operator risk${risks.length === 1 ? '' : 's'} detected. PM2 ${context.pm2.status}; ${highDisk.length} disk warning${highDisk.length === 1 ? '' : 's'}; ${dirtyRepos.length} dirty repo${dirtyRepos.length === 1 ? '' : 's'}; ${failedHealth.length} health warning${failedHealth.length === 1 ? '' : 's'}.`,
     risks: risks.slice(0, 8),
     recentEvents: recentEvents.slice(0, 8),
     recommendations: Array.from(new Set(recommendations)).slice(0, 6)
+  };
+}
+
+export function buildDashboardOperatorBrief(context: OperatorContext): OperatorBrief {
+  const adminBrief = buildOperatorBrief(context);
+  const recentEvents: string[] = [];
+  const dirtyRepos = context.repos.filter((repo) => repo.isDirty);
+  const failedHealth = context.healthChecks.filter((check) => check.status !== 'ok');
+  const unavailableLogs = context.logs.filter((log) => log.status !== 'available');
+
+  if (context.pm2.status === 'available') {
+    recentEvents.push(`PM2 reports ${context.pm2.processCount} process${context.pm2.processCount === 1 ? '' : 'es'}.`);
+  } else {
+    recentEvents.push('PM2 status is not available to the read-only collector.');
+  }
+
+  for (const repo of dirtyRepos.slice(0, 3)) {
+    recentEvents.push(`${repo.label} has uncommitted changes.`);
+  }
+
+  for (const check of failedHealth.slice(0, 3)) {
+    recentEvents.push(`${check.label} health check is ${check.status}.`);
+  }
+
+  if (unavailableLogs.length > 0) {
+    recentEvents.push(`${unavailableLogs.length} configured log source${unavailableLogs.length === 1 ? '' : 's'} unavailable.`);
+  }
+
+  for (const warning of context.collectionWarnings.slice(0, 3)) {
+    recentEvents.push(warning);
+  }
+
+  return {
+    ...adminBrief,
+    recentEvents: Array.from(new Set(recentEvents)).slice(0, 8)
   };
 }

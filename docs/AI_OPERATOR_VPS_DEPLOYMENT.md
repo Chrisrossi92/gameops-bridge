@@ -90,6 +90,8 @@ curl -sS \
 
 The dashboard endpoint does not use `x-gameops-operator-key` and does not return raw logs. In production it is intended for the configured dashboard origin, while direct admin access should use the protected admin endpoints above.
 
+For production rollout and live verification, use [AI_OPERATOR_DEPLOYMENT_CHECKLIST.md](./AI_OPERATOR_DEPLOYMENT_CHECKLIST.md).
+
 ## Security Notes
 
 - Keep the operator API behind private networking, a VPN, or trusted ingress when possible.

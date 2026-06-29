@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
 export type OperatorAuthStatus = 'allowed' | 'unauthorized' | 'misconfigured';
+export type DashboardOperatorAccessStatus = 'allowed' | 'unavailable';
 
 function getHeaderValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
@@ -39,4 +40,46 @@ export function getOperatorAuthStatus(params: {
   }
 
   return timingSafeStringEqual(providedKey, configuredKey) ? 'allowed' : 'unauthorized';
+}
+
+function parseOrigin(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getHeaderOrigin(value: string | string[] | undefined): string | null {
+  return parseOrigin(getHeaderValue(value));
+}
+
+function getRefererOrigin(value: string | string[] | undefined): string | null {
+  return parseOrigin(getHeaderValue(value));
+}
+
+export function getDashboardOperatorAccessStatus(params: {
+  headers: { [key: string]: string | string[] | undefined };
+  nodeEnv: string | undefined;
+  allowedOrigins: true | string[];
+}): DashboardOperatorAccessStatus {
+  if (params.nodeEnv !== 'production') {
+    return 'allowed';
+  }
+
+  if (params.allowedOrigins === true) {
+    return 'unavailable';
+  }
+
+  const requestOrigin = getHeaderOrigin(params.headers.origin) ?? getRefererOrigin(params.headers.referer);
+
+  if (!requestOrigin) {
+    return 'unavailable';
+  }
+
+  return params.allowedOrigins.includes(requestOrigin) ? 'allowed' : 'unavailable';
 }

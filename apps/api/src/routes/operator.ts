@@ -52,7 +52,7 @@ function assertDashboardOperatorAllowed(
 }
 
 export async function registerOperatorRoutes(app: FastifyInstance, options: RegisterOperatorRoutesOptions = {}): Promise<void> {
-  const collectContext = options.collectContext ?? collectOperatorContext;
+  const collectContext = options.collectContext ?? (() => collectOperatorContext({ logger: app.log }));
 
   app.get('/api/operator/context', async (request) => {
     assertOperatorAuthorized(request.headers);
