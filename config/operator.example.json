@@ -1,0 +1,34 @@
+{
+  "logPaths": [
+    {
+      "label": "GameOps API",
+      "path": "/var/log/gameops/api.log"
+    },
+    {
+      "label": "GameOps Dashboard",
+      "path": "/var/log/gameops/dashboard.log"
+    }
+  ],
+  "projectRepos": [
+    {
+      "label": "GameOps Bridge",
+      "path": "/srv/gameops-bridge"
+    }
+  ],
+  "diskPaths": [
+    {
+      "label": "Application Volume",
+      "path": "/srv"
+    }
+  ],
+  "healthChecks": [
+    {
+      "label": "Public API",
+      "url": "https://api.example.com/health"
+    },
+    {
+      "label": "Caddy Site",
+      "url": "https://dashboard.example.com"
+    }
+  ]
+}

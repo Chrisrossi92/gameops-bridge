@@ -10,6 +10,7 @@ import {
   knownPlayerProfileResponseSchema,
   knownPlayersResponseSchema,
   observedSettingsResponseSchema,
+  operatorBriefResponseSchema,
   palworldBackupReadinessSchema,
   palworldIdentityApprovalsResponseSchema,
   palworldIdentityLinksResponseSchema,
@@ -48,6 +49,7 @@ import {
   type KnownPlayerProfileResponse,
   type NormalizedEvent,
   type ObservedSettingsResponse,
+  type OperatorBriefResponse,
   type PalworldBackupReadiness,
   type PalworldApprovedIdentity,
   type PalworldIdentityLinkCandidate,
@@ -296,6 +298,55 @@ function DataFreshnessBanner({ freshness }: DataFreshnessBannerProps) {
           {freshness.trustWarnings.map((warning) => (
             <span key={warning}>{warning}</span>
           ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+interface AiOperatorPanelProps {
+  brief: OperatorBriefResponse | null;
+  loading: boolean;
+  error: string | null;
+}
+
+function AiOperatorPanel({ brief, loading, error }: AiOperatorPanelProps) {
+  return (
+    <article className={`card ai-operator-card ai-operator-${brief?.health ?? 'unknown'}`}>
+      <div className="ai-operator-heading">
+        <div>
+          <span className="summary-label">AI Operator</span>
+          <h2>Read-only server intelligence</h2>
+          <p className="subtle">{brief?.summary ?? 'Collecting safe server context for operator review.'}</p>
+        </div>
+        <span className="state-pill state-warning">read-only</span>
+      </div>
+
+      {loading ? <p className="subtle">Refreshing operator brief...</p> : null}
+      {error ? <p className="error">Operator brief unavailable: {error}</p> : null}
+
+      {brief ? (
+        <div className="ai-operator-grid">
+          <section>
+            <h3>Risks</h3>
+            <ul className="list compact">
+              {brief.risks.length === 0 ? <li><span>No immediate risks detected.</span></li> : null}
+              {brief.risks.map((risk) => <li key={risk}><span>{risk}</span></li>)}
+            </ul>
+          </section>
+          <section>
+            <h3>Recent Events</h3>
+            <ul className="list compact">
+              {brief.recentEvents.length === 0 ? <li><span>No configured log or repo events yet.</span></li> : null}
+              {brief.recentEvents.map((event) => <li key={event}><span>{event}</span></li>)}
+            </ul>
+          </section>
+          <section>
+            <h3>Recommendations</h3>
+            <ul className="list compact">
+              {brief.recommendations.map((recommendation) => <li key={recommendation}><span>{recommendation}</span></li>)}
+            </ul>
+          </section>
         </div>
       ) : null}
     </article>
@@ -2020,6 +2071,9 @@ function App() {
   const [fleetLoading, setFleetLoading] = useState(false);
   const [serverOptionsError, setServerOptionsError] = useState<string | null>(null);
   const [fleetError, setFleetError] = useState<string | null>(null);
+  const [operatorBrief, setOperatorBrief] = useState<OperatorBriefResponse | null>(null);
+  const [operatorBriefLoading, setOperatorBriefLoading] = useState(false);
+  const [operatorBriefError, setOperatorBriefError] = useState<string | null>(null);
   const [selectedGameFilter, setSelectedGameFilter] = useState<GameFilter>('all');
   const [selectedServerId, setSelectedServerId] = useState<string>('');
   const [selectedValheimPlayerLookupKey, setSelectedValheimPlayerLookupKey] = useState<string | null>(null);
@@ -2341,27 +2395,39 @@ function App() {
           const palworldConfigAuditResponse = server.game === 'palworld' ? responses[15] : null;
           const palworldBackupReadinessResponse = server.game === 'palworld' ? responses[16] : null;
           const palworldRuntimeAuditResponse = server.game === 'palworld' ? responses[17] : null;
+          const requiredResponses = [
+            statusResponse,
+            sessionsResponse,
+            knownPlayersResponse,
+            eventsResponse,
+            activityLogResponse,
+            operationalStatusResponse,
+            dataFreshnessResponse,
+            playerIntelligenceResponse,
+            playerEngagementResponse,
+            serverAliveRhythmResponse,
+            settingsCapabilitiesResponse,
+            eventTemplateDraftsResponse,
+            sessionTimelineResponse
+          ];
 
-          if (!statusResponse.ok || !sessionsResponse.ok || !knownPlayersResponse.ok || !eventsResponse.ok || !activityLogResponse.ok || !operationalStatusResponse.ok || !dataFreshnessResponse.ok || !playerIntelligenceResponse.ok || !playerEngagementResponse.ok || !serverAliveRhythmResponse.ok || !settingsCapabilitiesResponse.ok || !eventTemplateDraftsResponse.ok || !sessionTimelineResponse.ok) {
-            const statusCode = [statusResponse, sessionsResponse, knownPlayersResponse, eventsResponse, activityLogResponse, operationalStatusResponse, dataFreshnessResponse, playerIntelligenceResponse, playerEngagementResponse, serverAliveRhythmResponse, settingsCapabilitiesResponse, eventTemplateDraftsResponse, sessionTimelineResponse]
-              .find((response) => !response.ok)?.status;
-            throw new Error(`Server ${server.id} summary fetch failed with status ${statusCode ?? 'unknown'}`);
+          if (requiredResponses.some((response) => response === null)) {
+            throw new Error(`Server ${server.id} summary fetch failed: required request timed out.`);
           }
 
-          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, dataFreshnessPayload, playerIntelligencePayload, playerEngagementPayload, serverAliveRhythmPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload, palworldLatestPlayersPayload, palworldMetricsPayload, palworldConfigAuditPayload, palworldBackupReadinessPayload, palworldRuntimeAuditPayload] = await Promise.all([
-            statusResponse.json(),
-            sessionsResponse.json(),
-            knownPlayersResponse.json(),
-            eventsResponse.json(),
-            activityLogResponse.json(),
-            operationalStatusResponse.json(),
-            dataFreshnessResponse.json(),
-            playerIntelligenceResponse.json(),
-            playerEngagementResponse.json(),
-            serverAliveRhythmResponse.json(),
-            settingsCapabilitiesResponse.json(),
-            eventTemplateDraftsResponse.json(),
-            sessionTimelineResponse.json(),
+          const failedRequiredResponse = requiredResponses.find(
+            (response): response is Response => response !== null && !response.ok
+          );
+
+          if (failedRequiredResponse) {
+            throw new Error(`Server ${server.id} summary fetch failed with status ${failedRequiredResponse.status}`);
+          }
+
+          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, dataFreshnessPayload, playerIntelligencePayload, playerEngagementPayload, serverAliveRhythmPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload] = await Promise.all(
+            requiredResponses.map((response) => response!.json())
+          );
+
+          const [palworldLatestPlayersPayload, palworldMetricsPayload, palworldConfigAuditPayload, palworldBackupReadinessPayload, palworldRuntimeAuditPayload] = await Promise.all([
             palworldLatestPlayersResponse?.ok ? palworldLatestPlayersResponse.json() : Promise.resolve(null),
             palworldMetricsResponse?.ok ? palworldMetricsResponse.json() : Promise.resolve(null),
             palworldConfigAuditResponse?.ok ? palworldConfigAuditResponse.json() : Promise.resolve(null),
@@ -2523,6 +2589,62 @@ function App() {
       clearInterval(interval);
     };
   }, [serverOptions]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOperatorBrief(isInitialLoad: boolean): Promise<void> {
+      try {
+        if (isInitialLoad) {
+          setOperatorBriefLoading(true);
+        }
+
+        const response = await fetchOptionalDashboardResource(`${apiBaseUrl}/api/operator/brief`);
+
+        if (!response) {
+          throw new Error('request timed out');
+        }
+
+        if (!response.ok) {
+          throw new Error(`request failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = operatorBriefResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('payload validation failed');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setOperatorBrief(parsed.data);
+        setOperatorBriefError(null);
+      } catch (caughtError) {
+        const message = caughtError instanceof Error ? caughtError.message : 'Unknown error';
+
+        if (isMounted) {
+          setOperatorBriefError(message);
+        }
+      } finally {
+        if (isMounted && isInitialLoad) {
+          setOperatorBriefLoading(false);
+        }
+      }
+    }
+
+    void loadOperatorBrief(true);
+    const interval = setInterval(() => {
+      void loadOperatorBrief(false);
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const selectedServer = useMemo(
     () => serverOptions.find((server) => server.id === selectedServerId) ?? null,
@@ -4496,6 +4618,11 @@ function App() {
                 <span>Last heartbeat: {selectedServerSummary.operationalStatus.lastHeartbeatAt ? formatDurationFromSeconds(selectedServerSummary.operationalStatus.heartbeatAgeSeconds ?? 0) + ' ago' : 'never'}</span>
               </div>
             </article>
+            <AiOperatorPanel
+              brief={operatorBrief}
+              loading={operatorBriefLoading}
+              error={operatorBriefError}
+            />
             {selectedDashboardTab === 'overview' ? (
               <ServerAliveRhythmPanel rhythm={selectedServerSummary.serverAliveRhythm} />
             ) : null}

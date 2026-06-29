@@ -10,6 +10,7 @@ import { registerPalworldIdentityApprovalRoutes } from './routes/palworld-identi
 import { registerPalworldIdentityLinkRoutes } from './routes/palworld-identity-links.js';
 import { registerPalworldTelemetryRoutes } from './routes/palworld-telemetry.js';
 import { registerPlayerEngagementRoutes } from './routes/player-engagement.js';
+import { registerOperatorRoutes } from './routes/operator.js';
 import { registerServerAliveRhythmRoutes } from './routes/server-alive-rhythm.js';
 import { registerPlayerRoutes } from './routes/players.js';
 import { registerServerCatalogRoutes } from './routes/servers.js';
@@ -47,6 +48,7 @@ await registerPlayerRoutes(app);
 await registerPalworldTelemetryRoutes(app);
 await registerPalworldIdentityLinkRoutes(app);
 await registerPalworldIdentityApprovalRoutes(app);
+await registerOperatorRoutes(app);
 
 app.listen({ port, host })
   .then(() => {

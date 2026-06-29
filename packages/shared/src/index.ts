@@ -907,6 +907,112 @@ export const configuredServersResponseSchema = z.object({
 });
 export type ConfiguredServersResponse = z.infer<typeof configuredServersResponseSchema>;
 
+export const operatorSignalStatusSchema = z.enum(['ok', 'warning', 'critical', 'unknown']);
+export type OperatorSignalStatus = z.infer<typeof operatorSignalStatusSchema>;
+
+export const operatorCommandProbeStatusSchema = z.enum(['available', 'unavailable', 'error']);
+export type OperatorCommandProbeStatus = z.infer<typeof operatorCommandProbeStatusSchema>;
+
+export const operatorPm2ProcessSchema = z.object({
+  name: z.string().min(1),
+  pid: z.number().int().nullable(),
+  status: z.string().min(1),
+  restarts: z.number().int().min(0),
+  uptimeMs: z.number().int().min(0).nullable(),
+  memoryBytes: z.number().int().min(0).nullable(),
+  cpuPercent: z.number().min(0).nullable()
+});
+export type OperatorPm2Process = z.infer<typeof operatorPm2ProcessSchema>;
+
+export const operatorPm2StatusSchema = z.object({
+  status: operatorCommandProbeStatusSchema,
+  processCount: z.number().int().min(0),
+  processes: z.array(operatorPm2ProcessSchema),
+  message: z.string().min(1).optional()
+});
+export type OperatorPm2Status = z.infer<typeof operatorPm2StatusSchema>;
+
+export const operatorSystemStatusSchema = z.object({
+  uptimeSeconds: z.number().int().min(0),
+  loadAverage: z.tuple([z.number(), z.number(), z.number()]),
+  cpuCount: z.number().int().min(1),
+  memory: z.object({
+    totalBytes: z.number().int().min(0),
+    freeBytes: z.number().int().min(0),
+    usedBytes: z.number().int().min(0),
+    usedPercent: z.number().min(0).max(100)
+  })
+});
+export type OperatorSystemStatus = z.infer<typeof operatorSystemStatusSchema>;
+
+export const operatorDiskUsageSchema = z.object({
+  label: z.string().min(1),
+  status: operatorCommandProbeStatusSchema,
+  sizeBytes: z.number().int().min(0).nullable(),
+  usedBytes: z.number().int().min(0).nullable(),
+  availableBytes: z.number().int().min(0).nullable(),
+  usedPercent: z.number().min(0).max(100).nullable(),
+  message: z.string().min(1).optional()
+});
+export type OperatorDiskUsage = z.infer<typeof operatorDiskUsageSchema>;
+
+export const operatorLogSourceSchema = z.object({
+  label: z.string().min(1),
+  status: z.enum(['available', 'missing', 'unreadable']),
+  lines: z.array(z.string()),
+  message: z.string().min(1).optional()
+});
+export type OperatorLogSource = z.infer<typeof operatorLogSourceSchema>;
+
+export const operatorGitRepoStatusSchema = z.object({
+  label: z.string().min(1),
+  status: operatorCommandProbeStatusSchema,
+  branch: z.string().min(1).nullable(),
+  isDirty: z.boolean(),
+  ahead: z.number().int().min(0),
+  behind: z.number().int().min(0),
+  changes: z.array(z.string()),
+  message: z.string().min(1).optional()
+});
+export type OperatorGitRepoStatus = z.infer<typeof operatorGitRepoStatusSchema>;
+
+export const operatorHealthCheckSchema = z.object({
+  label: z.string().min(1),
+  status: operatorSignalStatusSchema,
+  urlConfigured: z.boolean(),
+  httpStatus: z.number().int().min(100).max(599).nullable(),
+  responseMs: z.number().int().min(0).nullable(),
+  message: z.string().min(1).optional()
+});
+export type OperatorHealthCheck = z.infer<typeof operatorHealthCheckSchema>;
+
+export const operatorContextSchema = z.object({
+  generatedAt: z.string().datetime(),
+  readOnly: z.literal(true),
+  pm2: operatorPm2StatusSchema,
+  system: operatorSystemStatusSchema,
+  disks: z.array(operatorDiskUsageSchema),
+  logs: z.array(operatorLogSourceSchema),
+  repos: z.array(operatorGitRepoStatusSchema),
+  healthChecks: z.array(operatorHealthCheckSchema),
+  collectionWarnings: z.array(z.string().min(1))
+});
+export type OperatorContext = z.infer<typeof operatorContextSchema>;
+
+export const operatorBriefSchema = z.object({
+  generatedAt: z.string().datetime(),
+  readOnly: z.literal(true),
+  health: operatorSignalStatusSchema,
+  summary: z.string().min(1),
+  risks: z.array(z.string().min(1)),
+  recentEvents: z.array(z.string().min(1)),
+  recommendations: z.array(z.string().min(1))
+});
+export type OperatorBrief = z.infer<typeof operatorBriefSchema>;
+
+export const operatorBriefResponseSchema = operatorBriefSchema;
+export type OperatorBriefResponse = z.infer<typeof operatorBriefResponseSchema>;
+
 export const palworldLatestPlayerTelemetrySchema = z.object({
   serverId: z.string().min(1),
   lookupKey: z.string().min(1),
