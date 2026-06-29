@@ -19,6 +19,7 @@ const COMMAND_TIMEOUT_MS = 2_500;
 const HEALTH_TIMEOUT_MS = 2_500;
 const MAX_LOG_BYTES = 64 * 1024;
 const MAX_LOG_LINES = 40;
+const MAX_REPO_CHANGED_PATHS = 10;
 
 export interface OperatorCommandResult {
   ok: boolean;
@@ -282,24 +283,181 @@ export function collectConfiguredLogs(logPaths: OperatorPathConfig[]): OperatorL
   });
 }
 
-function parseGitStatus(label: string, stdout: string): OperatorGitRepoStatus {
-  const lines = redactLines(stdout.trim().split(/\r?\n/).filter(Boolean));
-  const branchLine = lines.find((line) => line.startsWith('## ')) ?? null;
-  const changes = lines.filter((line) => !line.startsWith('## ')).slice(0, 50);
-  const ahead = branchLine?.match(/\bahead (\d+)/)?.[1];
-  const behind = branchLine?.match(/\bbehind (\d+)/)?.[1];
-  const branch = branchLine
-    ? branchLine.replace(/^##\s*/, '').replace(/\s*\[.*\]\s*$/, '').trim()
-    : null;
+function parseGitBranchLine(branchLine: string | null): {
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  detached: boolean;
+} {
+  if (!branchLine) {
+    return {
+      branch: null,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      detached: false
+    };
+  }
+
+  const body = branchLine.replace(/^##\s*/, '').trim();
+  const ahead = Number(body.match(/\bahead (\d+)/)?.[1] ?? 0);
+  const behind = Number(body.match(/\bbehind (\d+)/)?.[1] ?? 0);
+  const withoutTrackingSummary = body.replace(/\s*\[.*\]\s*$/, '').trim();
+  const [branchRaw, upstreamRaw] = withoutTrackingSummary.split('...');
+  const branch = branchRaw?.trim() || null;
+
+  return {
+    branch,
+    upstream: upstreamRaw?.trim() || null,
+    ahead,
+    behind,
+    detached: branch === 'HEAD (no branch)' || branch === 'HEAD'
+  };
+}
+
+function parseChangedFilePath(statusLine: string): string | null {
+  const rawPath = statusLine.slice(3).trim();
+
+  if (!rawPath) {
+    return null;
+  }
+
+  const renamePath = rawPath.includes(' -> ') ? rawPath.split(' -> ').at(-1) : rawPath;
+  return redactSecrets(renamePath?.replace(/^"|"$/g, '') ?? '').slice(0, 180);
+}
+
+function parseGitLastCommit(stdout: string): OperatorGitRepoStatus['lastCommit'] {
+  const [hash, date, ...messageParts] = stdout.trim().split('\t');
+  const message = messageParts.join('\t').trim();
+
+  if (!hash || !date || !message) {
+    return null;
+  }
+
+  return {
+    hash: redactSecrets(hash).slice(0, 12),
+    date: redactSecrets(date).slice(0, 40),
+    message: redactSecrets(message).slice(0, 120)
+  };
+}
+
+function getRepoRecommendations(input: {
+  status: OperatorCommandProbeStatus;
+  detached: boolean;
+  ahead: number;
+  behind: number;
+  modifiedCount: number;
+  stagedCount: number;
+  untrackedCount: number;
+}): OperatorGitRepoStatus['recommendations'] {
+  if (input.status !== 'available') {
+    return ['unavailable'];
+  }
+
+  const recommendations: OperatorGitRepoStatus['recommendations'] = [];
+
+  if (input.modifiedCount > 0 || input.stagedCount > 0) {
+    recommendations.push('local-changes-review');
+  }
+
+  if (input.untrackedCount > 0) {
+    recommendations.push('untracked-files-review');
+  }
+
+  if (input.behind > 0) {
+    recommendations.push('behind-upstream');
+  }
+
+  if (input.ahead > 0) {
+    recommendations.push('ahead-of-upstream');
+  }
+
+  if (input.detached) {
+    recommendations.push('detached-head');
+  }
+
+  return recommendations.length > 0 ? recommendations : ['clean'];
+}
+
+function parseGitStatus(label: string, statusStdout: string, logStdout = ''): OperatorGitRepoStatus {
+  const statusLines = redactLines(statusStdout.trim().split(/\r?\n/).filter(Boolean));
+  const branchLine = statusLines.find((line) => line.startsWith('## ')) ?? null;
+  const changes = statusLines.filter((line) => !line.startsWith('## ')).slice(0, 50);
+  const branchInfo = parseGitBranchLine(branchLine);
+  let modifiedCount = 0;
+  let stagedCount = 0;
+  let untrackedCount = 0;
+  const changedFilePaths: string[] = [];
+
+  for (const line of changes) {
+    const indexStatus = line[0] ?? ' ';
+    const worktreeStatus = line[1] ?? ' ';
+
+    if (line.startsWith('??')) {
+      untrackedCount += 1;
+    } else {
+      if (indexStatus !== ' ') {
+        stagedCount += 1;
+      }
+
+      if (worktreeStatus !== ' ') {
+        modifiedCount += 1;
+      }
+    }
+
+    const path = parseChangedFilePath(line);
+    if (path && changedFilePaths.length < MAX_REPO_CHANGED_PATHS) {
+      changedFilePaths.push(path);
+    }
+  }
+
+  const lastCommit = parseGitLastCommit(logStdout);
+  const recommendations = getRepoRecommendations({
+    status: 'available',
+    detached: branchInfo.detached,
+    ahead: branchInfo.ahead,
+    behind: branchInfo.behind,
+    modifiedCount,
+    stagedCount,
+    untrackedCount
+  });
 
   return {
     label,
     status: 'available',
-    branch: branch || null,
+    branch: branchInfo.branch,
+    upstream: branchInfo.upstream,
     isDirty: changes.length > 0,
-    ahead: ahead ? Number(ahead) : 0,
-    behind: behind ? Number(behind) : 0,
-    changes
+    ahead: branchInfo.ahead,
+    behind: branchInfo.behind,
+    modifiedCount,
+    stagedCount,
+    untrackedCount,
+    changedFilePaths,
+    changes,
+    lastCommit,
+    recommendations
+  };
+}
+
+function unavailableGitRepo(label: string, message: string): OperatorGitRepoStatus {
+  return {
+    label,
+    status: 'unavailable',
+    branch: null,
+    upstream: null,
+    isDirty: false,
+    ahead: 0,
+    behind: 0,
+    modifiedCount: 0,
+    stagedCount: 0,
+    untrackedCount: 0,
+    changedFilePaths: [],
+    changes: [],
+    lastCommit: null,
+    recommendations: ['unavailable'],
+    message
   };
 }
 
@@ -309,34 +467,20 @@ export async function collectGitStatuses(
 ): Promise<OperatorGitRepoStatus[]> {
   return Promise.all(projectRepos.map(async (repo) => {
     if (!existsSync(repo.path)) {
-      return {
-        label: repo.label,
-        status: 'unavailable',
-        branch: null,
-        isDirty: false,
-        ahead: 0,
-        behind: 0,
-        changes: [],
-        message: 'Configured repo path is not present.'
-      };
+      return unavailableGitRepo(repo.label, 'Configured repo path is not present.');
     }
 
     const result = await runCommand('git', ['-C', repo.path, 'status', '--short', '--branch'], { timeoutMs: COMMAND_TIMEOUT_MS });
 
     if (!result.ok) {
-      return {
-        label: repo.label,
-        status: 'unavailable',
-        branch: null,
-        isDirty: false,
-        ahead: 0,
-        behind: 0,
-        changes: [],
-        ...optionalMessage(result.stderr || result.stdout || 'Git status is unavailable.')
-      };
+      return unavailableGitRepo(
+        repo.label,
+        optionalMessage(result.stderr || result.stdout || 'Git status is unavailable.').message ?? 'Git status is unavailable.'
+      );
     }
 
-    return parseGitStatus(repo.label, result.stdout);
+    const logResult = await runCommand('git', ['-C', repo.path, 'log', '-1', '--format=%H%x09%cI%x09%s'], { timeoutMs: COMMAND_TIMEOUT_MS });
+    return parseGitStatus(repo.label, result.stdout, logResult.ok ? logResult.stdout : '');
   }));
 }
 
@@ -515,7 +659,7 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
   }
 
   for (const repo of dirtyRepos.slice(0, 3)) {
-    recentEvents.push(`${repo.label} has ${repo.changes.length} uncommitted file change${repo.changes.length === 1 ? '' : 's'}.`);
+    recentEvents.push(`${repo.label} has ${repo.changes.length} uncommitted file change${repo.changes.length === 1 ? '' : 's'} (${repo.stagedCount} staged, ${repo.modifiedCount} modified, ${repo.untrackedCount} untracked).`);
   }
 
   if (context.pm2.status === 'available') {
@@ -532,7 +676,10 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
   }
 
   for (const repo of context.repos.filter((repo) => repo.status === 'available').slice(0, 3)) {
-    recentEvents.push(`Git: ${repo.label} is ${repo.isDirty ? 'dirty' : 'clean'} on ${repo.branch ?? 'unknown branch'}.`);
+    const upstreamSummary = repo.upstream ? ` tracking ${repo.upstream}` : '';
+    const divergenceSummary = repo.ahead > 0 || repo.behind > 0 ? ` (${repo.ahead} ahead, ${repo.behind} behind)` : '';
+    const commitSummary = repo.lastCommit ? ` Last commit ${repo.lastCommit.hash}: ${repo.lastCommit.message}` : '';
+    recentEvents.push(`Git: ${repo.label} is ${repo.isDirty ? 'dirty' : 'clean'} on ${repo.branch ?? 'unknown branch'}${upstreamSummary}${divergenceSummary}.${commitSummary}`);
   }
 
   for (const log of context.logs) {
@@ -558,6 +705,18 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
 
   if (dirtyRepos.length > 0 || unavailableRepos.length > 0) {
     recommendations.push('Review repository state before deploying or pulling updates.');
+  }
+
+  if (context.repos.some((repo) => repo.changes.length >= 10)) {
+    recommendations.push('Review large local repo change sets before deploy or pull.');
+  }
+
+  if (context.repos.some((repo) => repo.recommendations.includes('behind-upstream'))) {
+    recommendations.push('Pull only after local repo changes are reviewed.');
+  }
+
+  if (context.repos.some((repo) => repo.recommendations.includes('untracked-files-review'))) {
+    recommendations.push('Classify untracked files before cleanup.');
   }
 
   if (highDisk.length > 0 || unavailableDisks.length > 0) {
@@ -609,7 +768,11 @@ export function buildDashboardOperatorBrief(context: OperatorContext): OperatorB
       continue;
     }
 
-    recentEvents.push(`${repo.label} is ${repo.isDirty ? 'dirty' : 'clean'}${repo.branch ? ` on ${repo.branch}` : ''}.`);
+    const upstreamSummary = repo.upstream ? ` -> ${repo.upstream}` : '';
+    const divergenceSummary = repo.ahead > 0 || repo.behind > 0 ? `, ${repo.ahead} ahead/${repo.behind} behind` : '';
+    const changeSummary = repo.isDirty ? `, ${repo.stagedCount} staged/${repo.modifiedCount} modified/${repo.untrackedCount} untracked` : '';
+    const commitSummary = repo.lastCommit ? `, last ${repo.lastCommit.hash}` : '';
+    recentEvents.push(`${repo.label} is ${repo.isDirty ? 'dirty' : 'clean'}${repo.branch ? ` on ${repo.branch}${upstreamSummary}` : ''}${divergenceSummary}${changeSummary}${commitSummary}.`);
   }
 
   for (const check of failedHealth.slice(0, 3)) {
