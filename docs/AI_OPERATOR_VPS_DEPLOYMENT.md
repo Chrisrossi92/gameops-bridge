@@ -20,11 +20,13 @@ cp config/operator.vps.example.json config/operator.local.json
 Edit `config/operator.local.json` on the VPS so it contains only paths that are safe to read and summarize:
 
 - PM2 stdout/error logs for GameOps services
-- project repository directories for `git status`
+- project repository directories for `git status` using the canonical `projectRepos` field
 - disk mount paths such as `/`, `/srv`, or a game data volume
 - local health endpoints such as `http://127.0.0.1:3001/health`
 
 Do not include `.env` files, SSH directories or keys, TLS certificates, database dumps, save backups containing private data, or broad directories such as `/home`, `/etc`, `/var/lib`, or `/`.
+
+`projectRepos` is the preferred repository field name. For existing VPS configs, `repoPaths`, `repos`, `repositories`, and `gitRepos` are accepted as read-only aliases, and string entries such as `"/root/gameops-bridge"` are accepted with a label inferred from the final path segment.
 
 ## 2. Set the config path
 

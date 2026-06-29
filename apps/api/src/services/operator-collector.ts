@@ -308,6 +308,19 @@ export async function collectGitStatuses(
   runCommand: OperatorCommandRunner = defaultOperatorCommandRunner
 ): Promise<OperatorGitRepoStatus[]> {
   return Promise.all(projectRepos.map(async (repo) => {
+    if (!existsSync(repo.path)) {
+      return {
+        label: repo.label,
+        status: 'unavailable',
+        branch: null,
+        isDirty: false,
+        ahead: 0,
+        behind: 0,
+        changes: [],
+        message: 'Configured repo path is not present.'
+      };
+    }
+
     const result = await runCommand('git', ['-C', repo.path, 'status', '--short', '--branch'], { timeoutMs: COMMAND_TIMEOUT_MS });
 
     if (!result.ok) {
@@ -392,6 +405,11 @@ export async function collectOperatorContext(options: {
     collectHealthChecks(config.healthChecks)
   ]);
   const logs = collectConfiguredLogs(config.logPaths);
+
+  for (const warning of config.configWarnings ?? []) {
+    logCollectorWarning(options.logger, 'operator-config', warning);
+    collectionWarnings.push(warning);
+  }
 
   if (pm2.status !== 'available') {
     logCollectorWarning(options.logger, 'pm2', pm2.message ?? pm2.status);
@@ -574,7 +592,6 @@ export function buildOperatorBrief(context: OperatorContext): OperatorBrief {
 export function buildDashboardOperatorBrief(context: OperatorContext): OperatorBrief {
   const adminBrief = buildOperatorBrief(context);
   const recentEvents: string[] = [];
-  const dirtyRepos = context.repos.filter((repo) => repo.isDirty);
   const failedHealth = context.healthChecks.filter((check) => check.status !== 'ok');
   const unavailableLogs = context.logs.filter((log) => log.status !== 'available');
 
@@ -584,8 +601,15 @@ export function buildDashboardOperatorBrief(context: OperatorContext): OperatorB
     recentEvents.push('PM2 status is not available to the read-only collector.');
   }
 
-  for (const repo of dirtyRepos.slice(0, 3)) {
-    recentEvents.push(`${repo.label} has uncommitted changes.`);
+  recentEvents.push(`Git checks: ${context.repos.length} repo${context.repos.length === 1 ? '' : 's'} configured.`);
+
+  for (const repo of context.repos.slice(0, 4)) {
+    if (repo.status !== 'available') {
+      recentEvents.push(`${repo.label} git status is ${repo.status}.`);
+      continue;
+    }
+
+    recentEvents.push(`${repo.label} is ${repo.isDirty ? 'dirty' : 'clean'}${repo.branch ? ` on ${repo.branch}` : ''}.`);
   }
 
   for (const check of failedHealth.slice(0, 3)) {
