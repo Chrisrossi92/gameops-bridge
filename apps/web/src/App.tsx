@@ -11,6 +11,7 @@ import {
   knownPlayersResponseSchema,
   observedSettingsResponseSchema,
   operatorBriefResponseSchema,
+  operatorTimelineResponseSchema,
   palworldBackupReadinessSchema,
   palworldIdentityApprovalsResponseSchema,
   palworldIdentityLinksResponseSchema,
@@ -50,6 +51,7 @@ import {
   type NormalizedEvent,
   type ObservedSettingsResponse,
   type OperatorBriefResponse,
+  type OperatorTimelineEvent,
   type PalworldBackupReadiness,
   type PalworldApprovedIdentity,
   type PalworldIdentityLinkCandidate,
@@ -75,6 +77,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { deriveOperatorSignals, groupOperatorEvents, isImportantOperatorRecommendation } from './ai-operator-brief.ts';
 import { resolveApiBaseUrl } from './api-base-url.ts';
+import { OperatorTimelineCard } from './operator-timeline-card.tsx';
 import './App.css';
 
 interface HealthResponse {
@@ -2116,6 +2119,9 @@ function App() {
   const [operatorBrief, setOperatorBrief] = useState<OperatorBriefResponse | null>(null);
   const [operatorBriefLoading, setOperatorBriefLoading] = useState(false);
   const [operatorBriefError, setOperatorBriefError] = useState<string | null>(null);
+  const [operatorTimelineEvents, setOperatorTimelineEvents] = useState<OperatorTimelineEvent[]>([]);
+  const [operatorTimelineLoading, setOperatorTimelineLoading] = useState(false);
+  const [operatorTimelineError, setOperatorTimelineError] = useState<string | null>(null);
   const [selectedGameFilter, setSelectedGameFilter] = useState<GameFilter>('all');
   const [selectedServerId, setSelectedServerId] = useState<string>('');
   const [selectedValheimPlayerLookupKey, setSelectedValheimPlayerLookupKey] = useState<string | null>(null);
@@ -2678,6 +2684,60 @@ function App() {
     void loadOperatorBrief(true);
     const interval = setInterval(() => {
       void loadOperatorBrief(false);
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOperatorTimeline(isInitialLoad: boolean): Promise<void> {
+      try {
+        if (isInitialLoad) {
+          setOperatorTimelineLoading(true);
+        }
+
+        const response = await fetchOptionalDashboardResource(`${apiBaseUrl}/api/dashboard/operator/timeline?limit=12`);
+
+        if (!response) {
+          throw new Error('request timed out');
+        }
+
+        if (!response.ok) {
+          throw new Error(`request failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = operatorTimelineResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('payload validation failed');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setOperatorTimelineEvents(parsed.data.events);
+        setOperatorTimelineError(null);
+      } catch {
+        if (isMounted) {
+          setOperatorTimelineError('Timeline unavailable');
+        }
+      } finally {
+        if (isMounted && isInitialLoad) {
+          setOperatorTimelineLoading(false);
+        }
+      }
+    }
+
+    void loadOperatorTimeline(true);
+    const interval = setInterval(() => {
+      void loadOperatorTimeline(false);
     }, REFRESH_INTERVAL_MS);
 
     return () => {
@@ -4662,6 +4722,11 @@ function App() {
               brief={operatorBrief}
               loading={operatorBriefLoading}
               error={operatorBriefError}
+            />
+            <OperatorTimelineCard
+              events={operatorTimelineEvents}
+              loading={operatorTimelineLoading}
+              error={operatorTimelineError}
             />
             {selectedDashboardTab === 'overview' ? (
               <ServerAliveRhythmPanel rhythm={selectedServerSummary.serverAliveRhythm} />

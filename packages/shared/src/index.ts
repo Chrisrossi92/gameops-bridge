@@ -968,10 +968,29 @@ export const operatorGitRepoStatusSchema = z.object({
   label: z.string().min(1),
   status: operatorCommandProbeStatusSchema,
   branch: z.string().min(1).nullable(),
+  upstream: z.string().min(1).nullable().default(null),
   isDirty: z.boolean(),
   ahead: z.number().int().min(0),
   behind: z.number().int().min(0),
+  modifiedCount: z.number().int().min(0).default(0),
+  stagedCount: z.number().int().min(0).default(0),
+  untrackedCount: z.number().int().min(0).default(0),
+  changedFilePaths: z.array(z.string()).default([]),
   changes: z.array(z.string()),
+  lastCommit: z.object({
+    hash: z.string().min(1),
+    date: z.string().min(1),
+    message: z.string().min(1)
+  }).nullable().default(null),
+  recommendations: z.array(z.enum([
+    'clean',
+    'local-changes-review',
+    'untracked-files-review',
+    'behind-upstream',
+    'ahead-of-upstream',
+    'detached-head',
+    'unavailable'
+  ])).default([]),
   message: z.string().min(1).optional()
 });
 export type OperatorGitRepoStatus = z.infer<typeof operatorGitRepoStatusSchema>;
@@ -1012,6 +1031,38 @@ export type OperatorBrief = z.infer<typeof operatorBriefSchema>;
 
 export const operatorBriefResponseSchema = operatorBriefSchema;
 export type OperatorBriefResponse = z.infer<typeof operatorBriefResponseSchema>;
+
+export const operatorTimelineEventTypeSchema = z.enum([
+  'server',
+  'deployment',
+  'git',
+  'disk',
+  'pm2',
+  'operator'
+]);
+export type OperatorTimelineEventType = z.infer<typeof operatorTimelineEventTypeSchema>;
+
+export const operatorTimelineEventSeveritySchema = z.enum(['info', 'warning', 'critical']);
+export type OperatorTimelineEventSeverity = z.infer<typeof operatorTimelineEventSeveritySchema>;
+
+export const operatorTimelineEventSchema = z.object({
+  id: z.string().min(1),
+  type: operatorTimelineEventTypeSchema,
+  severity: operatorTimelineEventSeveritySchema,
+  occurredAt: z.string().datetime(),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  fingerprint: z.string().min(1),
+  metadata: z.record(z.string(), z.string().or(z.number()).or(z.boolean()).or(z.null())).default({})
+});
+export type OperatorTimelineEvent = z.infer<typeof operatorTimelineEventSchema>;
+
+export const operatorTimelineResponseSchema = z.object({
+  generatedAt: z.string().datetime(),
+  readOnly: z.literal(true),
+  events: z.array(operatorTimelineEventSchema)
+});
+export type OperatorTimelineResponse = z.infer<typeof operatorTimelineResponseSchema>;
 
 export const palworldLatestPlayerTelemetrySchema = z.object({
   serverId: z.string().min(1),
