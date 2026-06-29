@@ -2604,7 +2604,7 @@ function App() {
           setOperatorBriefLoading(true);
         }
 
-        const response = await fetchOptionalDashboardResource(`${apiBaseUrl}/api/operator/brief`);
+        const response = await fetchOptionalDashboardResource(`${apiBaseUrl}/api/dashboard/operator/brief`);
 
         if (!response) {
           throw new Error('request timed out');

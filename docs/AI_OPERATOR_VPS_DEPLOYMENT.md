@@ -2,6 +2,13 @@
 
 The AI Operator endpoints are read-only. They collect server context for review and do not expose restart, deploy, update, shell, or write actions.
 
+There are two endpoint groups:
+
+- Admin endpoints: `/api/operator/context` and `/api/operator/brief`
+- Dashboard endpoint: `/api/dashboard/operator/brief`
+
+The admin endpoints are protected by `GAMEOPS_OPERATOR_KEY`. The dashboard endpoint returns only the summarized brief and must not return raw context or log lines.
+
 ## 1. Create the VPS config
 
 Start from the example:
@@ -37,17 +44,19 @@ Set a strong random key for production:
 export GAMEOPS_OPERATOR_KEY='replace-with-a-long-random-value'
 ```
 
-When `GAMEOPS_OPERATOR_KEY` is set, requests must include:
+When `GAMEOPS_OPERATOR_KEY` is set, admin requests must include:
 
 ```text
 x-gameops-operator-key: replace-with-a-long-random-value
 ```
 
-In production, the operator endpoints fail closed if `GAMEOPS_OPERATOR_KEY` is missing. In local development, the endpoints are allowed without the header only when the key is not configured.
+In production, the admin operator endpoints fail closed if `GAMEOPS_OPERATOR_KEY` is missing. In local development, the admin endpoints are allowed without the header only when the key is not configured.
+
+Do not expose `GAMEOPS_OPERATOR_KEY` to browser JavaScript. Do not add it to Vite variables, localStorage, sessionStorage, dashboard code, or any client-delivered configuration. It belongs only in the API process environment and in trusted admin curl sessions.
 
 ## 4. Test with curl
 
-Brief endpoint:
+Admin brief endpoint:
 
 ```sh
 curl -sS \
@@ -71,9 +80,22 @@ curl -i http://127.0.0.1:3001/api/operator/brief
 
 Expected result with `GAMEOPS_OPERATOR_KEY` configured: `401 Unauthorized`.
 
+Dashboard-safe summarized brief:
+
+```sh
+curl -sS \
+  -H "Origin: https://servers.cdawgbot.xyz" \
+  http://127.0.0.1:3001/api/dashboard/operator/brief
+```
+
+The dashboard endpoint does not use `x-gameops-operator-key` and does not return raw logs. In production it is intended for the configured dashboard origin, while direct admin access should use the protected admin endpoints above.
+
 ## Security Notes
 
 - Keep the operator API behind private networking, a VPN, or trusted ingress when possible.
 - Treat `/api/operator/context` as sensitive operational metadata even though log lines are redacted.
+- Treat `/api/operator/brief` as an admin endpoint because it may include sanitized operational event text.
+- Use `/api/dashboard/operator/brief` for the browser dashboard. It returns a stricter summarized brief with no raw log lines.
+- Keep `GAMEOPS_OPERATOR_KEY` server-only.
 - Review configured log paths before enabling the dashboard panel in production.
 - Redaction is a safety layer, not permission to point the collector at secret-bearing files.
