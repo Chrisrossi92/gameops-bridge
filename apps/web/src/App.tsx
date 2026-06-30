@@ -4808,6 +4808,7 @@ function App() {
             </article>
             {selectedDashboardTab === 'operator' ? (
               <OperatorWorkspace
+                apiBaseUrl={apiBaseUrl}
                 brief={operatorBrief}
                 briefLoading={operatorBriefLoading}
                 briefError={operatorBriefError}
