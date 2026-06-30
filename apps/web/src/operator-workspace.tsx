@@ -14,6 +14,7 @@ import { OperatorCurrentStateCard } from './operator-current-state-card.tsx';
 import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
 import { OperatorInsightsCard } from './operator-insights-card.tsx';
 import { OperatorMemoryIndexCard } from './operator-memory-index-card.tsx';
+import { OperatorReasonCard } from './operator-reason-card.tsx';
 import { OperatorTimelineCard } from './operator-timeline-card.tsx';
 
 interface OperatorSummaryCardProps {
@@ -110,6 +111,7 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
 
       <div className="operator-workspace-grid">
         <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />
+        <OperatorReasonCard apiBaseUrl={props.apiBaseUrl} />
         <OperatorMemoryIndexCard
           memoryIndex={props.memoryIndex}
           loading={props.memoryIndexLoading}

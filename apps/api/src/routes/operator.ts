@@ -183,6 +183,19 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
     return operatorReasonStatusResponseSchema.parse(getOperatorReasoningStatus());
   });
 
+  app.post('/api/dashboard/operator/reason', async (request) => {
+    assertDashboardOperatorAllowed(request.headers, options.allowedOrigins);
+    const body = operatorReasonRequestSchema.parse(request.body);
+    const contextPack = await buildInternalContextPack();
+    const reasoningResponse = await buildOperatorReasoningResponse({
+      request: body,
+      contextPack,
+      logger: app.log
+    });
+
+    return operatorReasonResponseSchema.parse(reasoningResponse);
+  });
+
   app.get('/api/dashboard/operator/brief', async (request) => {
     assertDashboardOperatorAllowed(request.headers, options.allowedOrigins);
     const context = await collectContext();

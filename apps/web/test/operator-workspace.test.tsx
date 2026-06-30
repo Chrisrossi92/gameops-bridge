@@ -5,6 +5,7 @@ import type {
   OperatorChangesSummaryResponse,
   OperatorDailyBriefResponse,
   OperatorInsightsResponse,
+  OperatorMemoryIndexResponse,
   OperatorTimelineEvent
 } from '@gameops/shared';
 import React from 'react';
@@ -76,9 +77,86 @@ const timelineEvents: OperatorTimelineEvent[] = [{
   metadata: {}
 }];
 
+const memoryIndex: OperatorMemoryIndexResponse = {
+  generatedAt: brief.generatedAt,
+  readOnly: true,
+  range: {
+    from: brief.generatedAt,
+    to: brief.generatedAt
+  },
+  deployments: {
+    count: 1,
+    latestOccurrence: brief.generatedAt,
+    activeState: 'observed',
+    historicalSummary: 'Deployments: 1 event.',
+    trend: 'recent',
+    examples: ['Repository behind upstream.']
+  },
+  services: {
+    count: 2,
+    latestOccurrence: brief.generatedAt,
+    activeState: 'attention',
+    historicalSummary: 'Services: 2 events.',
+    trend: 'stable',
+    examples: ['PM2 process state changed.']
+  },
+  storage: {
+    count: 0,
+    latestOccurrence: null,
+    activeState: 'quiet',
+    historicalSummary: 'Storage: no timeline events recorded.',
+    trend: 'quiet',
+    examples: []
+  },
+  git: {
+    count: 1,
+    latestOccurrence: brief.generatedAt,
+    activeState: 'attention',
+    historicalSummary: 'Git: 1 event.',
+    trend: 'recent',
+    examples: ['Repository has local changes.']
+  },
+  recommendations: {
+    count: 1,
+    latestOccurrence: brief.generatedAt,
+    activeState: 'attention',
+    historicalSummary: 'Recommendations: 1 event.',
+    trend: 'recent',
+    examples: ['Review repository state.']
+  },
+  warnings: {
+    count: 2,
+    latestOccurrence: brief.generatedAt,
+    activeState: 'attention',
+    historicalSummary: 'Warnings: 2 events.',
+    trend: 'stable',
+    examples: ['Repository has local changes.']
+  },
+  health: {
+    count: 0,
+    latestOccurrence: null,
+    activeState: 'quiet',
+    historicalSummary: 'Health: no timeline events recorded.',
+    trend: 'quiet',
+    examples: []
+  },
+  timelineStatistics: {
+    totalEvents: 5,
+    warningEvents: 2,
+    criticalEvents: 0,
+    byType: { deployment: 1, pm2: 2, git: 1, operator: 1 },
+    bySeverity: { info: 3, warning: 2 },
+    firstEventAt: brief.generatedAt,
+    lastEventAt: brief.generatedAt,
+    historicalSummary: 'Timeline memory has 5 events, 2 warnings, and 0 critical events.',
+    trend: 'stable'
+  }
+};
+
 function workspaceHtml(overrides: Partial<React.ComponentProps<typeof OperatorWorkspace>> = {}): string {
   return renderToStaticMarkup(
     <OperatorWorkspace
+      apiBaseUrl="http://localhost:3001"
       brief={brief}
       briefLoading={false}
       briefError={null}
@@ -91,6 +169,9 @@ function workspaceHtml(overrides: Partial<React.ComponentProps<typeof OperatorWo
       insights={insights}
       insightsLoading={false}
       insightsError={null}
+      memoryIndex={memoryIndex}
+      memoryIndexLoading={false}
+      memoryIndexError={null}
       timelineEvents={timelineEvents}
       timelineLoading={false}
       timelineError={null}
@@ -136,6 +217,10 @@ test('operator workspace renders full operator cards', () => {
   const html = workspaceHtml();
 
   assert.match(html, /AI Operator/);
+  assert.match(html, /Ask Operator/);
+  assert.match(html, /Run Operator Analysis/);
+  assert.match(html, /Operational Memory/);
+  assert.match(html, /repo status/);
   assert.match(html, /Today&#x27;s Brief/);
   assert.match(html, /What Changed/);
   assert.match(html, /Operator Insights/);
@@ -168,6 +253,9 @@ test('operator workspace unavailable states render safely', () => {
     changesError: 'Change summary unavailable',
     insights: null,
     insightsError: 'Insights unavailable',
+    memoryIndex: null,
+    memoryIndexLoading: false,
+    memoryIndexError: 'Operational memory unavailable',
     timelineEvents: [],
     timelineError: 'Timeline unavailable'
   });
@@ -176,6 +264,7 @@ test('operator workspace unavailable states render safely', () => {
   assert.match(html, /Daily brief unavailable/);
   assert.match(html, /Change summary unavailable/);
   assert.match(html, /Insights unavailable/);
+  assert.match(html, /Operational memory unavailable/);
   assert.match(html, /Timeline unavailable/);
   assert.doesNotMatch(html, /stack/i);
 });

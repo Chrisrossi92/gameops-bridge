@@ -410,6 +410,108 @@
   margin-bottom: 0;
 }
 
+.operator-ask-card {
+  grid-column: 1 / -1;
+}
+
+.operator-reason-card {
+  grid-column: 1 / -1;
+}
+
+.operator-ask-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.operator-ask-form input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #dbe4ee;
+  border-radius: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.operator-ask-form input:focus {
+  outline: 2px solid #bfdbfe;
+  outline-offset: 1px;
+}
+
+.operator-ask-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.operator-example-button {
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  padding: 0.18rem 0.48rem;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.operator-example-button:hover {
+  background: #f8fbff;
+  border-color: #cbd5e1;
+}
+
+.operator-ask-answer {
+  margin-top: 0.65rem;
+  border: 1px solid #dbeafe;
+  border-radius: 0.55rem;
+  padding: 0.6rem;
+  background: #eff6ff;
+}
+
+.operator-ask-answer .list {
+  margin-top: 0.4rem;
+}
+
+.operator-ask-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.operator-reason-result {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.65rem;
+  border: 1px solid #dbeafe;
+  border-radius: 0.55rem;
+  padding: 0.65rem;
+  background: #f8fbff;
+}
+
+.operator-reason-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.operator-fallback-note {
+  margin: 0;
+}
+
 .operator-daily-brief-card {
   grid-column: 1 / -1;
   margin-bottom: 0.75rem;
@@ -473,6 +575,23 @@
   margin: 0 0 0.35rem;
   color: #334155;
   font-size: 0.86rem;
+}
+
+.operator-memory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.operator-memory-grid span {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .operator-next-action {
@@ -746,6 +865,14 @@
   border: 1px solid #fed7aa;
   background: #fff7ed;
   color: #c2410c;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.state-ok {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
   font-size: 0.78rem;
   font-weight: 800;
 }

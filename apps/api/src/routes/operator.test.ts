@@ -640,6 +640,82 @@ test('operator reason handles empty context safely', async () => {
   }
 });
 
+test('dashboard operator reason does not require browser to send operator key', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  const previousCodexEnabled = process.env.GAMEOPS_CODEX_REASONING_ENABLED;
+  resetOperatorReasoningDiagnostics();
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  process.env.GAMEOPS_CODEX_REASONING_ENABLED = 'false';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/dashboard/operator/reason',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      },
+      payload: {
+        request: 'analyze-current-context'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      engine: string;
+      answerHeadline: string;
+      answerBullets: string[];
+      evidence: Array<{ source: string; detail: string }>;
+      limitations: string[];
+      recommendedNextActions: string[];
+      confidence: string;
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert.equal(body.engine, 'placeholder');
+    assert(body.answerHeadline.length > 0);
+    assert(body.answerBullets.length > 0);
+    assert(body.evidence.length > 0);
+    assert(body.limitations.length > 0);
+    assert(body.recommendedNextActions.length > 0);
+    assert(['high', 'medium', 'low'].includes(body.confidence));
+    assert(!response.body.includes('server-only-key'));
+    assert(!response.body.includes('super-secret-token-value'));
+    assert(!response.body.includes('DISCORD_TOKEN='));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+    restoreEnv('GAMEOPS_CODEX_REASONING_ENABLED', previousCodexEnabled);
+  }
+});
+
+test('dashboard operator reason rejects unsupported dashboard origins in production', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/dashboard/operator/reason',
+      payload: {
+        request: 'analyze-current-context'
+      }
+    });
+
+    assert.equal(response.statusCode, 403);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
 test('dashboard operator timeline does not require browser to send operator key', async () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
