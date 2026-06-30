@@ -468,7 +468,7 @@ test('operator reason builds context pack internally and returns placeholder ana
   resetOperatorReasoningDiagnostics();
   process.env.NODE_ENV = 'production';
   process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
-  process.env.GAMEOPS_CODEX_REASONING_ENABLED = 'true';
+  process.env.GAMEOPS_CODEX_REASONING_ENABLED = 'false';
   process.env.GAMEOPS_CODEX_API_KEY = 'codex-secret-key';
   process.env.GAMEOPS_CODEX_MODEL = 'codex-test-model';
   const app = await buildTestApp();
@@ -498,7 +498,7 @@ test('operator reason builds context pack internally and returns placeholder ana
     assert.equal(body.engine, 'placeholder');
     assert(body.answerBullets.some((bullet) => bullet.includes('Top attention')));
     assert(body.evidence.some((item) => item.source === 'repo-state' || item.detail.includes('GameOps Bridge')));
-    assert(body.limitations.some((limitation) => limitation.includes('no Codex call')));
+    assert(body.limitations.some((limitation) => limitation.includes('Placeholder mode')));
     assert(body.recommendedNextActions.length > 0);
     assert(!response.body.includes('server-only-key'));
     assert(!response.body.includes('codex-secret-key'));
@@ -523,7 +523,7 @@ test('operator reason builds context pack internally and returns placeholder ana
     };
 
     assert.equal(statusResponse.statusCode, 200);
-    assert.equal(status.enabled, true);
+    assert.equal(status.enabled, false);
     assert.equal(status.configured, true);
     assert.equal(status.model, 'codex-test-model');
     assert.equal(status.lastReasonCode, 'CODEX_DISABLED');

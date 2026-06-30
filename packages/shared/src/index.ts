@@ -1258,7 +1258,7 @@ export type OperatorReasonFallbackReasonCode = z.infer<typeof operatorReasonFall
 export const operatorReasonResponseSchema = z.object({
   generatedAt: z.string().datetime(),
   readOnly: z.literal(true),
-  engine: z.literal('placeholder'),
+  engine: z.enum(['placeholder', 'codex']),
   question: z.string().min(1),
   answerHeadline: z.string().min(1),
   answerBullets: z.array(z.string().min(1)).min(1).max(8),
