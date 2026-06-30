@@ -1,6 +1,6 @@
 /* @jsxRuntime classic */
 import { operatorAskResponseSchema, type OperatorAskResponse } from '@gameops/shared';
-import React, { useState } from 'react';
+import * as React from 'react';
 
 type AskFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -46,10 +46,10 @@ export async function askOperatorQuestion(input: {
 }
 
 export function OperatorAskCard({ apiBaseUrl, askFetch }: OperatorAskCardProps) {
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState<OperatorAskResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [question, setQuestion] = React.useState('');
+  const [answer, setAnswer] = React.useState<OperatorAskResponse | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   async function submitQuestion(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -132,4 +132,3 @@ export function OperatorAskCard({ apiBaseUrl, askFetch }: OperatorAskCardProps) 
     </article>
   );
 }
-

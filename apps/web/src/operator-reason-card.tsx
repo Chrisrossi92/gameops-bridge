@@ -1,6 +1,6 @@
 /* @jsxRuntime classic */
 import { operatorReasonResponseSchema, type OperatorReasonResponse } from '@gameops/shared';
-import React, { useState } from 'react';
+import * as React from 'react';
 
 type ReasonFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -46,9 +46,9 @@ export function OperatorReasonCard({
   initialLoading = false,
   initialError = null
 }: OperatorReasonCardProps) {
-  const [result, setResult] = useState<OperatorReasonResponse | null>(initialResult);
-  const [loading, setLoading] = useState(initialLoading);
-  const [error, setError] = useState<string | null>(initialError);
+  const [result, setResult] = React.useState<OperatorReasonResponse | null>(initialResult);
+  const [loading, setLoading] = React.useState(initialLoading);
+  const [error, setError] = React.useState<string | null>(initialError);
 
   async function runAnalysis(): Promise<void> {
     try {
