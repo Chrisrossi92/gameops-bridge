@@ -169,11 +169,12 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
     assertOperatorAuthorized(request.headers, app.log);
     const body = operatorReasonRequestSchema.parse(request.body);
     const contextPack = await buildInternalContextPack();
-
-    return operatorReasonResponseSchema.parse(buildOperatorReasoningResponse({
+    const reasoningResponse = await buildOperatorReasoningResponse({
       request: body,
       contextPack
-    }));
+    });
+
+    return operatorReasonResponseSchema.parse(reasoningResponse);
   });
 
   app.get('/api/dashboard/operator/brief', async (request) => {
