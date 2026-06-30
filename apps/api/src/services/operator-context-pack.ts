@@ -8,6 +8,7 @@ import {
   type OperatorContextPackSection,
   type OperatorDailyBrief,
   type OperatorInsightsResponse,
+  type OperatorMemoryIndex,
   type OperatorTimelineEvent
 } from '@gameops/shared';
 import { redactSecrets } from './operator-redaction.js';
@@ -63,10 +64,21 @@ export function buildOperatorContextPack(input: {
   dailyBrief: OperatorDailyBrief;
   changes: OperatorChangesSummary;
   insights: OperatorInsightsResponse;
+  memoryIndex?: OperatorMemoryIndex;
   timelineEvents: OperatorTimelineEvent[];
   generatedAt?: string;
 }): OperatorContextPackResponse {
   const timeline = input.timelineEvents.slice(0, MAX_TIMELINE_EVENTS);
+  const memoryIndexBullets = input.memoryIndex
+    ? [
+      input.memoryIndex.deployments.historicalSummary,
+      input.memoryIndex.services.historicalSummary,
+      input.memoryIndex.storage.historicalSummary,
+      input.memoryIndex.git.historicalSummary,
+      input.memoryIndex.recommendations.historicalSummary,
+      input.memoryIndex.timelineStatistics.historicalSummary
+    ]
+    : ['Memory index unavailable.'];
   const sections: OperatorContextPackSection[] = [
     section('Current operator brief', input.brief.summary, [
       ...input.brief.risks,
@@ -91,6 +103,7 @@ export function buildOperatorContextPack(input: {
       insight.recommendedAction ?? ''
     ])),
     section('Repository state summaries', `${input.context.repos.length} configured repo${input.context.repos.length === 1 ? '' : 's'} summarized.`, repoSummary(input.context)),
+    section('Operational memory index', input.memoryIndex?.timelineStatistics.historicalSummary ?? 'Memory index unavailable.', memoryIndexBullets),
     section('Recent timeline', `${timeline.length} recent timeline event${timeline.length === 1 ? '' : 's'} included.`, timeline.map((event) => (
       `${event.occurredAt} ${event.type}/${event.severity}: ${event.title}: ${event.summary}`
     )))
@@ -102,6 +115,12 @@ export function buildOperatorContextPack(input: {
     ...input.changes.meaningfulChanges.map((change) => evidence('changes', change)),
     ...input.insights.insights.flatMap((insight) => insight.evidence.map((item) => evidence(`insight:${insight.title}`, item))),
     ...repoSummary(input.context).map((summary) => evidence('repo-state', summary)),
+    ...(input.memoryIndex ? [
+      evidence('memory-index', input.memoryIndex.timelineStatistics.historicalSummary),
+      evidence('memory-index:git', input.memoryIndex.git.historicalSummary),
+      evidence('memory-index:storage', input.memoryIndex.storage.historicalSummary),
+      evidence('memory-index:recommendations', input.memoryIndex.recommendations.historicalSummary)
+    ] : []),
     ...timeline.map((event) => evidence(`timeline:${event.type}`, `${event.title}: ${event.summary}`))
   ].slice(0, MAX_EVIDENCE);
   const warnings = unique([
@@ -124,6 +143,8 @@ export function buildOperatorContextPack(input: {
   return operatorContextPackResponseSchema.parse({
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     readOnly: true,
+    memoryIndex: input.memoryIndex,
+    recentTimeline: timeline,
     sections,
     evidence: evidenceItems,
     warnings,
@@ -131,4 +152,3 @@ export function buildOperatorContextPack(input: {
     redactionApplied: true
   });
 }
-

@@ -13,6 +13,7 @@ import {
   operatorChangesSummaryResponseSchema,
   operatorDailyBriefResponseSchema,
   operatorInsightsResponseSchema,
+  operatorMemoryIndexResponseSchema,
   operatorBriefResponseSchema,
   operatorTimelineResponseSchema,
   palworldBackupReadinessSchema,
@@ -56,6 +57,7 @@ import {
   type OperatorChangesSummaryResponse,
   type OperatorDailyBriefResponse,
   type OperatorInsightsResponse,
+  type OperatorMemoryIndexResponse,
   type OperatorBriefResponse,
   type OperatorTimelineEvent,
   type PalworldBackupReadiness,
@@ -2046,6 +2048,9 @@ function App() {
   const [operatorTimelineEvents, setOperatorTimelineEvents] = useState<OperatorTimelineEvent[]>([]);
   const [operatorTimelineLoading, setOperatorTimelineLoading] = useState(false);
   const [operatorTimelineError, setOperatorTimelineError] = useState<string | null>(null);
+  const [operatorMemoryIndex, setOperatorMemoryIndex] = useState<OperatorMemoryIndexResponse | null>(null);
+  const [operatorMemoryIndexLoading, setOperatorMemoryIndexLoading] = useState(false);
+  const [operatorMemoryIndexError, setOperatorMemoryIndexError] = useState<string | null>(null);
   const [selectedGameFilter, setSelectedGameFilter] = useState<GameFilter>('all');
   const [selectedServerId, setSelectedServerId] = useState<string>('');
   const [selectedValheimPlayerLookupKey, setSelectedValheimPlayerLookupKey] = useState<string | null>(null);
@@ -2770,6 +2775,60 @@ function App() {
     void loadOperatorDailyBrief(true);
     const interval = setInterval(() => {
       void loadOperatorDailyBrief(false);
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOperatorMemoryIndex(isInitialLoad: boolean): Promise<void> {
+      try {
+        if (isInitialLoad) {
+          setOperatorMemoryIndexLoading(true);
+        }
+
+        const response = await fetchOptionalDashboardResource(`${apiBaseUrl}/api/dashboard/operator/memory-index`);
+
+        if (!response) {
+          throw new Error('request timed out');
+        }
+
+        if (!response.ok) {
+          throw new Error(`request failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const parsed = operatorMemoryIndexResponseSchema.safeParse(payload);
+
+        if (!parsed.success) {
+          throw new Error('payload validation failed');
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setOperatorMemoryIndex(parsed.data);
+        setOperatorMemoryIndexError(null);
+      } catch {
+        if (isMounted) {
+          setOperatorMemoryIndexError('Operational memory unavailable');
+        }
+      } finally {
+        if (isMounted && isInitialLoad) {
+          setOperatorMemoryIndexLoading(false);
+        }
+      }
+    }
+
+    void loadOperatorMemoryIndex(true);
+    const interval = setInterval(() => {
+      void loadOperatorMemoryIndex(false);
     }, REFRESH_INTERVAL_MS);
 
     return () => {
@@ -4821,6 +4880,9 @@ function App() {
                 insights={operatorInsights}
                 insightsLoading={operatorInsightsLoading}
                 insightsError={operatorInsightsError}
+                memoryIndex={operatorMemoryIndex}
+                memoryIndexLoading={operatorMemoryIndexLoading}
+                memoryIndexError={operatorMemoryIndexError}
                 timelineEvents={operatorTimelineEvents}
                 timelineLoading={operatorTimelineLoading}
                 timelineError={operatorTimelineError}

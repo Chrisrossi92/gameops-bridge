@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { operatorAskRequestSchema, operatorAskResponseSchema, operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextPackResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorInsightsResponseSchema, operatorReasonRequestSchema, operatorReasonResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
+import { operatorAskRequestSchema, operatorAskResponseSchema, operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextPackResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorInsightsResponseSchema, operatorMemoryIndexResponseSchema, operatorReasonRequestSchema, operatorReasonResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
 import { getAllowedCorsOrigins } from '../services/cors-origin.js';
 import { answerOperatorQuestion } from '../services/operator-ask.js';
 import { buildOperatorChangesSummaryFromState } from '../services/operator-changes.js';
@@ -7,6 +7,7 @@ import { buildDashboardOperatorBrief, buildOperatorBrief, collectOperatorContext
 import { buildOperatorContextPack } from '../services/operator-context-pack.js';
 import { buildOperatorDailyBriefFromStore } from '../services/operator-daily-brief.js';
 import { buildOperatorInsights } from '../services/operator-insights.js';
+import { buildOperatorMemoryIndex } from '../services/operator-memory-index.js';
 import { buildOperatorReasoningResponse } from '../services/operator-reasoning-gateway.js';
 import { getDashboardOperatorAccessStatus, getOperatorAuthDiagnostics, getOperatorAuthStatus } from '../services/operator-auth.js';
 import { redactSecrets } from '../services/operator-redaction.js';
@@ -105,7 +106,9 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
       brief,
       store: timelineStore
     });
+    const memoryEvents = timelineStore.recentEvents(5_000);
     const timelineEvents = timelineStore.recentEvents(50);
+    const memoryIndex = buildOperatorMemoryIndex({ events: memoryEvents });
     const insights = buildOperatorInsights({
       brief,
       dailyBrief,
@@ -119,6 +122,7 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
       dailyBrief,
       changes,
       insights,
+      memoryIndex,
       timelineEvents
     }));
   }
@@ -147,6 +151,13 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
       readOnly: true,
       events: timelineStore.recentEvents(Number.isFinite(limit) ? limit : 50)
     });
+  });
+
+  app.get('/api/operator/memory-index', async (request) => {
+    assertOperatorAuthorized(request.headers, app.log);
+    return operatorMemoryIndexResponseSchema.parse(buildOperatorMemoryIndex({
+      events: timelineStore.recentEvents(5_000)
+    }));
   });
 
   app.get('/api/operator/context-pack', async (request) => {
@@ -182,6 +193,13 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
       readOnly: true,
       events: timelineStore.recentEvents(Number.isFinite(limit) ? limit : 20)
     });
+  });
+
+  app.get('/api/dashboard/operator/memory-index', async (request) => {
+    assertDashboardOperatorAllowed(request.headers, options.allowedOrigins);
+    return operatorMemoryIndexResponseSchema.parse(buildOperatorMemoryIndex({
+      events: timelineStore.recentEvents(5_000)
+    }));
   });
 
   app.get('/api/dashboard/operator/daily-brief', async (request) => {

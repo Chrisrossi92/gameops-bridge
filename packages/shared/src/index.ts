@@ -1067,6 +1067,50 @@ export type OperatorTimelineResponse = z.infer<typeof operatorTimelineResponseSc
 export const operatorDailyBriefConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type OperatorDailyBriefConfidence = z.infer<typeof operatorDailyBriefConfidenceSchema>;
 
+export const operatorMemoryIndexTrendSchema = z.enum(['quiet', 'stable', 'increasing', 'recent', 'unknown']);
+export type OperatorMemoryIndexTrend = z.infer<typeof operatorMemoryIndexTrendSchema>;
+
+export const operatorMemoryIndexSectionSchema = z.object({
+  count: z.number().int().min(0),
+  latestOccurrence: z.string().datetime().nullable(),
+  activeState: z.string().min(1),
+  historicalSummary: z.string().min(1),
+  trend: operatorMemoryIndexTrendSchema,
+  examples: z.array(z.string().min(1)).max(5)
+});
+export type OperatorMemoryIndexSection = z.infer<typeof operatorMemoryIndexSectionSchema>;
+
+export const operatorMemoryIndexSchema = z.object({
+  generatedAt: z.string().datetime(),
+  readOnly: z.literal(true),
+  range: z.object({
+    from: z.string().datetime().nullable(),
+    to: z.string().datetime().nullable()
+  }),
+  deployments: operatorMemoryIndexSectionSchema,
+  services: operatorMemoryIndexSectionSchema,
+  storage: operatorMemoryIndexSectionSchema,
+  git: operatorMemoryIndexSectionSchema,
+  recommendations: operatorMemoryIndexSectionSchema,
+  warnings: operatorMemoryIndexSectionSchema,
+  health: operatorMemoryIndexSectionSchema,
+  timelineStatistics: z.object({
+    totalEvents: z.number().int().min(0),
+    warningEvents: z.number().int().min(0),
+    criticalEvents: z.number().int().min(0),
+    byType: z.record(z.string(), z.number().int().min(0)),
+    bySeverity: z.record(z.string(), z.number().int().min(0)),
+    firstEventAt: z.string().datetime().nullable(),
+    lastEventAt: z.string().datetime().nullable(),
+    historicalSummary: z.string().min(1),
+    trend: operatorMemoryIndexTrendSchema
+  })
+});
+export type OperatorMemoryIndex = z.infer<typeof operatorMemoryIndexSchema>;
+
+export const operatorMemoryIndexResponseSchema = operatorMemoryIndexSchema;
+export type OperatorMemoryIndexResponse = z.infer<typeof operatorMemoryIndexResponseSchema>;
+
 export const operatorDailyBriefSchema = z.object({
   generatedAt: z.string().datetime(),
   readOnly: z.literal(true),
@@ -1174,6 +1218,8 @@ export type OperatorContextPackEvidence = z.infer<typeof operatorContextPackEvid
 export const operatorContextPackResponseSchema = z.object({
   generatedAt: z.string().datetime(),
   readOnly: z.literal(true),
+  memoryIndex: operatorMemoryIndexSchema.optional(),
+  recentTimeline: z.array(operatorTimelineEventSchema).max(12).optional(),
   sections: z.array(operatorContextPackSectionSchema).min(1).max(10),
   evidence: z.array(operatorContextPackEvidenceSchema).max(40),
   warnings: z.array(z.string().min(1)).max(20),
