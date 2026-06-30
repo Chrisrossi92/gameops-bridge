@@ -1240,6 +1240,21 @@ export const operatorReasonEvidenceSchema = z.object({
 });
 export type OperatorReasonEvidence = z.infer<typeof operatorReasonEvidenceSchema>;
 
+export const operatorReasonFallbackReasonCodeSchema = z.enum([
+  'CODEX_DISABLED',
+  'CODEX_NOT_CONFIGURED',
+  'CODEX_TIMEOUT',
+  'CODEX_NON_2XX',
+  'CODEX_INVALID_JSON',
+  'CODEX_SCHEMA_INVALID',
+  'CODEX_OUTPUT_TOO_LARGE',
+  'CODEX_INPUT_TOO_LARGE',
+  'CODEX_NETWORK_ERROR',
+  'CODEX_RESPONSE_REDACTED',
+  'CODEX_UNKNOWN_ERROR'
+]);
+export type OperatorReasonFallbackReasonCode = z.infer<typeof operatorReasonFallbackReasonCodeSchema>;
+
 export const operatorReasonResponseSchema = z.object({
   generatedAt: z.string().datetime(),
   readOnly: z.literal(true),
@@ -1253,6 +1268,17 @@ export const operatorReasonResponseSchema = z.object({
   confidence: operatorDailyBriefConfidenceSchema
 });
 export type OperatorReasonResponse = z.infer<typeof operatorReasonResponseSchema>;
+
+export const operatorReasonStatusResponseSchema = z.object({
+  enabled: z.boolean(),
+  configured: z.boolean(),
+  model: z.string().min(1),
+  lastReasonCode: operatorReasonFallbackReasonCodeSchema.nullable(),
+  lastAttemptAt: z.string().datetime().nullable(),
+  lastSuccessAt: z.string().datetime().nullable(),
+  placeholderFallbackCount: z.number().int().min(0)
+});
+export type OperatorReasonStatusResponse = z.infer<typeof operatorReasonStatusResponseSchema>;
 
 export const palworldLatestPlayerTelemetrySchema = z.object({
   serverId: z.string().min(1),

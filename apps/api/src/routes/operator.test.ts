@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { OperatorContext } from '@gameops/shared';
+import { resetOperatorReasoningDiagnostics } from '../services/operator-reasoning-gateway.js';
 import { OperatorTimelineStore } from '../services/operator-timeline.js';
 import { registerOperatorRoutes } from './operator.js';
 
@@ -108,7 +109,7 @@ async function buildLoggedTestApp(logs: Record<string, unknown>[]): Promise<Fast
   return app;
 }
 
-function restoreEnv(key: 'NODE_ENV' | 'GAMEOPS_OPERATOR_KEY', value: string | undefined): void {
+function restoreEnv(key: string, value: string | undefined): void {
   if (value === undefined) {
     delete process.env[key];
     return;
@@ -261,6 +262,24 @@ test('raw operator timeline requires key in production', async () => {
   }
 });
 
+test('raw operator memory index requires key in production', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/operator/memory-index' });
+
+    assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
 test('operator timeline returns structured read-only events after brief collection', async () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
@@ -290,6 +309,48 @@ test('operator timeline returns structured read-only events after brief collecti
     assert.equal(body.readOnly, true);
     assert(body.events.some((event) => event.type === 'git'));
     assert(!timelineResponse.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('operator memory index aggregates timeline after brief collection', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    await app.inject({
+      method: 'GET',
+      url: '/api/operator/brief',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      }
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/operator/memory-index',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      git: { count: number; activeState: string };
+      recommendations: { count: number };
+      timelineStatistics: { totalEvents: number };
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert(body.git.count > 0);
+    assert(body.recommendations.count > 0);
+    assert(body.timelineStatistics.totalEvents > 0);
+    assert(!response.body.includes('super-secret-token-value'));
   } finally {
     await app.close();
     restoreEnv('NODE_ENV', previousNodeEnv);
@@ -333,6 +394,8 @@ test('operator context pack returns sanitized admin context', async () => {
     const body = JSON.parse(response.body) as {
       readOnly: boolean;
       redactionApplied: boolean;
+      memoryIndex?: { timelineStatistics: { totalEvents: number } };
+      recentTimeline?: unknown[];
       sections: Array<{ title: string }>;
       evidence: unknown[];
     };
@@ -341,6 +404,9 @@ test('operator context pack returns sanitized admin context', async () => {
     assert.equal(body.readOnly, true);
     assert.equal(body.redactionApplied, true);
     assert(body.sections.some((section) => section.title === 'Current operator brief'));
+    assert(body.sections.some((section) => section.title === 'Operational memory index'));
+    assert((body.memoryIndex?.timelineStatistics.totalEvents ?? 0) > 0);
+    assert((body.recentTimeline?.length ?? 0) > 0);
     assert(body.evidence.length > 0);
     assert(!response.body.includes('super-secret-token-value'));
     assert(!response.body.includes('normal startup line'));
@@ -375,11 +441,36 @@ test('raw operator reason requires key in production', async () => {
   }
 });
 
-test('operator reason builds context pack internally and returns placeholder analysis', async () => {
+test('raw operator reason status requires key in production', async () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
   process.env.NODE_ENV = 'production';
   process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/operator/reason/status' });
+
+    assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('operator reason builds context pack internally and returns placeholder analysis', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  const previousCodexEnabled = process.env.GAMEOPS_CODEX_REASONING_ENABLED;
+  const previousCodexKey = process.env.GAMEOPS_CODEX_API_KEY;
+  const previousCodexModel = process.env.GAMEOPS_CODEX_MODEL;
+  resetOperatorReasoningDiagnostics();
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  process.env.GAMEOPS_CODEX_REASONING_ENABLED = 'true';
+  process.env.GAMEOPS_CODEX_API_KEY = 'codex-secret-key';
+  process.env.GAMEOPS_CODEX_MODEL = 'codex-test-model';
   const app = await buildTestApp();
 
   try {
@@ -410,12 +501,43 @@ test('operator reason builds context pack internally and returns placeholder ana
     assert(body.limitations.some((limitation) => limitation.includes('no Codex call')));
     assert(body.recommendedNextActions.length > 0);
     assert(!response.body.includes('server-only-key'));
+    assert(!response.body.includes('codex-secret-key'));
     assert(!response.body.includes('super-secret-token-value'));
     assert(!response.body.includes('normal startup line'));
+
+    const statusResponse = await app.inject({
+      method: 'GET',
+      url: '/api/operator/reason/status',
+      headers: {
+        'x-gameops-operator-key': 'server-only-key'
+      }
+    });
+    const status = JSON.parse(statusResponse.body) as {
+      enabled: boolean;
+      configured: boolean;
+      model: string;
+      lastReasonCode: string | null;
+      lastAttemptAt: string | null;
+      lastSuccessAt: string | null;
+      placeholderFallbackCount: number;
+    };
+
+    assert.equal(statusResponse.statusCode, 200);
+    assert.equal(status.enabled, true);
+    assert.equal(status.configured, true);
+    assert.equal(status.model, 'codex-test-model');
+    assert.equal(status.lastReasonCode, 'CODEX_DISABLED');
+    assert(status.lastAttemptAt);
+    assert.equal(status.lastSuccessAt, null);
+    assert.equal(status.placeholderFallbackCount, 1);
+    assert(!statusResponse.body.includes('codex-secret-key'));
   } finally {
     await app.close();
     restoreEnv('NODE_ENV', previousNodeEnv);
     restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+    restoreEnv('GAMEOPS_CODEX_REASONING_ENABLED', previousCodexEnabled);
+    restoreEnv('GAMEOPS_CODEX_API_KEY', previousCodexKey);
+    restoreEnv('GAMEOPS_CODEX_MODEL', previousCodexModel);
   }
 });
 
@@ -542,6 +664,45 @@ test('dashboard operator timeline does not require browser to send operator key'
     });
 
     assert.equal(response.statusCode, 200);
+    assert(!response.body.includes('DISCORD_TOKEN'));
+    assert(!response.body.includes('super-secret-token-value'));
+  } finally {
+    await app.close();
+    restoreEnv('NODE_ENV', previousNodeEnv);
+    restoreEnv('GAMEOPS_OPERATOR_KEY', previousOperatorKey);
+  }
+});
+
+test('dashboard operator memory index does not require browser to send operator key', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousOperatorKey = process.env.GAMEOPS_OPERATOR_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.GAMEOPS_OPERATOR_KEY = 'server-only-key';
+  const app = await buildTestApp();
+
+  try {
+    await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/brief',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/dashboard/operator/memory-index',
+      headers: {
+        origin: 'https://servers.cdawgbot.xyz'
+      }
+    });
+    const body = JSON.parse(response.body) as {
+      readOnly: boolean;
+      timelineStatistics: { totalEvents: number };
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.readOnly, true);
+    assert(body.timelineStatistics.totalEvents > 0);
     assert(!response.body.includes('DISCORD_TOKEN'));
     assert(!response.body.includes('super-secret-token-value'));
   } finally {

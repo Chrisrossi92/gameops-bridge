@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { operatorAskRequestSchema, operatorAskResponseSchema, operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextPackResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorInsightsResponseSchema, operatorMemoryIndexResponseSchema, operatorReasonRequestSchema, operatorReasonResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
+import { operatorAskRequestSchema, operatorAskResponseSchema, operatorBriefResponseSchema, operatorChangesSummaryResponseSchema, operatorContextPackResponseSchema, operatorContextSchema, operatorDailyBriefResponseSchema, operatorInsightsResponseSchema, operatorMemoryIndexResponseSchema, operatorReasonRequestSchema, operatorReasonResponseSchema, operatorReasonStatusResponseSchema, operatorTimelineResponseSchema } from '@gameops/shared';
 import { getAllowedCorsOrigins } from '../services/cors-origin.js';
 import { answerOperatorQuestion } from '../services/operator-ask.js';
 import { buildOperatorChangesSummaryFromState } from '../services/operator-changes.js';
@@ -8,7 +8,7 @@ import { buildOperatorContextPack } from '../services/operator-context-pack.js';
 import { buildOperatorDailyBriefFromStore } from '../services/operator-daily-brief.js';
 import { buildOperatorInsights } from '../services/operator-insights.js';
 import { buildOperatorMemoryIndex } from '../services/operator-memory-index.js';
-import { buildOperatorReasoningResponse } from '../services/operator-reasoning-gateway.js';
+import { buildOperatorReasoningResponse, getOperatorReasoningStatus } from '../services/operator-reasoning-gateway.js';
 import { getDashboardOperatorAccessStatus, getOperatorAuthDiagnostics, getOperatorAuthStatus } from '../services/operator-auth.js';
 import { redactSecrets } from '../services/operator-redaction.js';
 import { appendOperatorTimelineEvents, OperatorTimelineStore } from '../services/operator-timeline.js';
@@ -171,10 +171,16 @@ export async function registerOperatorRoutes(app: FastifyInstance, options: Regi
     const contextPack = await buildInternalContextPack();
     const reasoningResponse = await buildOperatorReasoningResponse({
       request: body,
-      contextPack
+      contextPack,
+      logger: app.log
     });
 
     return operatorReasonResponseSchema.parse(reasoningResponse);
+  });
+
+  app.get('/api/operator/reason/status', async (request) => {
+    assertOperatorAuthorized(request.headers, app.log);
+    return operatorReasonStatusResponseSchema.parse(getOperatorReasoningStatus());
   });
 
   app.get('/api/dashboard/operator/brief', async (request) => {
