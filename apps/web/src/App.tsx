@@ -4886,6 +4886,9 @@ function App() {
                 timelineEvents={operatorTimelineEvents}
                 timelineLoading={operatorTimelineLoading}
                 timelineError={operatorTimelineError}
+                debugServers={filteredServers
+                  .map((server) => fleetByServerId[server.id])
+                  .filter((summary): summary is ServerSummary => Boolean(summary))}
               />
             ) : (
               <OperatorSummaryCard

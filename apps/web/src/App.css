@@ -410,6 +410,101 @@
   margin-bottom: 0;
 }
 
+.operator-debug-card {
+  grid-column: 1 / -1;
+}
+
+.operator-debug-heading,
+.operator-debug-server-heading,
+.operator-debug-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  align-items: flex-start;
+}
+
+.operator-debug-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.operator-debug-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+}
+
+.operator-debug-server {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.45rem;
+  padding: 0.55rem;
+  background: #f8fafc;
+}
+
+.operator-debug-server-heading strong,
+.operator-debug-line strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.operator-debug-server-heading span:not(.state-pill) {
+  display: block;
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.operator-debug-kv {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0.55rem 0;
+}
+
+.operator-debug-kv div,
+.operator-debug-collector {
+  min-width: 0;
+  border-radius: 0.4rem;
+  background: #fff;
+  padding: 0.42rem;
+}
+
+.operator-debug-kv dt,
+.operator-debug-subtitle {
+  color: #64748b;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.operator-debug-kv dd {
+  margin: 0.12rem 0 0;
+  color: #0f172a;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.operator-debug-subsection {
+  display: grid;
+  gap: 0.38rem;
+  margin-top: 0.5rem;
+}
+
+.operator-debug-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.26rem 0.55rem;
+  margin-top: 0.35rem;
+  color: #475569;
+  font-size: 0.74rem;
+}
+
+.operator-debug-empty {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
 .operator-ask-card {
   grid-column: 1 / -1;
 }

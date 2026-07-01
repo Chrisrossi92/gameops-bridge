@@ -8,6 +8,7 @@ import type {
   OperatorTimelineEvent
 } from '@gameops/shared';
 import React from 'react';
+import { OperatorDebugPanel, type OperatorDebugServer } from './operator-debug-panel.tsx';
 import { OperatorAskCard } from './operator-ask-card.tsx';
 import { OperatorChangesCard } from './operator-changes-card.tsx';
 import { OperatorCurrentStateCard } from './operator-current-state-card.tsx';
@@ -44,6 +45,7 @@ interface OperatorWorkspaceProps {
   timelineEvents: OperatorTimelineEvent[];
   timelineLoading: boolean;
   timelineError: string | null;
+  debugServers: OperatorDebugServer[];
 }
 
 function healthLabel(brief: OperatorBriefResponse | null): string {
@@ -110,6 +112,7 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
       </article>
 
       <div className="operator-workspace-grid">
+        <OperatorDebugPanel servers={props.debugServers} />
         <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />
         <OperatorReasonCard apiBaseUrl={props.apiBaseUrl} />
         <OperatorMemoryIndexCard
