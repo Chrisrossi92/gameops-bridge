@@ -16,6 +16,7 @@ import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
 import { OperatorInsightsCard } from './operator-insights-card.tsx';
 import { OperatorMemoryIndexCard } from './operator-memory-index-card.tsx';
 import { OperatorReasonCard } from './operator-reason-card.tsx';
+import { OperatorServerHealthCard, type OperatorServerHealthEntry } from './operator-server-health-card.tsx';
 import { OperatorTimelineCard } from './operator-timeline-card.tsx';
 
 interface OperatorSummaryCardProps {
@@ -46,6 +47,7 @@ interface OperatorWorkspaceProps {
   timelineLoading: boolean;
   timelineError: string | null;
   debugServers: OperatorDebugServer[];
+  serverHealth: OperatorServerHealthEntry[];
 }
 
 function healthLabel(brief: OperatorBriefResponse | null): string {
@@ -112,6 +114,7 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
       </article>
 
       <div className="operator-workspace-grid">
+        <OperatorServerHealthCard servers={props.serverHealth} />
         <OperatorDebugPanel servers={props.debugServers} />
         <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />
         <OperatorReasonCard apiBaseUrl={props.apiBaseUrl} />

@@ -414,9 +414,14 @@
   grid-column: 1 / -1;
 }
 
+.operator-server-health-card {
+  grid-column: 1 / -1;
+}
+
 .operator-debug-heading,
 .operator-debug-server-heading,
-.operator-debug-line {
+.operator-debug-line,
+.operator-health-row-heading {
   display: flex;
   justify-content: space-between;
   gap: 0.7rem;
@@ -426,6 +431,49 @@
 .operator-debug-heading h2 {
   margin: 0;
   font-size: 1rem;
+}
+
+.operator-health-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.operator-health-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.45rem;
+  padding: 0.55rem;
+  background: #f8fafc;
+}
+
+.operator-health-row strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.operator-health-row-heading span:not(.state-pill) {
+  display: block;
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.operator-health-row p {
+  margin: 0.35rem 0 0;
+  color: #334155;
+  font-size: 0.82rem;
+}
+
+.operator-health-action {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.45rem;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0.18rem 0.45rem;
 }
 
 .operator-debug-grid {
@@ -2787,6 +2835,16 @@
 }
 
 .state-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.state-healthy {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.state-unhealthy {
   background: #fee2e2;
   color: #991b1b;
 }

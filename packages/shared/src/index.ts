@@ -937,6 +937,45 @@ export const dataFreshnessResponseSchema = z.object({
 });
 export type DataFreshnessResponse = z.infer<typeof dataFreshnessResponseSchema>;
 
+export const serverHealthStatusSchema = z.enum(['healthy', 'warning', 'unhealthy']);
+export type ServerHealthStatus = z.infer<typeof serverHealthStatusSchema>;
+
+export const serverHealthSummarySchema = z.object({
+  serverId: z.string().min(1),
+  status: serverHealthStatusSchema,
+  headline: z.string().min(1),
+  explanation: z.string().min(1),
+  recommendedAction: z.string().min(1).optional(),
+  generatedAt: z.string().datetime(),
+  currentPlayers: z.number().int().min(0),
+  uniquePlayersThisWeek: z.number().int().min(0),
+  lastPlayerActivityAt: z.string().datetime().nullable(),
+  lastWorldSaveAt: z.string().datetime().nullable(),
+  collectorHealth: z.object({
+    status: serverHealthStatusSchema,
+    totalCollectors: z.number().int().min(0),
+    enabledCollectors: z.number().int().min(0),
+    unhealthyCollectors: z.number().int().min(0),
+    lastSuccessfulCollectionAt: z.string().datetime().nullable(),
+    summaries: z.array(z.string().min(1))
+  }),
+  logTruthHealth: logTruthHealthSchema.nullable(),
+  sessionHealth: z.object({
+    status: serverHealthStatusSchema,
+    activeSessions: z.number().int().min(0),
+    recentClosedSessions: z.number().int().min(0),
+    stale: z.boolean(),
+    explanation: z.string().min(1)
+  }),
+  telemetry: z.object({
+    status: dataFreshnessStatusSchema,
+    connectorStatus: connectorOperationalStatusSchema,
+    lastHeartbeatAt: z.string().datetime().nullable(),
+    lastSuccessfulPollAt: z.string().datetime().nullable()
+  })
+});
+export type ServerHealthSummary = z.infer<typeof serverHealthSummarySchema>;
+
 export const configuredServerSummarySchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1),

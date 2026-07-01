@@ -12,6 +12,7 @@ import { registerPalworldTelemetryRoutes } from './routes/palworld-telemetry.js'
 import { registerPlayerEngagementRoutes } from './routes/player-engagement.js';
 import { registerOperatorRoutes } from './routes/operator.js';
 import { registerServerAliveRhythmRoutes } from './routes/server-alive-rhythm.js';
+import { registerServerHealthRoutes } from './routes/server-health.js';
 import { registerPlayerRoutes } from './routes/players.js';
 import { registerServerCatalogRoutes } from './routes/servers.js';
 import { registerServerStatusRoute } from './routes/server-status.js';
@@ -44,6 +45,7 @@ await registerActivityLogRoutes(app);
 await registerSessionRoutes(app);
 await registerPlayerEngagementRoutes(app);
 await registerServerAliveRhythmRoutes(app);
+await registerServerHealthRoutes(app);
 await registerPlayerRoutes(app);
 await registerPalworldTelemetryRoutes(app);
 await registerPalworldIdentityLinkRoutes(app);
