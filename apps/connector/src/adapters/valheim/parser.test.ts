@@ -48,7 +48,11 @@ test('classifies closing socket as socket closed', () => {
   assert.equal(classification.confidence, 'medium');
   assert.equal(classification.emitShadowEvent, true);
   assert.equal(classification.details?.socketId, 'steam_76561198000000000');
-  assert.equal(valheimAdapter.parseLine(line, { serverId }), null);
+  const event = valheimAdapter.parseLine(line, { serverId });
+  assert.equal(event?.eventType, 'HEALTH_WARN');
+  assert.equal(event?.raw?.valheimDisconnectSignal, true);
+  assert.equal(event?.raw?.valheimDisconnectRule, 'socket_closed');
+  assert.equal(event?.raw?.valheimDisconnectSocketId, 'steam_76561198000000000');
 });
 
 test('classifies PlayFab entity token refresh as routine token refresh', () => {

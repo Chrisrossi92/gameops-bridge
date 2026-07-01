@@ -191,6 +191,116 @@ function getStructuredPlayerCount(event: NormalizedEvent): number | null {
   return value;
 }
 
+function normalizeIdentityValue(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function getRawString(event: NormalizedEvent, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = event.raw?.[key];
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getDisconnectIdentityHint(event: NormalizedEvent): string | null {
+  return event.platformId?.trim()
+    ?? getRawString(event, [
+      'valheimDisconnectSocketId',
+      'valheimSocketId',
+      'valheimIdentityPlatformId',
+      'platformId',
+      'steamId',
+      'socketId'
+    ]);
+}
+
+function getEventIdentityValues(event: NormalizedEvent): string[] {
+  return [
+    event.platformId,
+    getRawString(event, ['valheimIdentityPlatformId', 'platformId', 'steamId']),
+    getRawString(event, ['valheimIdentityPlayFabId', 'playFabId']),
+    getRawString(event, ['valheimIdentityCharacterId', 'characterId'])
+  ].filter((value): value is string => Boolean(value?.trim()));
+}
+
+function findSourceEvent(sourceEventIds: string[]): NormalizedEvent | null {
+  const sourceIds = new Set(sourceEventIds.map((id) => id.trim()).filter(Boolean));
+
+  if (sourceIds.size === 0) {
+    return null;
+  }
+
+  return recentEvents.find((event) => (
+    (event.id && sourceIds.has(event.id))
+    || sourceIds.has(getEventSourceId(event))
+  )) ?? null;
+}
+
+function findMatchingActiveSessionByIdentity(
+  activeByPlayer: Map<string, SessionRecord>,
+  disconnectIdentityHint: string
+): { playerName: string; session: SessionRecord; sourceEvent: NormalizedEvent | null } | null {
+  const normalizedHint = normalizeIdentityValue(disconnectIdentityHint);
+
+  for (const [playerName, session] of activeByPlayer.entries()) {
+    const sourceEvent = findSourceEvent(session.sourceEventIds ?? []);
+    const identityValues = sourceEvent ? getEventIdentityValues(sourceEvent) : [];
+    const matched = identityValues.some((value) => normalizeIdentityValue(value) === normalizedHint);
+
+    if (matched) {
+      return { playerName, session, sourceEvent };
+    }
+  }
+
+  return null;
+}
+
+function correlateMissingLeaveIdentity(
+  event: NormalizedEvent,
+  activeByPlayer: Map<string, SessionRecord>
+): NormalizedEvent {
+  if (event.playerName || (event.eventType !== 'PLAYER_LEAVE' && !isDisconnectSignalEvent(event))) {
+    return event;
+  }
+
+  const disconnectIdentityHint = getDisconnectIdentityHint(event);
+  const matched = disconnectIdentityHint
+    ? findMatchingActiveSessionByIdentity(activeByPlayer, disconnectIdentityHint)
+    : null;
+  const singleActive = activeByPlayer.size === 1
+    ? Array.from(activeByPlayer.entries())[0] ?? null
+    : null;
+  const playerName = matched?.playerName ?? singleActive?.[0] ?? null;
+  const sourceEvent = matched?.sourceEvent ?? (singleActive ? findSourceEvent(singleActive[1].sourceEventIds ?? []) : null);
+
+  if (!playerName) {
+    return event;
+  }
+
+  const platformId = sourceEvent?.platformId
+    ?? getRawString(sourceEvent ?? event, ['valheimIdentityPlatformId', 'platformId', 'steamId'])
+    ?? disconnectIdentityHint
+    ?? undefined;
+
+  return {
+    ...event,
+    playerName,
+    ...(platformId ? { platformId } : {}),
+    raw: {
+      ...(event.raw ?? {}),
+      valheimResolvedPlayerName: playerName,
+      valheimIdentityConfidence: matched ? 'medium' : 'low',
+      valheimIdentitySource: matched ? 'active_session_identity_match' : 'single_active_session_correlation',
+      ...(platformId ? { valheimIdentityPlatformId: platformId } : {})
+    }
+  };
+}
+
 function closeSession(
   game: NormalizedEvent['game'],
   serverId: string,
@@ -357,31 +467,31 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
       : event;
   }
 
-  let updatedEvent = event;
+  let updatedEvent = correlateMissingLeaveIdentity(event, activeByPlayer);
   let directCloseCount = 0;
-  const triggerReason: 'player_leave' | 'disconnect_signal' = event.eventType === 'PLAYER_LEAVE'
+  const triggerReason: 'player_leave' | 'disconnect_signal' = updatedEvent.eventType === 'PLAYER_LEAVE'
     ? 'player_leave'
     : 'disconnect_signal';
 
-  if (event.playerName) {
-    const existingSession = activeByPlayer.get(event.playerName);
+  if (updatedEvent.playerName) {
+    const existingSession = activeByPlayer.get(updatedEvent.playerName);
 
     if (!existingSession) {
-      console.log(`[session] orphan leave ignored server=${event.serverId} player=${event.playerName} trigger=${triggerReason}`);
+      console.log(`[session] orphan leave ignored server=${updatedEvent.serverId} player=${updatedEvent.playerName} trigger=${triggerReason}`);
     } else {
-      const durationSeconds = getDurationSeconds(existingSession.startedAt, event.occurredAt);
+      const durationSeconds = getDurationSeconds(existingSession.startedAt, updatedEvent.occurredAt);
       const closedSession = closeSession(
-        event.game,
-        event.serverId,
-        event.playerName,
+        updatedEvent.game,
+        updatedEvent.serverId,
+        updatedEvent.playerName,
         existingSession,
-        event.occurredAt,
+        updatedEvent.occurredAt,
         triggerReason,
         triggerReason === 'player_leave' ? 'high' : 'low',
         sourceEventId
       );
 
-      activeByPlayer.delete(event.playerName);
+      activeByPlayer.delete(updatedEvent.playerName);
       closedSessions.push(closedSession);
       directCloseCount = 1;
 

@@ -360,6 +360,24 @@ export const valheimAdapter: GameLogAdapter = {
       });
     }
 
+    const closingSocketMatch = /closing socket\s+([a-z0-9:_-]+)/i.exec(message);
+    if (closingSocketMatch?.[1]) {
+      const socketId = closingSocketMatch[1].trim();
+
+      return createEvent({
+        serverId: context.serverId,
+        eventType: 'HEALTH_WARN',
+        occurredAt,
+        message,
+        raw: {
+          valheimDisconnectSignal: true,
+          valheimDisconnectRule: 'socket_closed',
+          valheimDisconnectSocketId: socketId,
+          valheimEventSource: 'journal'
+        }
+      });
+    }
+
     if (/zplayfabsocket::dispose/i.test(message)) {
       return createEvent({
         serverId: context.serverId,

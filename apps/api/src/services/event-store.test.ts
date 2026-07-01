@@ -212,6 +212,158 @@ test('occupancy reconciliation does not close sessions when active count matches
   });
 });
 
+test('single active player disconnect gets correlated identity and closes session', async () => {
+  await withFreshEventStore(async (store) => {
+    store.addEvents([
+      createEvent({
+        id: 'single-join',
+        eventType: 'PLAYER_JOIN',
+        playerName: 'GeKo ViKiNgSoN',
+        occurredAt: '2026-04-05T12:00:00.000Z'
+      })
+    ]);
+
+    store.addEvents([
+      createEvent({
+        id: 'single-disconnect',
+        eventType: 'PLAYER_LEAVE',
+        occurredAt: '2026-04-05T12:02:00.000Z',
+        raw: {
+          valheimDisconnectRule: 'structured_connection_lost',
+          valheimEventSource: 'journal'
+        }
+      })
+    ]);
+
+    const active = store.getActiveSessionsForServer('srv-1');
+    const closed = store.getRecentClosedSessionsForServer('srv-1', 5);
+    const recent = store.getRecentEventsForServer('srv-1', 1)[0];
+    const rollups = await importRollupStore();
+    const [player] = rollups.getPersistedPlayerRollupsForServer('srv-1')
+      .filter((rollup) => rollup.displayName === 'GeKo ViKiNgSoN');
+
+    assert.equal(active.length, 0);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0]?.playerName, 'GeKo ViKiNgSoN');
+    assert.equal(closed[0]?.closeReason, 'player_leave');
+    assert.equal(closed[0]?.durationSeconds, 120);
+    assert.equal(recent?.playerName, 'GeKo ViKiNgSoN');
+    assert.equal(recent?.raw?.valheimIdentitySource, 'single_active_session_correlation');
+    assert.equal(player?.sessionCount, 1);
+    assert.equal(player?.totalTrackedSeconds, 120);
+  });
+});
+
+test('multiple active players ambiguous disconnect remains missing identity', async () => {
+  await withFreshEventStore((store) => {
+    store.addEvents([
+      createEvent({ id: 'ambiguous-alpha', eventType: 'PLAYER_JOIN', playerName: 'Alpha', occurredAt: '2026-04-05T12:00:00.000Z' }),
+      createEvent({ id: 'ambiguous-bravo', eventType: 'PLAYER_JOIN', playerName: 'Bravo', occurredAt: '2026-04-05T12:01:00.000Z' })
+    ]);
+
+    store.addEvents([
+      createEvent({
+        id: 'ambiguous-disconnect',
+        eventType: 'PLAYER_LEAVE',
+        occurredAt: '2026-04-05T12:02:00.000Z',
+        raw: {
+          valheimDisconnectRule: 'structured_connection_lost',
+          valheimEventSource: 'journal'
+        }
+      })
+    ]);
+
+    const active = store.getActiveSessionsForServer('srv-1');
+    const closed = store.getRecentClosedSessionsForServer('srv-1', 5);
+    const recent = store.getRecentEventsForServer('srv-1', 1)[0];
+
+    assert.equal(active.length, 2);
+    assert.equal(closed.length, 0);
+    assert.equal(recent?.playerName, undefined);
+    assert.equal(recent?.raw?.valheimIdentitySource, undefined);
+  });
+});
+
+test('disconnect socket id resolves matching active session identity', async () => {
+  await withFreshEventStore((store) => {
+    store.addEvents([
+      createEvent({
+        id: 'steam-alpha',
+        eventType: 'PLAYER_JOIN',
+        playerName: 'Alpha',
+        platformId: 'steam_111',
+        occurredAt: '2026-04-05T12:00:00.000Z',
+        raw: {
+          valheimIdentityPlatformId: 'steam_111'
+        }
+      })
+    ]);
+    store.addEvents([
+      createEvent({
+        id: 'steam-bravo',
+        eventType: 'PLAYER_JOIN',
+        playerName: 'Bravo',
+        platformId: 'steam_222',
+        occurredAt: '2026-04-05T12:01:00.000Z',
+        raw: {
+          valheimIdentityPlatformId: 'steam_222'
+        }
+      })
+    ]);
+
+    store.addEvents([
+      createEvent({
+        id: 'steam-disconnect',
+        eventType: 'HEALTH_WARN',
+        occurredAt: '2026-04-05T12:02:00.000Z',
+        raw: {
+          valheimDisconnectSignal: true,
+          valheimDisconnectRule: 'socket_closed',
+          valheimDisconnectSocketId: 'steam_222',
+          valheimEventSource: 'journal'
+        }
+      })
+    ]);
+
+    const active = store.getActiveSessionsForServer('srv-1');
+    const closed = store.getRecentClosedSessionsForServer('srv-1', 5);
+    const recent = store.getRecentEventsForServer('srv-1', 1)[0];
+
+    assert.deepEqual(active.map((session) => session.playerName), ['Alpha']);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0]?.playerName, 'Bravo');
+    assert.equal(closed[0]?.closeReason, 'disconnect_signal');
+    assert.equal(recent?.playerName, 'Bravo');
+    assert.equal(recent?.platformId, 'steam_222');
+    assert.equal(recent?.raw?.valheimIdentitySource, 'active_session_identity_match');
+  });
+});
+
+test('disconnect with no active session remains missing identity', async () => {
+  await withFreshEventStore((store) => {
+    store.addEvents([
+      createEvent({
+        id: 'orphan-disconnect',
+        eventType: 'PLAYER_LEAVE',
+        occurredAt: '2026-04-05T12:02:00.000Z',
+        raw: {
+          valheimDisconnectRule: 'structured_connection_lost',
+          valheimEventSource: 'journal'
+        }
+      })
+    ]);
+
+    const active = store.getActiveSessionsForServer('srv-1');
+    const closed = store.getRecentClosedSessionsForServer('srv-1', 5);
+    const recent = store.getRecentEventsForServer('srv-1', 1)[0];
+
+    assert.equal(active.length, 0);
+    assert.equal(closed.length, 0);
+    assert.equal(recent?.playerName, undefined);
+    assert.equal(recent?.raw?.valheimIdentitySource, undefined);
+  });
+});
+
 test('recent events survive an event-store module restart through log truth storage', async () => {
   await withFreshEventStore(async (store) => {
     store.addEvents([
