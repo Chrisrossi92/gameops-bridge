@@ -92,7 +92,7 @@ import {
 } from '@gameops/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
-import { OperatorSummaryCard, OperatorWorkspace } from './operator-workspace.tsx';
+import { OperatorWorkspace } from './operator-workspace.tsx';
 import './App.css';
 
 interface HealthResponse {
@@ -1936,6 +1936,7 @@ interface PalworldBaseSignalHistoryEntry {
 }
 
 type DashboardTab = 'overview' | 'operator' | 'highlights' | 'players' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
+type WorkspaceView = 'overview' | 'valheim' | 'palworld';
 
 const apiBaseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const REFRESH_INTERVAL_MS = 15_000;
@@ -2037,6 +2038,22 @@ function getTelemetryAvailabilityLabel(summary: ServerSummary): string {
     : 'unavailable';
 }
 
+function getGameLabel(game: ServerOption['game']): string {
+  return game === 'palworld' ? 'Palworld' : 'Valheim';
+}
+
+function getLatestActivityLabel(summary: ServerSummary | undefined): string {
+  if (!summary) {
+    return 'Loading world activity';
+  }
+
+  const latestActivity = summary.activityLog[0]?.description
+    ?? summary.recentEvents[0]?.eventType
+    ?? summary.serverAliveRhythm.summary;
+
+  return latestActivity || 'No recent activity yet';
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [serverOptions, setServerOptions] = useState<ServerOption[]>([]);
@@ -2063,6 +2080,7 @@ function App() {
   const [operatorMemoryIndex, setOperatorMemoryIndex] = useState<OperatorMemoryIndexResponse | null>(null);
   const [operatorMemoryIndexLoading, setOperatorMemoryIndexLoading] = useState(false);
   const [operatorMemoryIndexError, setOperatorMemoryIndexError] = useState<string | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('overview');
   const [selectedGameFilter, setSelectedGameFilter] = useState<GameFilter>('all');
   const [selectedServerId, setSelectedServerId] = useState<string>('');
   const [selectedValheimPlayerLookupKey, setSelectedValheimPlayerLookupKey] = useState<string | null>(null);
@@ -2150,7 +2168,6 @@ function App() {
   const [drawerLinkError, setDrawerLinkError] = useState<string | null>(null);
   const [drawerLinkSuccess, setDrawerLinkSuccess] = useState<string | null>(null);
   const [drawerLinkSubmitting, setDrawerLinkSubmitting] = useState(false);
-  const [isFleetExpanded, setIsFleetExpanded] = useState(false);
   const reviewedGuildStorageServerId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -4274,16 +4291,16 @@ function App() {
     if (palworldBaseCapacityAlerts && palworldBaseCapacityAlerts.severity !== 'safe') {
       actions.push({
         label: palworldBaseCapacityAlerts.alertMessage,
-        cta: 'View Metrics',
-        targetTab: 'metrics'
+        cta: 'View Operations',
+        targetTab: 'ops'
       });
     }
 
     if (palworldBaseCapacityAlerts?.growthAlert) {
       actions.push({
         label: palworldBaseCapacityAlerts.growthAlert,
-        cta: 'View Metrics',
-        targetTab: 'metrics'
+        cta: 'View Operations',
+        targetTab: 'ops'
       });
     }
 
@@ -4366,10 +4383,14 @@ function App() {
   }, [palworldPlayerList, selectedServer]);
 
   const filteredServers = useMemo(() => {
+    if (activeWorkspace === 'valheim' || activeWorkspace === 'palworld') {
+      return serverOptions.filter((server) => server.game === activeWorkspace);
+    }
+
     return serverOptions.filter((server) => (
       selectedGameFilter === 'all' || server.game === selectedGameFilter
     ));
-  }, [selectedGameFilter, serverOptions]);
+  }, [activeWorkspace, selectedGameFilter, serverOptions]);
 
   useEffect(() => {
     if (filteredServers.length === 0) {
@@ -4383,18 +4404,31 @@ function App() {
   }, [filteredServers, selectedServerId]);
 
   const selectedServerSummary = selectedServer ? fleetByServerId[selectedServer.id] ?? null : null;
+  const worldCards = useMemo(() => {
+    return serverOptions
+      .filter((server) => server.game === 'valheim' || server.game === 'palworld')
+      .sort((left, right) => {
+        const order = { valheim: 0, palworld: 1 } satisfies Record<ServerOption['game'], number>;
+        return order[left.game] - order[right.game];
+      })
+      .map((server) => ({
+        server,
+        summary: fleetByServerId[server.id]
+      }));
+  }, [fleetByServerId, serverOptions]);
   const fleetCounts = useMemo(() => {
-    const visibleSummaries = filteredServers
+    const countedServers = activeWorkspace === 'overview' ? serverOptions : filteredServers;
+    const visibleSummaries = countedServers
       .map((server) => fleetByServerId[server.id])
       .filter((summary): summary is ServerSummary => Boolean(summary));
 
     return {
-      servers: filteredServers.length,
+      servers: countedServers.length,
       online: visibleSummaries.filter((summary) => summary.state === 'online').length,
       degraded: visibleSummaries.filter((summary) => summary.state === 'degraded').length,
       activePlayers: visibleSummaries.reduce((sum, summary) => sum + summary.activePlayers, 0)
     };
-  }, [filteredServers, fleetByServerId]);
+  }, [activeWorkspace, filteredServers, fleetByServerId, serverOptions]);
 
   const apiHealthLabel = health?.ok ? 'Online' : 'Unknown';
   const selectedWarningSummary = useMemo(
@@ -4405,28 +4439,19 @@ function App() {
   const detailTabs = useMemo(() => {
     if (selectedServer?.game === 'palworld') {
       return [
-        { key: 'overview', label: 'Overview' },
-        { key: 'operator', label: 'Operator' },
-        { key: 'highlights', label: 'Highlights' },
+        { key: 'overview', label: 'Community' },
         { key: 'players', label: 'Players' },
-        { key: 'review-saves', label: 'Review Saves' },
         { key: 'guilds', label: 'Guilds' },
-        { key: 'activity', label: 'Activity' },
-        { key: 'metrics', label: 'Metrics' },
-        { key: 'ops', label: 'Ops' },
-        { key: 'diagnostics', label: 'Diagnostics' }
+        { key: 'highlights', label: 'World' },
+        { key: 'ops', label: 'Operations' }
       ] satisfies Array<{ key: DashboardTab; label: string }>;
     }
 
     return [
-      { key: 'overview', label: 'Overview' },
-      { key: 'operator', label: 'Operator' },
-      { key: 'highlights', label: 'Highlights' },
+      { key: 'overview', label: 'Community' },
       { key: 'players', label: 'Players' },
-      { key: 'activity', label: 'Activity' },
-      { key: 'metrics', label: 'Metrics' },
-      { key: 'ops', label: 'Ops' },
-      { key: 'diagnostics', label: 'Diagnostics' }
+      { key: 'activity', label: 'World' },
+      { key: 'ops', label: 'Operations' }
     ] satisfies Array<{ key: DashboardTab; label: string }>;
   }, [selectedServer?.game]);
 
@@ -4703,32 +4728,38 @@ function App() {
         </div>
 
         <div className="dashboard-control-rail">
-          <div className="toolbar toolbar-wide">
-            <div className="toolbar-group">
-              <label htmlFor="game-filter">Game</label>
-              <select id="game-filter" value={selectedGameFilter} onChange={(event) => setSelectedGameFilter(event.target.value as GameFilter)}>
-                <option value="all">All Games</option>
-                <option value="valheim">Valheim</option>
-                <option value="palworld">Palworld</option>
-              </select>
-            </div>
-
-            <div className="toolbar-group">
-              <label htmlFor="server-select">Server</label>
-              <select
-                id="server-select"
-                value={selectedServerId}
-                onChange={(event) => setSelectedServerId(event.target.value)}
-                disabled={serverOptionsLoading || filteredServers.length === 0}
-              >
-                {filteredServers.map((server) => (
-                  <option key={server.id} value={server.id}>
-                    {server.displayName} ({server.game})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+          <nav className="workspace-nav" aria-label="Workspace navigation">
+            <button
+              type="button"
+              className={activeWorkspace === 'overview' ? 'workspace-nav-item workspace-nav-item-active' : 'workspace-nav-item'}
+              onClick={() => {
+                setActiveWorkspace('overview');
+                setSelectedGameFilter('all');
+              }}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              className={activeWorkspace === 'valheim' ? 'workspace-nav-item workspace-nav-item-active workspace-nav-valheim' : 'workspace-nav-item workspace-nav-valheim'}
+              onClick={() => {
+                setActiveWorkspace('valheim');
+                setSelectedGameFilter('valheim');
+              }}
+            >
+              Valheim
+            </button>
+            <button
+              type="button"
+              className={activeWorkspace === 'palworld' ? 'workspace-nav-item workspace-nav-item-active workspace-nav-palworld' : 'workspace-nav-item workspace-nav-palworld'}
+              onClick={() => {
+                setActiveWorkspace('palworld');
+                setSelectedGameFilter('palworld');
+              }}
+            >
+              Palworld
+            </button>
+          </nav>
 
           <div className="status-strip">
             <div className="status-pill">
@@ -4753,7 +4784,7 @@ function App() {
                 <span className="status-value">{formatClock(lastUpdatedAt)}</span>
               </div>
             ) : null}
-            {selectedServer && selectedServerSummary ? (
+            {activeWorkspace !== 'overview' && selectedServer && selectedServerSummary ? (
               <>
                 <div className="status-pill selected-status-pill">
                   <span className="status-label">Selected</span>
@@ -4781,7 +4812,7 @@ function App() {
             ) : null}
           </div>
 
-          {selectedServer && selectedServerSummary ? (
+          {activeWorkspace !== 'overview' && selectedServer && selectedServerSummary ? (
             <div className="dashboard-tab-row">
               {detailTabs.map((tab) => (
                 <button
@@ -4802,75 +4833,78 @@ function App() {
         {fleetError ? <p className="error dashboard-message">Fleet refresh failed: {fleetError}</p> : null}
       </header>
 
-      <section className="fleet-section">
-        <div className="fleet-compact-row">
-          {selectedServer && !isFleetExpanded ? (
-            <div className="fleet-collapsed-note">
-              <span>{selectedServer.displayName}</span>
-              <span>{selectedServer.game}</span>
+      {activeWorkspace === 'overview' ? (
+        <section className="overview-shell" aria-label="Global Overview">
+          <div className="overview-heading">
+            <div>
+              <span className="summary-label">Overview</span>
+              <h2>How are all my worlds?</h2>
+              <p className="subtle">One card per world. Open a world to inspect community, players, world history, and operations.</p>
             </div>
-          ) : null}
-          {selectedServer ? (
-            <button
-              type="button"
-              className="fleet-toggle-button"
-              onClick={() => setIsFleetExpanded((current) => !current)}
-            >
-              {isFleetExpanded ? 'Hide Fleet' : 'Show Fleet'}
-            </button>
-          ) : null}
-        </div>
+          </div>
 
-        {fleetLoading ? <p className="subtle">Loading fleet telemetry...</p> : null}
+          {fleetLoading ? <p className="subtle">Loading world status...</p> : null}
 
-        {selectedServer && !isFleetExpanded ? (
-          null
-        ) : (
-          <div className="fleet-grid">
-            {filteredServers.map((server) => {
-              const summary = fleetByServerId[server.id];
+          <div className="world-card-grid">
+            {worldCards.length === 0 && !serverOptionsLoading ? (
+              <article className="card detail-card">
+                <p className="subtle">No configured Valheim or Palworld servers found.</p>
+              </article>
+            ) : null}
+            {worldCards.map(({ server, summary }) => {
+              const onlineNow = summary?.game === 'palworld'
+                ? summary.palworldLatestPlayers.filter((player) => player.isOnline).length || summary.activePlayers
+                : summary?.activePlayers ?? 0;
+              const activeThisWeek = summary?.serverAliveRhythm.sevenDays.uniqueActivePlayers ?? 0;
 
               return (
                 <article
                   key={server.id}
-                  className={`card fleet-card ${selectedServerId === server.id ? 'fleet-card-selected' : ''}`}
-                  onClick={() => {
-                    setSelectedServerId(server.id);
-                    setIsFleetExpanded(false);
-                  }}
+                  className={`card world-card world-card-${server.game}`}
                 >
-                  <div className="fleet-card-top">
+                  <div className="world-card-top">
                     <div>
-                      <h3>{server.displayName}</h3>
-                      <p className="subtle">{server.game}</p>
+                      <span className="summary-label">{getGameLabel(server.game)}</span>
+                      <h3>{summary?.displayName ?? server.displayName}</h3>
                     </div>
                     <span className={`state-pill state-${summary?.state ?? 'offline'}`}>
                       {summary?.state ?? 'loading'}
                     </span>
                   </div>
-                  <div className="fleet-card-meta">
-                    {summary?.game === 'palworld' ? (
-                      <>
-                        <span>{summary.palworldLatestPlayers.filter((player) => player.isOnline).length || summary.activePlayers} players</span>
-                        <span>{formatQuickValue(summary.palworldRecentMetrics[0]?.serverFps)} FPS</span>
-                        <span>{formatHours(summary.palworldRecentMetrics[0]?.currentUptimeHours)} uptime</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>{summary?.activePlayers ?? 0} active</span>
-                        <span>{summary?.knownPlayerCount ?? 0} known</span>
-                        <span>{summary?.recentWarnings.length ?? 0} warnings</span>
-                      </>
-                    )}
+                  <div className="world-card-stats">
+                    <div>
+                      <span className="world-stat-value">{onlineNow}</span>
+                      <span className="world-stat-label">Online now</span>
+                    </div>
+                    <div>
+                      <span className="world-stat-value">{activeThisWeek}</span>
+                      <span className="world-stat-label">Active this week</span>
+                    </div>
                   </div>
+                  <div className="world-card-activity">
+                    <span className="summary-label">Last activity</span>
+                    <p>{getLatestActivityLabel(summary)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="world-card-entry"
+                    onClick={() => {
+                      setSelectedServerId(server.id);
+                      setSelectedGameFilter(server.game);
+                      setActiveWorkspace(server.game);
+                    }}
+                  >
+                    Enter {getGameLabel(server.game)}
+                  </button>
                 </article>
               );
             })}
           </div>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      <section className="detail-section">
+      {activeWorkspace !== 'overview' ? (
+      <section className={`detail-section workspace-shell workspace-shell-${activeWorkspace}`}>
         {!selectedServer || !selectedServerSummary ? (
           <article className="card detail-card">
             <p className="subtle">Select a server from the fleet overview to inspect details.</p>
@@ -4879,9 +4913,39 @@ function App() {
           <>
             {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
             {detailError ? <p className="subtle dashboard-message">{detailError}</p> : null}
-            <DataFreshnessBanner freshness={selectedServerSummary.dataFreshness} />
-            <article className="card connector-status-card">
-              <div className="connector-status-row">
+            <section className={`world-workspace-header world-workspace-header-${selectedServer.game}`}>
+              <div>
+                <span className="summary-label">{getGameLabel(selectedServer.game)} Workspace</span>
+                <h2>{selectedServerSummary.displayName}</h2>
+                <p>{selectedServer.game === 'palworld' ? 'Palworld players, guilds, world context, and operations for this server only.' : 'Valheim community, players, world history, and operations for this server only.'}</p>
+              </div>
+              <span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span>
+            </section>
+
+            <section className="workspace-summary-strip" aria-label="World summary">
+              <div>
+                <span className="summary-label">Online now</span>
+                <strong>{selectedServer.game === 'palworld' ? palworldLatestPlayers.filter((player) => player.isOnline).length || selectedServerSummary.activePlayers : selectedServerSummary.activePlayers}</strong>
+              </div>
+              <div>
+                <span className="summary-label">Active this week</span>
+                <strong>{selectedServerSummary.serverAliveRhythm.sevenDays.uniqueActivePlayers}</strong>
+              </div>
+              <div>
+                <span className="summary-label">Last activity</span>
+                <strong>{getLatestActivityLabel(selectedServerSummary)}</strong>
+              </div>
+              <div>
+                <span className="summary-label">Data</span>
+                <strong>{selectedServerSummary.dataFreshness.status}</strong>
+              </div>
+            </section>
+
+            {selectedDashboardTab === 'ops' ? (
+            <section className="workspace-operations-quiet" aria-label="Technical confidence">
+              <DataFreshnessBanner freshness={selectedServerSummary.dataFreshness} />
+              <article className="card connector-status-card">
+                <div className="connector-status-row">
                 <div>
                   <h2>Connector Status</h2>
                   <p className="subtle">{selectedServerSummary.operationalStatus.explanation}</p>
@@ -4896,7 +4960,9 @@ function App() {
                 <span>Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
                 <span>Last heartbeat: {selectedServerSummary.operationalStatus.lastHeartbeatAt ? formatDurationFromSeconds(selectedServerSummary.operationalStatus.heartbeatAgeSeconds ?? 0) + ' ago' : 'never'}</span>
               </div>
-            </article>
+              </article>
+            </section>
+            ) : null}
             {selectedDashboardTab === 'operator' ? (
               <OperatorWorkspace
                 apiBaseUrl={apiBaseUrl}
@@ -4946,14 +5012,7 @@ function App() {
                     summary: summary.playerIntelligenceSummary
                   }))}
               />
-            ) : (
-              <OperatorSummaryCard
-                brief={operatorBrief}
-                loading={operatorBriefLoading}
-                error={operatorBriefError}
-                onOpen={() => setSelectedDashboardTab('operator')}
-              />
-            )}
+            ) : null}
             {selectedDashboardTab === 'overview' ? (
               <ServerAliveRhythmPanel rhythm={selectedServerSummary.serverAliveRhythm} />
             ) : null}
@@ -5455,7 +5514,7 @@ function App() {
                                     <li><span>Identity State</span><span>{selectedPalworldPlayerProfile.playerIntelligence.identityState}</span></li>
                                     <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
                                     <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
-                                    <li><span>Engagement Score</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
+                                    <li><span>Tracked activity</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
                                     <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
                                     <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
                                   </ul>
@@ -5522,7 +5581,7 @@ function App() {
                         <div className="command-panel-heading">
                           <div>
                             <h2>Guild Activity</h2>
-                            <p className="subtle">All parsed guilds with matched member activity.</p>
+                            <p className="subtle">Existing parsed guild hints for this Palworld server. Sprint 6C will deepen guild activity and 30-day base deletion risk tracking.</p>
                           </div>
                           <div className="guild-activity-heading-actions">
                             {reviewedGuildNames.size > 0 ? (
@@ -5778,6 +5837,7 @@ function App() {
           </>
         )}
       </section>
+      ) : null}
       {selectedPlayerProfile ? (
         <PlayerDetailDrawer
           profile={selectedPlayerProfile}
@@ -6051,22 +6111,6 @@ function normalizeWarningSignature(message: string): string {
 
 function formatWarningCategoryLabel(category: WarningCategory): string {
   return category === 'save_storage' ? 'save' : category;
-}
-
-function formatQuickValue(value: number | undefined): string {
-  if (value === undefined || !Number.isFinite(value)) {
-    return 'N/A';
-  }
-
-  return value >= 100 ? String(Math.round(value)) : value.toFixed(1);
-}
-
-function formatHours(value: number | undefined): string {
-  if (value === undefined || !Number.isFinite(value)) {
-    return 'N/A';
-  }
-
-  return `${value.toFixed(1)}h`;
 }
 
 function isFreshTimestamp(value: string | undefined, windowMs: number): boolean {

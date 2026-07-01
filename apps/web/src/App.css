@@ -37,6 +37,46 @@
   gap: 0.38rem;
 }
 
+.workspace-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.workspace-nav-item {
+  border: 1px solid #d7dee8;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.72rem;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.workspace-nav-item:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.workspace-nav-item-active {
+  border-color: #1f2937;
+  background: #111827;
+  color: #f8fafc;
+}
+
+.workspace-nav-valheim.workspace-nav-item-active {
+  border-color: #7c2d12;
+  background: #2f1f1a;
+}
+
+.workspace-nav-palworld.workspace-nav-item-active {
+  border-color: #0e7490;
+  background: #083344;
+}
+
 .dashboard-tab-row {
   display: flex;
   flex-wrap: wrap;
@@ -136,6 +176,148 @@
 
 .status-critical {
   color: #b91c1c;
+}
+
+.overview-shell {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 0.85rem;
+}
+
+.overview-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.overview-heading h2 {
+  margin: 0.1rem 0 0.18rem;
+  font-size: 1.18rem;
+}
+
+.world-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.85rem;
+}
+
+.world-card {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 240px;
+  border-top-width: 4px;
+  overflow: hidden;
+}
+
+.world-card-valheim {
+  border-top-color: #92400e;
+  background: linear-gradient(135deg, #fffaf3 0%, #ffffff 52%, #f8fafc 100%);
+}
+
+.world-card-palworld {
+  border-top-color: #0891b2;
+  background: linear-gradient(135deg, #f0fdfa 0%, #ffffff 48%, #eef2ff 100%);
+}
+
+.world-card-top,
+.world-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.world-card h3,
+.world-workspace-header h2 {
+  margin: 0.12rem 0 0;
+}
+
+.world-card-stats,
+.workspace-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.5rem;
+}
+
+.world-card-stats > div,
+.workspace-summary-strip > div {
+  display: grid;
+  gap: 0.12rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.world-stat-value,
+.workspace-summary-strip strong {
+  color: #111827;
+  font-size: 1.1rem;
+  line-height: 1.18;
+}
+
+.world-stat-label {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.world-card-activity p {
+  margin: 0.18rem 0 0;
+  color: #334155;
+  line-height: 1.35;
+}
+
+.world-card-entry {
+  justify-self: start;
+  border: 1px solid #1f2937;
+  border-radius: 0.5rem;
+  padding: 0.42rem 0.68rem;
+  background: #111827;
+  color: #f8fafc;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.workspace-shell {
+  margin-top: 0.85rem;
+}
+
+.world-workspace-header {
+  border: 1px solid #dbe4ee;
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+  background: #ffffff;
+}
+
+.world-workspace-header p {
+  margin: 0.18rem 0 0;
+  color: #475569;
+}
+
+.world-workspace-header-valheim {
+  border-color: #e7c9a3;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 60%);
+}
+
+.world-workspace-header-palworld {
+  border-color: #a5f3fc;
+  background: linear-gradient(135deg, #ecfeff 0%, #ffffff 60%);
+}
+
+.workspace-summary-strip {
+  margin: 0.65rem 0;
+}
+
+.workspace-summary-strip strong {
+  font-size: 0.98rem;
+}
+
+.workspace-operations-quiet {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.9;
 }
 
 .connector-status-card {
