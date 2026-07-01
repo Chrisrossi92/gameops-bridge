@@ -598,6 +598,7 @@ export function resetSessionStateForTests(): void {
   clearCachedResult('player-intelligence:');
   clearCachedResult('session-timeline:');
   clearCachedResult('player-engagement:');
+  clearCachedResult('community-activity:');
   clearCachedResult('data-freshness:');
   persistSessionState();
 }

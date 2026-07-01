@@ -143,6 +143,7 @@ function writeStore(store: PlayerEngagementRollupStore): void {
     writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
     storeCache = { path, expiresAt: Date.now() + STORE_CACHE_TTL_MS, store };
     clearCachedResult('player-engagement:');
+    clearCachedResult('community-activity:');
     clearCachedResult('data-freshness:');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown_error';

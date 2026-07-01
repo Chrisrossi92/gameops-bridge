@@ -292,6 +292,59 @@ export const sessionTimelineResponseSchema = z.object({
 });
 export type SessionTimelineResponse = z.infer<typeof sessionTimelineResponseSchema>;
 
+export const communityActivityPlayerSchema = z.object({
+  playerId: z.string().min(1),
+  displayName: z.string().min(1),
+  lastSeenAt: z.string().datetime().nullable(),
+  sessionCount: z.number().int().min(0),
+  label: z.string().min(1),
+  gapDays: z.number().int().min(0).nullable()
+});
+export type CommunityActivityPlayer = z.infer<typeof communityActivityPlayerSchema>;
+
+export const communityActivityPeakHourSchema = z.object({
+  hourUtc: z.number().int().min(0).max(23),
+  sessionCount: z.number().int().min(0),
+  totalPlaytimeSeconds: z.number().int().min(0)
+});
+export type CommunityActivityPeakHour = z.infer<typeof communityActivityPeakHourSchema>;
+
+export const communityActivitySnapshotSchema = z.object({
+  sessionCount: z.number().int().min(0),
+  uniquePlayers: z.number().int().min(0),
+  totalPlaytimeSeconds: z.number().int().min(0),
+  averageSessionSeconds: z.number().int().min(0)
+});
+export type CommunityActivitySnapshot = z.infer<typeof communityActivitySnapshotSchema>;
+
+export const communityActivityComparisonMetricSchema = z.object({
+  current: z.number().int().min(0),
+  previous: z.number().int().min(0),
+  delta: z.number().int()
+});
+export type CommunityActivityComparisonMetric = z.infer<typeof communityActivityComparisonMetricSchema>;
+
+export const communityActivityComparisonSchema = z.object({
+  sessions: communityActivityComparisonMetricSchema,
+  uniquePlayers: communityActivityComparisonMetricSchema,
+  totalPlaytimeSeconds: communityActivityComparisonMetricSchema
+});
+export type CommunityActivityComparison = z.infer<typeof communityActivityComparisonSchema>;
+
+export const communityActivityResponseSchema = z.object({
+  serverId: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  returningPlayers: z.array(communityActivityPlayerSchema),
+  recentlyActive: z.array(communityActivityPlayerSchema),
+  quietPlayers: z.array(communityActivityPlayerSchema),
+  peakPlayHours: z.array(communityActivityPeakHourSchema),
+  sevenDaySnapshot: communityActivitySnapshotSchema,
+  sevenDayComparison: communityActivityComparisonSchema,
+  explanation: z.string().min(1),
+  dataWarnings: z.array(z.string().min(1))
+});
+export type CommunityActivityResponse = z.infer<typeof communityActivityResponseSchema>;
+
 export const playerDetailSessionSchema = z.object({
   sessionId: z.string().min(1),
   startedAt: z.string().datetime(),

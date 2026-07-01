@@ -12,6 +12,7 @@ import { OperatorDebugPanel, type OperatorDebugServer } from './operator-debug-p
 import { OperatorAskCard } from './operator-ask-card.tsx';
 import { OperatorChangesCard } from './operator-changes-card.tsx';
 import { OperatorCurrentStateCard } from './operator-current-state-card.tsx';
+import { OperatorCommunityActivityCard, type OperatorCommunityActivityEntry } from './operator-community-activity-card.tsx';
 import { OperatorDailyBriefCard } from './operator-daily-brief-card.tsx';
 import { OperatorInsightsCard } from './operator-insights-card.tsx';
 import { OperatorMemoryIndexCard } from './operator-memory-index-card.tsx';
@@ -50,6 +51,7 @@ interface OperatorWorkspaceProps {
   debugServers: OperatorDebugServer[];
   serverHealth: OperatorServerHealthEntry[];
   playerIntelligenceSummary: OperatorPlayerIntelligenceEntry[];
+  communityActivity: OperatorCommunityActivityEntry[];
 }
 
 function healthLabel(brief: OperatorBriefResponse | null): string {
@@ -117,6 +119,7 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
 
       <div className="operator-workspace-grid">
         <OperatorServerHealthCard servers={props.serverHealth} />
+        <OperatorCommunityActivityCard servers={props.communityActivity} />
         <OperatorPlayerIntelligenceCard apiBaseUrl={props.apiBaseUrl} servers={props.playerIntelligenceSummary} />
         <OperatorDebugPanel servers={props.debugServers} />
         <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />

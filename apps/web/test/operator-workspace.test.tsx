@@ -177,6 +177,7 @@ function workspaceHtml(overrides: Partial<React.ComponentProps<typeof OperatorWo
       timelineError={null}
       debugServers={[]}
       serverHealth={[]}
+      communityActivity={[]}
       playerIntelligenceSummary={[]}
       {...overrides}
     />
@@ -230,6 +231,7 @@ test('operator workspace renders full operator cards', () => {
   assert.match(html, /Recent Timeline/);
   assert.match(html, /Signals \/ Current State/);
   assert.match(html, /Server Health/);
+  assert.match(html, /Community Activity/);
   assert.match(html, /Player Intelligence/);
   assert.match(html, /Telemetry Pipeline/);
 });

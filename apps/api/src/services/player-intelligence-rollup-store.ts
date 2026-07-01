@@ -169,6 +169,7 @@ function writeStore(store: PlayerIntelligenceStore): void {
     clearCachedResult('player-intelligence:');
     clearCachedResult('session-timeline:');
     clearCachedResult('player-engagement:');
+    clearCachedResult('community-activity:');
     clearCachedResult('data-freshness:');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown_error';
