@@ -168,3 +168,43 @@ test('capture verification flags player activity without identity fields', () =>
   assert.equal(result.playerIdentityFieldsPresent, false);
   assert.equal(result.recommendedAction, 'Player activity was seen, but identity fields were missing.');
 });
+
+test('capture verification accepts live Valheim leave when session close has correlated player', () => {
+  const result = build({
+    recentEvents: [
+      event({
+        id: 'live-join-cdawg',
+        eventType: 'PLAYER_JOIN',
+        playerName: 'CdAwG',
+        platformId: undefined,
+        occurredAt: '2026-07-01T20:33:10.384Z'
+      }),
+      event({
+        id: 'live-leave-cdawg',
+        eventType: 'PLAYER_LEAVE',
+        playerName: undefined,
+        platformId: undefined,
+        occurredAt: '2026-07-01T20:38:03.960Z',
+        raw: {
+          valheimDisconnectRule: 'structured_connection_lost',
+          valheimCurrentPlayerCount: 0,
+          valheimEventSource: 'journal'
+        }
+      })
+    ],
+    recentClosedSessions: [
+      session({
+        playerName: 'CdAwG',
+        startedAt: '2026-07-01T20:33:10.384Z',
+        endedAt: '2026-07-01T20:38:03.960Z',
+        durationSeconds: 293,
+        sourceEventIds: ['live-join-cdawg', 'live-leave-cdawg']
+      })
+    ]
+  });
+
+  assert.equal(result.status, 'capturing');
+  assert.equal(result.latestPlayerLeaveEvent?.playerName, 'CdAwG');
+  assert.equal(result.latestPlayerLeaveEvent?.identityFieldsPresent, true);
+  assert.equal(result.playerIdentityFieldsPresent, true);
+});

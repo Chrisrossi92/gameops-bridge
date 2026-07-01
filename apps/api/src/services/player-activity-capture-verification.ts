@@ -56,15 +56,28 @@ function hasIdentityFields(event: NormalizedEvent): boolean {
   );
 }
 
-function toEventEvidence(event: NormalizedEvent | null): PlayerActivityCaptureEventEvidence | null {
+function findMatchingClosedSession(event: NormalizedEvent, sessions: SessionRecord[]): SessionRecord | null {
+  return sessions.find((session) => (
+    session.endedAt === event.occurredAt
+    || session.sourceEventIds.some((sourceEventId) => event.id ? sourceEventId === event.id : sourceEventId.includes(event.occurredAt))
+  )) ?? null;
+}
+
+function toEventEvidence(event: NormalizedEvent | null, closedSessions: SessionRecord[] = []): PlayerActivityCaptureEventEvidence | null {
   if (!event) {
     return null;
   }
 
+  const matchingSession = event.playerName ? null : findMatchingClosedSession(event, closedSessions);
+  const playerName = event.playerName
+    ?? rawString(event, ['playerName', 'player_name', 'accountName', 'account_name'])
+    ?? matchingSession?.playerName
+    ?? null;
+
   return {
     occurredAt: event.occurredAt,
-    playerName: event.playerName ?? rawString(event, ['playerName', 'player_name', 'accountName', 'account_name']),
-    identityFieldsPresent: hasIdentityFields(event),
+    playerName,
+    identityFieldsPresent: hasIdentityFields(event) || Boolean(matchingSession?.playerName),
     eventId: event.id ?? null
   };
 }
@@ -198,8 +211,8 @@ export function buildPlayerActivityCaptureVerification(input: {
   knownPlayers: KnownPlayerRecord[];
   operationalStatus: ServerOperationalStatus;
 }): PlayerActivityCaptureVerification {
-  const latestJoin = toEventEvidence(latestEvent(input.recentEvents, 'PLAYER_JOIN'));
-  const latestLeave = toEventEvidence(latestEvent(input.recentEvents, 'PLAYER_LEAVE'));
+  const latestJoin = toEventEvidence(latestEvent(input.recentEvents, 'PLAYER_JOIN'), input.recentClosedSessions);
+  const latestLeave = toEventEvidence(latestEvent(input.recentEvents, 'PLAYER_LEAVE'), input.recentClosedSessions);
   const latestPlayerEvidence = [latestJoin, latestLeave]
     .filter((value): value is PlayerActivityCaptureEventEvidence => Boolean(value))
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0] ?? null;

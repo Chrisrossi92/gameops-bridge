@@ -212,24 +212,29 @@ test('occupancy reconciliation does not close sessions when active count matches
   });
 });
 
-test('single active player disconnect gets correlated identity and closes session', async () => {
+test('single active Valheim leave from live scenario gets correlated identity and closes session', async () => {
   await withFreshEventStore(async (store) => {
     store.addEvents([
       createEvent({
-        id: 'single-join',
+        id: 'live-join-cdawg',
         eventType: 'PLAYER_JOIN',
-        playerName: 'GeKo ViKiNgSoN',
-        occurredAt: '2026-04-05T12:00:00.000Z'
+        playerName: 'CdAwG',
+        occurredAt: '2026-07-01T20:33:10.384Z',
+        raw: {
+          valheimEventSource: 'journal',
+          valheimIdentityConfidence: 'low'
+        }
       })
     ]);
 
     store.addEvents([
       createEvent({
-        id: 'single-disconnect',
+        id: 'live-leave-cdawg',
         eventType: 'PLAYER_LEAVE',
-        occurredAt: '2026-04-05T12:02:00.000Z',
+        occurredAt: '2026-07-01T20:38:03.960Z',
         raw: {
           valheimDisconnectRule: 'structured_connection_lost',
+          valheimCurrentPlayerCount: 0,
           valheimEventSource: 'journal'
         }
       })
@@ -240,17 +245,17 @@ test('single active player disconnect gets correlated identity and closes sessio
     const recent = store.getRecentEventsForServer('srv-1', 1)[0];
     const rollups = await importRollupStore();
     const [player] = rollups.getPersistedPlayerRollupsForServer('srv-1')
-      .filter((rollup) => rollup.displayName === 'GeKo ViKiNgSoN');
+      .filter((rollup) => rollup.displayName === 'CdAwG');
 
     assert.equal(active.length, 0);
     assert.equal(closed.length, 1);
-    assert.equal(closed[0]?.playerName, 'GeKo ViKiNgSoN');
+    assert.equal(closed[0]?.playerName, 'CdAwG');
     assert.equal(closed[0]?.closeReason, 'player_leave');
-    assert.equal(closed[0]?.durationSeconds, 120);
-    assert.equal(recent?.playerName, 'GeKo ViKiNgSoN');
+    assert.equal(closed[0]?.durationSeconds, 293);
+    assert.equal(recent?.playerName, 'CdAwG');
     assert.equal(recent?.raw?.valheimIdentitySource, 'single_active_session_correlation');
     assert.equal(player?.sessionCount, 1);
-    assert.equal(player?.totalTrackedSeconds, 120);
+    assert.equal(player?.totalTrackedSeconds, 293);
   });
 });
 

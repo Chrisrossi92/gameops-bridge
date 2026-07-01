@@ -382,11 +382,19 @@ function reconcileByOccupancyCap(
 
   const enrichedEvent: NormalizedEvent = {
     ...event,
+    ...(!event.playerName && activeCount === 1 && closedPlayers.length === 1 ? { playerName: closedPlayers[0] } : {}),
     raw: {
       ...(event.raw ?? {}),
       sessionCloseReason: 'occupancy_reconciliation',
       sessionReconciledCount: closedPlayers.length,
-      sessionClosedPlayers: closedPlayers
+      sessionClosedPlayers: closedPlayers,
+      ...(!event.playerName && activeCount === 1 && closedPlayers.length === 1
+        ? {
+            valheimResolvedPlayerName: closedPlayers[0],
+            valheimIdentityConfidence: 'low',
+            valheimIdentitySource: 'single_active_session_occupancy_correlation'
+          }
+        : {})
     }
   };
 
