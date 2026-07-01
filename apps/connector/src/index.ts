@@ -768,6 +768,10 @@ async function runJournalMode(): Promise<void> {
   let lastSuccessfulPollAt: string | undefined;
   let lineCountSinceHeartbeat = 0;
 
+  if (valheimCollectorShadow) {
+    await valheimCollectorShadow.runScheduled();
+  }
+
   void sendConnectorHeartbeat({
     status: 'running',
     message: 'Connector started and is listening to the Valheim journal.',
@@ -776,14 +780,22 @@ async function runJournalMode(): Promise<void> {
   });
 
   setInterval(() => {
-    void sendConnectorHeartbeat({
-      status: 'running',
-      message: lineCountSinceHeartbeat > 0
-        ? `Connector is listening to the Valheim journal. ${lineCountSinceHeartbeat} lines observed recently.`
-        : 'Connector is listening to the Valheim journal. No new activity lines observed recently.',
-      lastSuccessfulPollAt
+    void (async () => {
+      if (valheimCollectorShadow) {
+        await valheimCollectorShadow.runScheduled();
+      }
+
+      await sendConnectorHeartbeat({
+        status: 'running',
+        message: lineCountSinceHeartbeat > 0
+          ? `Connector is listening to the Valheim journal. ${lineCountSinceHeartbeat} lines observed recently.`
+          : 'Connector is listening to the Valheim journal. No new activity lines observed recently.',
+        lastSuccessfulPollAt
+      });
+      lineCountSinceHeartbeat = 0;
+    })().catch((error) => {
+      console.warn(`[connector] valheim shadow heartbeat poll failed reason=${error instanceof Error ? error.message : String(error)}`);
     });
-    lineCountSinceHeartbeat = 0;
   }, HEARTBEAT_INTERVAL_MS);
 
   await startValheimJournalStream({

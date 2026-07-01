@@ -852,7 +852,7 @@ export const collectorHealthSchema = z.object({
     eventCount: z.number().int().min(0),
     eventTypes: z.array(eventTypeSchema),
     lastError: z.string().min(1).nullable(),
-    parityStatus: z.enum(['not_run', 'match', 'mismatch', 'unavailable', 'error'])
+    parityStatus: z.enum(['not_run', 'matching', 'mismatch', 'not_available', 'error'])
   }).optional()
 });
 export type CollectorHealth = z.infer<typeof collectorHealthSchema>;

@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   buildConnectorHeartbeatPayload,
   createCollectorRegistry,
@@ -151,8 +154,44 @@ test('valheim collector shadow runs without forwarding events', async () => {
   assert.deepEqual(forwarded, []);
   assert.equal(health.shadow?.eventCount, 1);
   assert.deepEqual(health.shadow?.eventTypes, ['PLAYER_JOIN']);
-  assert.equal(health.shadow?.parityStatus, 'match');
+  assert.equal(health.shadow?.parityStatus, 'matching');
   assert.equal(health.lastError, null);
+});
+
+test('valheim collector shadow scheduled run collects from configured file without forwarding', async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'gameops-valheim-shadow-scheduler-test-'));
+  const logFile = join(tempDir, 'valheim.log');
+
+  try {
+    writeFileSync(logFile, [
+      '[2026-04-01T20:00:00Z] Game server connected',
+      '[2026-04-01T20:01:10Z] Player joined: Alice'
+    ].join('\n'), 'utf8');
+
+    const shadow = createValheimCollectorShadow({
+      serverId: 'srv-shadow-scheduled',
+      game: 'valheim',
+      mode: 'file',
+      enabled: true,
+      logFile
+    });
+    const apiIngestedEvents: NormalizedEvent[] = [];
+
+    assert.ok(shadow);
+
+    await shadow.runScheduled();
+
+    const health = shadow.health();
+
+    assert.deepEqual(apiIngestedEvents, []);
+    assert.equal(health.shadow?.eventCount, 2);
+    assert.deepEqual(health.shadow?.eventTypes, ['SERVER_ONLINE', 'PLAYER_JOIN']);
+    assert.equal(health.shadow?.parityStatus, 'not_available');
+    assert.match(health.shadow?.lastRunAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(health.lastError, null);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('valheim collector shadow failure records health without throwing', async () => {
@@ -176,6 +215,25 @@ test('valheim collector shadow failure records health without throwing', async (
 
   assert.match(health.lastError ?? '', /shadow read failed/);
   assert.equal(health.shadow?.lastError, 'shadow read failed');
+  assert.equal(health.shadow?.parityStatus, 'error');
+  assert.equal(health.shadow?.eventCount, 0);
+});
+
+test('valheim collector shadow scheduled failure updates lastError without throwing', async () => {
+  const shadow = createValheimCollectorShadow({
+    serverId: 'srv-shadow-scheduled-failure',
+    game: 'valheim',
+    mode: 'file',
+    enabled: true
+  });
+
+  assert.ok(shadow);
+
+  await shadow.runScheduled();
+
+  const health = shadow.health();
+
+  assert.match(health.shadow?.lastError ?? '', /requires configuration\.logFile/);
   assert.equal(health.shadow?.parityStatus, 'error');
   assert.equal(health.shadow?.eventCount, 0);
 });
@@ -211,7 +269,7 @@ test('heartbeat includes valheim shadow health', async () => {
   assert.equal(payload.collectors[0]?.collectorId, 'valheim:srv-shadow-heartbeat:file:shadow');
   assert.equal(payload.collectors[0]?.name, 'Valheim Collector Shadow');
   assert.equal(payload.collectors[0]?.shadow?.enabled, true);
-  assert.equal(payload.collectors[0]?.shadow?.parityStatus, 'match');
+  assert.equal(payload.collectors[0]?.shadow?.parityStatus, 'matching');
   assert.deepEqual(payload.collectors[0]?.shadow?.eventTypes, ['PLAYER_JOIN']);
 });
 

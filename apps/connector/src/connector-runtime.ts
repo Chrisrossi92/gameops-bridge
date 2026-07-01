@@ -50,6 +50,18 @@ function sameEventTypes(left: EventType[], right: EventType[]): boolean {
   return left.length === right.length && left.every((eventType, index) => eventType === right[index]);
 }
 
+function resolveParityStatus(input: {
+  collectedTypes: EventType[];
+  oldPathEvents?: NormalizedEvent[] | undefined;
+}): ValheimCollectorShadowParityStatus {
+  if (!input.oldPathEvents) {
+    return 'not_available';
+  }
+
+  const oldPathTypes = eventTypes(input.oldPathEvents);
+  return sameEventTypes(input.collectedTypes, oldPathTypes) ? 'matching' : 'mismatch';
+}
+
 function parseBooleanFlag(value: string | undefined): boolean | null {
   if (value === undefined) {
     return null;
@@ -128,7 +140,7 @@ export class ValheimCollectorShadowMode {
   }
 
   public async run(input: {
-    oldPathEvents: NormalizedEvent[];
+    oldPathEvents?: NormalizedEvent[] | undefined;
     collect?: (() => Promise<NormalizedEvent[]> | NormalizedEvent[]) | undefined;
   }): Promise<void> {
     const startedAtMs = Date.now();
@@ -137,14 +149,16 @@ export class ValheimCollectorShadowMode {
     try {
       const collected = await (input.collect ? input.collect() : this.collector.collect());
       const collectedTypes = eventTypes(collected);
-      const oldPathTypes = eventTypes(input.oldPathEvents);
       const durationMs = Date.now() - startedAtMs;
 
       this.lastDurationMs = Math.max(0, Math.floor(durationMs));
       this.eventCount = collected.length;
       this.lastEventTypes = collectedTypes;
       this.lastError = null;
-      this.parityStatus = sameEventTypes(collectedTypes, oldPathTypes) ? 'match' : 'mismatch';
+      this.parityStatus = resolveParityStatus({
+        collectedTypes,
+        oldPathEvents: input.oldPathEvents
+      });
       this.totalCollectedEvents += collected.length;
     } catch (error) {
       const durationMs = Date.now() - startedAtMs;
@@ -161,6 +175,10 @@ export class ValheimCollectorShadowMode {
       oldPathEvents,
       collect: () => this.collector.collectJournalLine(line)
     });
+  }
+
+  public async runScheduled(): Promise<void> {
+    await this.run({});
   }
 
   public health(): CollectorHealth {
