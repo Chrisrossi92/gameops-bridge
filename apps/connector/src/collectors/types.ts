@@ -9,6 +9,12 @@ export interface CollectorConfiguration {
   journalServiceName?: string;
   shadowBackfillLines?: number;
   includeOperationalEventCategories?: boolean;
+  restHost?: string;
+  restPort?: number;
+  restUsername?: string;
+  restPassword?: string;
+  restPath?: string;
+  emitInitialSnapshot?: boolean;
 }
 
 export interface GameCollector {

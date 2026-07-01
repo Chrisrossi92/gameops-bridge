@@ -236,7 +236,12 @@ const collectorRegistry = createCollectorRegistry({
   mode,
   collectorsEnabled: runtime.collectorsEnabled,
   ...(logFile ? { logFile } : {}),
-  ...(journalServiceName ? { journalServiceName } : {})
+  ...(journalServiceName ? { journalServiceName } : {}),
+  ...(restHost ? { restHost } : {}),
+  ...(restPort ? { restPort } : {}),
+  ...(restUsername ? { restUsername } : {}),
+  ...(restPassword ? { restPassword } : {}),
+  ...(restPath ? { restPath } : {})
 });
 const collectorRunner = createCollectorRunner(collectorRegistry);
 const valheimCollectorShadow = createValheimCollectorShadow({
@@ -896,6 +901,10 @@ async function runPalworldRestMode(): Promise<void> {
         metrics,
         settings
       });
+
+      if (collectorRegistry.enabled().length > 0) {
+        await collectorRunner.runOnce();
+      }
 
       if (!hasCompletedFirstSuccessfulPoll) {
         hasCompletedFirstSuccessfulPoll = true;

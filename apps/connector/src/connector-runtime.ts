@@ -15,6 +15,11 @@ export interface ConnectorCollectorRuntimeSettings {
   collectorsEnabled: boolean;
   logFile?: string;
   journalServiceName?: string;
+  restHost?: string;
+  restPort?: number;
+  restUsername?: string;
+  restPassword?: string;
+  restPath?: string;
 }
 
 export interface ValheimCollectorShadowSettings {
@@ -131,7 +136,12 @@ export function createCollectorRegistry(settings: ConnectorCollectorRuntimeSetti
     enabled: true,
     mode: settings.mode,
     ...(settings.logFile ? { logFile: settings.logFile } : {}),
-    ...(settings.journalServiceName ? { journalServiceName: settings.journalServiceName } : {})
+    ...(settings.journalServiceName ? { journalServiceName: settings.journalServiceName } : {}),
+    ...(settings.restHost ? { restHost: settings.restHost } : {}),
+    ...(settings.restPort ? { restPort: settings.restPort } : {}),
+    ...(settings.restUsername ? { restUsername: settings.restUsername } : {}),
+    ...(settings.restPassword ? { restPassword: settings.restPassword } : {}),
+    ...(settings.restPath ? { restPath: settings.restPath } : {})
   };
 
   if (settings.game === 'valheim') {
