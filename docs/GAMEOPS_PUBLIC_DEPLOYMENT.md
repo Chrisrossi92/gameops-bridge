@@ -147,7 +147,13 @@ Example install:
 sudo cp deploy/systemd/gameops-api.service /etc/systemd/system/gameops-api.service
 sudo cp deploy/systemd/gameops-dashboard.service /etc/systemd/system/gameops-dashboard.service
 sudo cp deploy/systemd/gameops-bot.service /etc/systemd/system/gameops-bot.service
-sudo cp deploy/systemd/gameops-connector-*.service /etc/systemd/system/
+
+bash scripts/render-connector-units.sh \
+  /root/gameops-bridge \
+  /root/gameops-bridge/config/gameops.config.json \
+  /root/gameops-bridge/deploy/systemd/generated
+
+sudo cp deploy/systemd/generated/gameops-connector-*.service /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now gameops-api.service
@@ -156,7 +162,7 @@ sudo systemctl enable --now gameops-bot.service
 sudo systemctl enable --now gameops-connector-palworld-fantasy-1.service
 ```
 
-If the repo lives somewhere other than `/opt/gameops-bridge`, update `WorkingDirectory=` in each unit before copying.
+The static files under `deploy/systemd/gameops-connector-*.service` are legacy examples. For production, render connector units from `deploy/systemd/templates/gameops-connector.service.template` so every connector uses the same repo root and config path. See `docs/CONNECTOR_DEPLOYMENT_UNIFICATION.md`.
 
 Check status:
 
