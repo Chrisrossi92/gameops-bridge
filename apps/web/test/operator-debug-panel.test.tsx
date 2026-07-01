@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { DataFreshnessResponse, ServerOperationalStatus } from '@gameops/shared';
+import type {
+  DataFreshnessResponse,
+  PlayerActivityCaptureVerification,
+  ServerOperationalStatus
+} from '@gameops/shared';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { OperatorDebugPanel, type OperatorDebugServer } from '../src/operator-debug-panel.tsx';
@@ -52,6 +56,24 @@ function dataFreshness(overrides: Partial<DataFreshnessResponse> = {}): DataFres
   };
 }
 
+function playerActivityCapture(overrides: Partial<PlayerActivityCaptureVerification> = {}): PlayerActivityCaptureVerification {
+  return {
+    serverId: 'server-1',
+    generatedAt,
+    status: 'ready',
+    recommendedAction: 'Collector healthy; no players currently online.',
+    latestPlayerJoinEvent: null,
+    latestPlayerLeaveEvent: null,
+    latestSessionStartAt: null,
+    latestSessionCloseAt: null,
+    latestKnownPlayerUpdateAt: null,
+    latestCollectorSnapshotPollAt: generatedAt,
+    playerIdentityFieldsPresent: null,
+    evidenceSummary: ['No player join event captured yet.'],
+    ...overrides
+  };
+}
+
 function renderServer(server: Partial<OperatorDebugServer>): string {
   return renderToStaticMarkup(
     <OperatorDebugPanel
@@ -61,6 +83,7 @@ function renderServer(server: Partial<OperatorDebugServer>): string {
         game: 'valheim',
         operationalStatus: operationalStatus(),
         dataFreshness: dataFreshness(),
+        playerActivityCapture: playerActivityCapture(),
         ...server
       }]}
     />
@@ -94,6 +117,8 @@ test('operator debug panel renders healthy Valheim shadow collector', () => {
   });
 
   assert.match(html, /Valheim Local/);
+  assert.match(html, /Player Capture/);
+  assert.match(html, /Collector healthy; no players currently online/);
   assert.match(html, /Valheim Collector Shadow/);
   assert.match(html, /Events: 45/);
   assert.match(html, /Parity: matching/);
@@ -173,4 +198,24 @@ test('operator debug panel renders log truth warning state', () => {
   assert.match(html, /Writable: no/);
   assert.match(html, /Durable events: 0/);
   assert.match(html, /permission denied/);
+});
+
+test('operator debug panel renders player capture issue state', () => {
+  const html = renderServer({
+    playerActivityCapture: playerActivityCapture({
+      status: 'issue_detected',
+      recommendedAction: 'Player activity was seen, but identity fields were missing.',
+      latestPlayerJoinEvent: {
+        occurredAt: generatedAt,
+        playerName: null,
+        identityFieldsPresent: false,
+        eventId: 'event-1'
+      },
+      playerIdentityFieldsPresent: false
+    })
+  });
+
+  assert.match(html, /issue detected/);
+  assert.match(html, /Identity: missing/);
+  assert.match(html, /Player activity was seen, but identity fields were missing/);
 });

@@ -971,6 +971,38 @@ export const dataFreshnessResponseSchema = z.object({
 });
 export type DataFreshnessResponse = z.infer<typeof dataFreshnessResponseSchema>;
 
+export const playerActivityCaptureStatusSchema = z.enum([
+  'ready',
+  'waiting_for_player_activity',
+  'capturing',
+  'issue_detected'
+]);
+export type PlayerActivityCaptureStatus = z.infer<typeof playerActivityCaptureStatusSchema>;
+
+export const playerActivityCaptureEventEvidenceSchema = z.object({
+  occurredAt: z.string().datetime(),
+  playerName: z.string().min(1).nullable(),
+  identityFieldsPresent: z.boolean(),
+  eventId: z.string().min(1).nullable()
+});
+export type PlayerActivityCaptureEventEvidence = z.infer<typeof playerActivityCaptureEventEvidenceSchema>;
+
+export const playerActivityCaptureVerificationSchema = z.object({
+  serverId: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  status: playerActivityCaptureStatusSchema,
+  recommendedAction: z.string().min(1),
+  latestPlayerJoinEvent: playerActivityCaptureEventEvidenceSchema.nullable(),
+  latestPlayerLeaveEvent: playerActivityCaptureEventEvidenceSchema.nullable(),
+  latestSessionStartAt: z.string().datetime().nullable(),
+  latestSessionCloseAt: z.string().datetime().nullable(),
+  latestKnownPlayerUpdateAt: z.string().datetime().nullable(),
+  latestCollectorSnapshotPollAt: z.string().datetime().nullable(),
+  playerIdentityFieldsPresent: z.boolean().nullable(),
+  evidenceSummary: z.array(z.string().min(1))
+});
+export type PlayerActivityCaptureVerification = z.infer<typeof playerActivityCaptureVerificationSchema>;
+
 export const serverHealthStatusSchema = z.enum(['healthy', 'warning', 'unhealthy']);
 export type ServerHealthStatus = z.infer<typeof serverHealthStatusSchema>;
 

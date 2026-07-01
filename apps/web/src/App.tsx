@@ -29,6 +29,7 @@ import {
   palworldPlayerProfileSessionSummariesResponseSchema,
   playerEngagementDetailSchema,
   playerEngagementSummarySchema,
+  playerActivityCaptureVerificationSchema,
   playerIntelligenceResponseSchema,
   playerIntelligenceSummaryResponseSchema,
   playerDetailResponseSchema,
@@ -76,6 +77,7 @@ import {
   type PlayerIntelligenceSummaryResponse,
   type PlayerEngagementDetail,
   type PlayerEngagementSummary,
+  type PlayerActivityCaptureVerification,
   type PlayerDetailResponse,
   type ServerAliveRhythmSummary,
   type ServerHealthSummary,
@@ -128,6 +130,7 @@ interface ServerSummary {
   playerIntelligence: PlayerIntelligenceRecord[];
   playerIntelligenceExplanation: string;
   playerIntelligenceSummary: PlayerIntelligenceSummaryResponse;
+  playerActivityCapture: PlayerActivityCaptureVerification;
   playerEngagement: PlayerEngagementSummary;
   serverAliveRhythm: ServerAliveRhythmSummary;
   serverHealth: ServerHealthSummary;
@@ -2342,6 +2345,7 @@ function App() {
             fetch(`${apiBaseUrl}/servers/${server.id}/events?limit=50`),
             fetch(`${apiBaseUrl}/servers/${server.id}/activity-log?limit=20`),
             fetch(`${apiBaseUrl}/servers/${server.id}/operational-status`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/player-activity-capture-verification`),
             fetch(`${apiBaseUrl}/servers/${server.id}/data-freshness`),
             fetch(`${apiBaseUrl}/servers/${server.id}/player-intelligence`),
             fetch(`${apiBaseUrl}/servers/${server.id}/player-intelligence-summary`),
@@ -2368,20 +2372,21 @@ function App() {
           const eventsResponse = responses[3];
           const activityLogResponse = responses[4];
           const operationalStatusResponse = responses[5];
-          const dataFreshnessResponse = responses[6];
-          const playerIntelligenceResponse = responses[7];
-          const playerIntelligenceSummaryResponse = responses[8];
-          const playerEngagementResponse = responses[9];
-          const serverAliveRhythmResponse = responses[10];
-          const serverHealthResponse = responses[11];
-          const settingsCapabilitiesResponse = responses[12];
-          const eventTemplateDraftsResponse = responses[13];
-          const sessionTimelineResponse = responses[14];
-          const palworldLatestPlayersResponse = server.game === 'palworld' ? responses[15] : null;
-          const palworldMetricsResponse = server.game === 'palworld' ? responses[16] : null;
-          const palworldConfigAuditResponse = server.game === 'palworld' ? responses[17] : null;
-          const palworldBackupReadinessResponse = server.game === 'palworld' ? responses[18] : null;
-          const palworldRuntimeAuditResponse = server.game === 'palworld' ? responses[19] : null;
+          const playerActivityCaptureResponse = responses[6];
+          const dataFreshnessResponse = responses[7];
+          const playerIntelligenceResponse = responses[8];
+          const playerIntelligenceSummaryResponse = responses[9];
+          const playerEngagementResponse = responses[10];
+          const serverAliveRhythmResponse = responses[11];
+          const serverHealthResponse = responses[12];
+          const settingsCapabilitiesResponse = responses[13];
+          const eventTemplateDraftsResponse = responses[14];
+          const sessionTimelineResponse = responses[15];
+          const palworldLatestPlayersResponse = server.game === 'palworld' ? responses[16] : null;
+          const palworldMetricsResponse = server.game === 'palworld' ? responses[17] : null;
+          const palworldConfigAuditResponse = server.game === 'palworld' ? responses[18] : null;
+          const palworldBackupReadinessResponse = server.game === 'palworld' ? responses[19] : null;
+          const palworldRuntimeAuditResponse = server.game === 'palworld' ? responses[20] : null;
           const requiredResponses = [
             statusResponse,
             sessionsResponse,
@@ -2389,6 +2394,7 @@ function App() {
             eventsResponse,
             activityLogResponse,
             operationalStatusResponse,
+            playerActivityCaptureResponse,
             dataFreshnessResponse,
             playerIntelligenceResponse,
             playerIntelligenceSummaryResponse,
@@ -2412,7 +2418,7 @@ function App() {
             throw new Error(`Server ${server.id} summary fetch failed with status ${failedRequiredResponse.status}`);
           }
 
-          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, dataFreshnessPayload, playerIntelligencePayload, playerIntelligenceSummaryPayload, playerEngagementPayload, serverAliveRhythmPayload, serverHealthPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload] = await Promise.all(
+          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, playerActivityCapturePayload, dataFreshnessPayload, playerIntelligencePayload, playerIntelligenceSummaryPayload, playerEngagementPayload, serverAliveRhythmPayload, serverHealthPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload] = await Promise.all(
             requiredResponses.map((response) => response!.json())
           );
 
@@ -2430,6 +2436,7 @@ function App() {
           const eventsParsed = recentEventsResponseSchema.safeParse(eventsPayload);
           const activityLogParsed = activityLogResponseSchema.safeParse(activityLogPayload);
           const operationalStatusParsed = serverOperationalStatusSchema.safeParse(operationalStatusPayload);
+          const playerActivityCaptureParsed = playerActivityCaptureVerificationSchema.safeParse(playerActivityCapturePayload);
           const dataFreshnessParsed = dataFreshnessResponseSchema.safeParse(dataFreshnessPayload);
           const playerIntelligenceParsed = playerIntelligenceResponseSchema.safeParse(playerIntelligencePayload);
           const playerIntelligenceSummaryParsed = playerIntelligenceSummaryResponseSchema.safeParse(playerIntelligenceSummaryPayload);
@@ -2460,7 +2467,7 @@ function App() {
             ? palworldRuntimeAuditSchema.safeParse(palworldRuntimeAuditPayload)
             : null;
 
-          if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success || !activityLogParsed.success || !operationalStatusParsed.success || !dataFreshnessParsed.success || !playerIntelligenceParsed.success || !playerIntelligenceSummaryParsed.success || !playerEngagementParsed.success || !serverAliveRhythmParsed.success || !serverHealthParsed.success || !settingsCapabilitiesParsed.success || !eventTemplateDraftsParsed.success || !sessionTimelineParsed.success) {
+          if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success || !activityLogParsed.success || !operationalStatusParsed.success || !playerActivityCaptureParsed.success || !dataFreshnessParsed.success || !playerIntelligenceParsed.success || !playerIntelligenceSummaryParsed.success || !playerEngagementParsed.success || !serverAliveRhythmParsed.success || !serverHealthParsed.success || !settingsCapabilitiesParsed.success || !eventTemplateDraftsParsed.success || !sessionTimelineParsed.success) {
             throw new Error(`Server ${server.id} payload validation failed.`);
           }
 
@@ -2513,6 +2520,7 @@ function App() {
             state: effectiveState,
             statusMessage: statusParsed.data.message,
             operationalStatus: operationalStatusParsed.data,
+            playerActivityCapture: playerActivityCaptureParsed.data,
             dataFreshness: dataFreshnessParsed.data,
             activePlayers: sessionsParsed.data.sessions.length,
             knownPlayerCount: playerIntelligenceParsed.data.players.length,

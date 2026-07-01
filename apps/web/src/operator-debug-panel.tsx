@@ -1,5 +1,5 @@
 /* @jsxRuntime classic */
-import type { DataFreshnessResponse, ServerOperationalStatus } from '@gameops/shared';
+import type { DataFreshnessResponse, PlayerActivityCaptureVerification, ServerOperationalStatus } from '@gameops/shared';
 import React from 'react';
 
 export interface OperatorDebugServer {
@@ -8,6 +8,7 @@ export interface OperatorDebugServer {
   game: string;
   operationalStatus: ServerOperationalStatus;
   dataFreshness: DataFreshnessResponse;
+  playerActivityCapture: PlayerActivityCaptureVerification;
 }
 
 interface OperatorDebugPanelProps {
@@ -47,6 +48,22 @@ function logTruthTone(freshness: DataFreshnessResponse): string {
   return health.status === 'healthy' && health.readable && health.writable && !health.lastError
     ? 'running'
     : 'error';
+}
+
+function captureTone(status: PlayerActivityCaptureVerification['status']): string {
+  if (status === 'issue_detected') {
+    return 'error';
+  }
+
+  if (status === 'capturing') {
+    return 'running';
+  }
+
+  if (status === 'ready') {
+    return 'active';
+  }
+
+  return 'unknown';
 }
 
 export function OperatorDebugPanel({ servers }: OperatorDebugPanelProps) {
@@ -119,6 +136,25 @@ export function OperatorDebugPanel({ servers }: OperatorDebugPanelProps) {
                     </div>
                   );
                 })}
+              </div>
+
+              <div className="operator-debug-subsection">
+                <div className="operator-debug-line">
+                  <span className="operator-debug-subtitle">Player Capture</span>
+                  <span className={`state-pill state-${captureTone(server.playerActivityCapture.status)}`}>
+                    {server.playerActivityCapture.status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div className="operator-debug-meta">
+                  <span>Join: {formatDebugTime(server.playerActivityCapture.latestPlayerJoinEvent?.occurredAt)}</span>
+                  <span>Leave: {formatDebugTime(server.playerActivityCapture.latestPlayerLeaveEvent?.occurredAt)}</span>
+                  <span>Session start: {formatDebugTime(server.playerActivityCapture.latestSessionStartAt)}</span>
+                  <span>Session close: {formatDebugTime(server.playerActivityCapture.latestSessionCloseAt)}</span>
+                  <span>Known player: {formatDebugTime(server.playerActivityCapture.latestKnownPlayerUpdateAt)}</span>
+                  <span>Snapshot poll: {formatDebugTime(server.playerActivityCapture.latestCollectorSnapshotPollAt)}</span>
+                  <span>Identity: {server.playerActivityCapture.playerIdentityFieldsPresent === null ? 'unknown' : server.playerActivityCapture.playerIdentityFieldsPresent ? 'present' : 'missing'}</span>
+                  <span>Action: {server.playerActivityCapture.recommendedAction}</span>
+                </div>
               </div>
 
               <div className="operator-debug-subsection">
