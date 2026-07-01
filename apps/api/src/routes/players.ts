@@ -3,11 +3,13 @@ import {
   knownPlayersResponseSchema,
   playerDetailResponseSchema,
   playerIntelligenceResponseSchema,
+  playerIntelligenceSummaryResponseSchema,
   playerCharacterAuditResponseSchema,
   type PlayerDetailResponse,
   type KnownPlayerProfileResponse,
   type KnownPlayersResponse,
   type PlayerIntelligenceResponse,
+  type PlayerIntelligenceSummaryResponse,
   type PlayerCharacterAuditAssessment,
   type PlayerCharacterAuditResponse
 } from '@gameops/shared';
@@ -16,6 +18,7 @@ import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from '..
 import { getIdentityObservationsForPlayer, getKnownPlayerForServer, getKnownPlayersForServer } from '../services/known-player-store.js';
 import { getPlayerDetail } from '../services/player-detail.js';
 import { getPlayerIntelligenceForServer } from '../services/player-intelligence.js';
+import { getPlayerIntelligenceSummaryForServer } from '../services/player-intelligence-summary.js';
 import { measureSync } from '../services/request-performance.js';
 
 function normalizePlayerKey(value: string): string {
@@ -64,6 +67,17 @@ export async function registerPlayerRoutes(app: FastifyInstance): Promise<void> 
     }
 
     return measureSync('player-intelligence', () => playerIntelligenceResponseSchema.parse(getPlayerIntelligenceForServer(serverId)));
+  });
+
+  app.get<{ Params: { serverId: string } }>('/servers/:serverId/player-intelligence-summary', async (request, reply): Promise<PlayerIntelligenceSummaryResponse | { error: string }> => {
+    const serverId = request.params.serverId.trim();
+
+    if (!serverId) {
+      reply.code(400);
+      return { error: 'Invalid serverId' };
+    }
+
+    return measureSync('player-intelligence-summary', () => playerIntelligenceSummaryResponseSchema.parse(getPlayerIntelligenceSummaryForServer(serverId)));
   });
 
   app.get<{ Params: { serverId: string; playerId: string } }>('/servers/:serverId/players/:playerId/detail', async (request, reply): Promise<PlayerDetailResponse | { error: string; explanation: string }> => {

@@ -174,6 +174,40 @@ export const playerIntelligenceResponseSchema = z.object({
 });
 export type PlayerIntelligenceResponse = z.infer<typeof playerIntelligenceResponseSchema>;
 
+export const playerIntelligenceSummaryStatusSchema = z.enum(['active', 'inactive', 'new', 'returning', 'at_risk', 'unknown']);
+export type PlayerIntelligenceSummaryStatus = z.infer<typeof playerIntelligenceSummaryStatusSchema>;
+
+export const playerIntelligenceSummaryTrendSchema = z.enum(['increasing', 'steady', 'decreasing', 'unknown']);
+export type PlayerIntelligenceSummaryTrend = z.infer<typeof playerIntelligenceSummaryTrendSchema>;
+
+export const playerIntelligenceSummaryRowSchema = z.object({
+  playerId: z.string().min(1),
+  displayName: z.string().min(1),
+  lastSeenAt: z.string().datetime().nullable(),
+  firstSeenAt: z.string().datetime().nullable(),
+  sessionCount: z.number().int().min(0),
+  totalPlaytimeMinutes: z.number().int().min(0),
+  averageSessionMinutes: z.number().int().min(0),
+  status: playerIntelligenceSummaryStatusSchema,
+  trend: playerIntelligenceSummaryTrendSchema
+});
+export type PlayerIntelligenceSummaryRow = z.infer<typeof playerIntelligenceSummaryRowSchema>;
+
+export const playerIntelligenceSummaryResponseSchema = z.object({
+  serverId: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  totalKnownPlayers: z.number().int().min(0),
+  activePlayersThisWeek: z.number().int().min(0),
+  inactivePlayers: z.number().int().min(0),
+  newPlayersThisWeek: z.number().int().min(0),
+  returningPlayersThisWeek: z.number().int().min(0),
+  mostRecentPlayer: playerIntelligenceSummaryRowSchema.nullable(),
+  longestSessionPlayer: playerIntelligenceSummaryRowSchema.nullable(),
+  topPlayersByPlaytime: z.array(playerIntelligenceSummaryRowSchema),
+  playersAtRisk: z.array(playerIntelligenceSummaryRowSchema)
+});
+export type PlayerIntelligenceSummaryResponse = z.infer<typeof playerIntelligenceSummaryResponseSchema>;
+
 export const playerEngagementPlayerSchema = z.object({
   playerId: z.string().min(1),
   displayName: z.string().min(1),

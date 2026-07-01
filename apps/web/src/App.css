@@ -418,6 +418,10 @@
   grid-column: 1 / -1;
 }
 
+.operator-player-intelligence-card {
+  grid-column: 1 / -1;
+}
+
 .operator-debug-heading,
 .operator-debug-server-heading,
 .operator-debug-line,
@@ -439,7 +443,20 @@
   margin-top: 0.7rem;
 }
 
+.operator-player-intelligence-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
 .operator-health-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.45rem;
+  padding: 0.55rem;
+  background: #f8fafc;
+}
+
+.operator-player-intelligence-row {
   border: 1px solid #e2e8f0;
   border-radius: 0.45rem;
   padding: 0.55rem;
@@ -456,6 +473,36 @@
   display: block;
   color: #64748b;
   font-size: 0.74rem;
+}
+
+.operator-player-mini-list {
+  display: grid;
+  gap: 0.22rem;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operator-player-mini-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 0.35rem;
+  background: #fff;
+  color: #334155;
+  font-size: 0.76rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.operator-player-mini-list li span:last-child {
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.operator-empty-note {
+  margin: 0.65rem 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
 }
 
 .operator-health-row p {
