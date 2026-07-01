@@ -2,13 +2,12 @@ import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { z } from 'zod';
 import {
   gameKeySchema,
   gameOpsConfigSchema,
-  connectorHeartbeatRequestSchema,
   ingestEventsRequestSchema,
   type GameOpsConfig,
+  type GameKey,
   type IdentityConfidence,
   type NormalizedEvent
 } from '@gameops/shared';
@@ -25,7 +24,18 @@ import {
 } from './adapters/palworld/rest.js';
 import { persistPalworldTelemetry } from './adapters/palworld/telemetry-store.js';
 import { startValheimJournalStream } from './adapters/valheim/journal.js';
+import {
+  buildConnectorHeartbeatPayload,
+  createCollectorRegistry,
+  createCollectorRunner,
+  createValheimCollectorShadow,
+  getCollectorHealthForHeartbeat,
+  getValheimCollectorShadowHealthForHeartbeat,
+  resolveCollectorsEnabled,
+  resolveValheimCollectorShadowEnabled
+} from './connector-runtime.js';
 import { findKnownPlayer, upsertKnownPlayerObservation } from './identity/known-player-store.js';
+import { runtimeConnectorModeSchema, type ConnectorMode } from './runtime-types.js';
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -37,15 +47,14 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-const runtimeConnectorModeSchema = z.enum(['file', 'journal', 'rest', 'rcon', 'query']);
-type ConnectorMode = z.infer<typeof runtimeConnectorModeSchema>;
-
 interface ConnectorRuntimeSettings {
   serverId: string;
-  game: z.infer<typeof gameKeySchema>;
+  game: GameKey;
   mode: ConnectorMode;
   apiBaseUrl: string;
   pollIntervalMs: number;
+  collectorsEnabled: boolean;
+  valheimCollectorShadowEnabled: boolean;
   logFile?: string;
   journalServiceName?: string;
   restHost?: string;
@@ -114,12 +123,19 @@ function resolveFromSharedConfig(): ConnectorRuntimeSettings | null {
     const resolvedLogFile = envLogFile || selected.connector.logPath;
     const resolvedJournalService = envJournalService || selected.connector.journalServiceName;
 
+    const featureFlags = parsed.featureFlags as Record<string, boolean | undefined>;
     const settings: ConnectorRuntimeSettings = {
       serverId: selected.id,
       game: selected.game,
       mode,
       apiBaseUrl,
-      pollIntervalMs
+      pollIntervalMs,
+      collectorsEnabled: resolveCollectorsEnabled({
+        featureFlagValue: featureFlags.collectorsEnabled
+      }),
+      valheimCollectorShadowEnabled: resolveValheimCollectorShadowEnabled({
+        featureFlagValue: featureFlags.valheimCollectorShadow
+      })
     };
 
     if (resolvedLogFile) {
@@ -175,6 +191,8 @@ function resolveFromLegacyEnv(): ConnectorRuntimeSettings {
     serverId: getRequiredEnv('CONNECTOR_SERVER_ID'),
     apiBaseUrl: process.env.API_BASE_URL ?? 'http://localhost:3001',
     pollIntervalMs: parsePositiveInt(process.env.POLL_INTERVAL_MS, 2000),
+    collectorsEnabled: resolveCollectorsEnabled(),
+    valheimCollectorShadowEnabled: resolveValheimCollectorShadowEnabled(),
     ...(logFileFromEnv ? { logFile: logFileFromEnv } : {}),
     ...(process.env.VALHEIM_JOURNAL_SERVICE ? { journalServiceName: process.env.VALHEIM_JOURNAL_SERVICE } : {}),
     ...(process.env.PALWORLD_REST_HOST ? { restHost: process.env.PALWORLD_REST_HOST } : {}),
@@ -204,6 +222,23 @@ const restPassword = runtime.restPassword;
 const restPath = runtime.restPath;
 
 const adapter = getAdapter(game);
+const collectorRegistry = createCollectorRegistry({
+  serverId,
+  game,
+  mode,
+  collectorsEnabled: runtime.collectorsEnabled,
+  ...(logFile ? { logFile } : {}),
+  ...(journalServiceName ? { journalServiceName } : {})
+});
+const collectorRunner = createCollectorRunner(collectorRegistry);
+const valheimCollectorShadow = createValheimCollectorShadow({
+  serverId,
+  game,
+  mode,
+  enabled: runtime.valheimCollectorShadowEnabled,
+  ...(logFile ? { logFile } : {}),
+  ...(journalServiceName ? { journalServiceName } : {})
+});
 let processedLineCount = 0;
 let lastConnectorHeartbeatAtMs = 0;
 
@@ -549,16 +584,20 @@ async function sendConnectorHeartbeat(input: {
 
   lastConnectorHeartbeatAtMs = nowMs;
 
-  const payload = connectorHeartbeatRequestSchema.parse({
+  const payload = buildConnectorHeartbeatPayload({
     serverId,
     game,
-    connectorMode: mode,
+    mode,
     observedAt: new Date(nowMs).toISOString(),
     status: input.status,
     message: input.message,
     lastSuccessfulPollAt: input.lastSuccessfulPollAt,
     consecutiveFailureCount: input.consecutiveFailureCount,
-    capabilities: getConnectorCapabilities()
+    capabilities: getConnectorCapabilities(),
+    collectors: [
+      ...getCollectorHealthForHeartbeat(collectorRunner),
+      ...getValheimCollectorShadowHealthForHeartbeat(valheimCollectorShadow)
+    ]
   });
 
   try {
@@ -665,6 +704,10 @@ async function runFileMode(): Promise<void> {
     processedLineCount = allLines.length;
 
     if (newLines.length === 0) {
+      if (game === 'valheim' && valheimCollectorShadow) {
+        await valheimCollectorShadow.run({ oldPathEvents: [] });
+      }
+
       await sendConnectorHeartbeat({
         status: 'running',
         message: 'Connector is reading the configured log file. No new activity lines observed recently.',
@@ -674,6 +717,10 @@ async function runFileMode(): Promise<void> {
     }
 
     const events = newLines.flatMap((line) => parseLineSafe(line));
+
+    if (game === 'valheim' && valheimCollectorShadow) {
+      await valheimCollectorShadow.run({ oldPathEvents: events });
+    }
 
     await ingestEvents(events);
     await sendConnectorHeartbeat({
@@ -745,6 +792,10 @@ async function runJournalMode(): Promise<void> {
       lastSuccessfulPollAt = new Date().toISOString();
       lineCountSinceHeartbeat += 1;
       const events = parseLineSafe(line);
+
+      if (valheimCollectorShadow) {
+        await valheimCollectorShadow.runForJournalLine(line, events);
+      }
 
       if (events.length === 0) {
         return;

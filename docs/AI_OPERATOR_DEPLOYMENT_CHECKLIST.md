@@ -8,13 +8,14 @@ Use this checklist to deploy and verify the read-only AI Operator on the VPS.
 - Create `/srv/gameops-bridge/config/operator.local.json` from `config/operator.vps.example.json`.
 - Confirm `operator.local.json` contains only safe read-only paths:
   - PM2 stdout/error logs
-  - project repository directories
+  - project repository directories in `projectRepos`
   - disk mount points
   - local health URLs
 - Do not include `.env`, SSH, TLS cert, database dump, backup, save archive, or broad sensitive directory paths.
 - Set `GAMEOPS_OPERATOR_CONFIG_PATH=/srv/gameops-bridge/config/operator.local.json`.
 - Set `GAMEOPS_OPERATOR_KEY` to a long random server-only value.
 - Keep `GAMEOPS_OPERATOR_KEY` out of browser code, Vite env vars, localStorage, and sessionStorage.
+- Keep runtime state outside the repo. Use `GAMEOPS_DATA_DIR=/srv/gameops-bridge/data` or set `GAMEOPS_OPERATOR_TIMELINE_PATH=/srv/gameops-bridge/data/operator.timeline.json`.
 
 ## Deploy
 
@@ -22,6 +23,7 @@ Use this checklist to deploy and verify the read-only AI Operator on the VPS.
 - Install dependencies if `package-lock.json` changed.
 - Build or typecheck according to the existing deployment flow.
 - Restart only through the existing manual production process. The AI Operator does not perform restarts.
+- Confirm `git status --short` is clean after generated files and runtime JSON have been moved out of the checkout.
 
 ## Live Read-Only Verification
 

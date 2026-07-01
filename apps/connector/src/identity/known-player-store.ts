@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   identityObservationSchema,
   identityConfidenceSchema,
@@ -16,6 +16,8 @@ const fileStoreSchema = z.object({
 });
 
 const MAX_OBSERVATIONS = 20_000;
+const PRODUCTION_DATA_DIR = '/srv/gameops-bridge/data';
+const LOCAL_DATA_DIR = './data';
 
 interface UpsertKnownPlayerObservationInput {
   serverId: string;
@@ -35,8 +37,13 @@ function normalizePlayerKey(value: string): string {
     .replace(/\s+/g, ' ');
 }
 
+function getRuntimeDataDir(): string {
+  return process.env.GAMEOPS_DATA_DIR
+    ?? (process.env.NODE_ENV === 'production' ? PRODUCTION_DATA_DIR : LOCAL_DATA_DIR);
+}
+
 function resolveStorePath(): string {
-  const rawPath = process.env.KNOWN_PLAYER_STORE_PATH ?? '../known-players.json';
+  const rawPath = process.env.KNOWN_PLAYER_STORE_PATH ?? join(getRuntimeDataDir(), 'known-players.json');
   return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
 }
 

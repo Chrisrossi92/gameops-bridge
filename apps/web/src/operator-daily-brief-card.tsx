@@ -1,4 +1,6 @@
+/* @jsxRuntime classic */
 import type { OperatorDailyBriefResponse } from '@gameops/shared';
+import React from 'react';
 
 interface OperatorDailyBriefCardProps {
   brief: OperatorDailyBriefResponse | null;
@@ -69,4 +71,3 @@ export function OperatorDailyBriefCard({ brief, loading, error }: OperatorDailyB
     </article>
   );
 }
-

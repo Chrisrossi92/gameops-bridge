@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
 import {
   palworldLatestPlayerTelemetrySchema,
   palworldPlayerSnapshotSchema,
@@ -10,6 +9,7 @@ import {
 } from '@gameops/shared';
 import { z } from 'zod';
 import { getActiveSessionsForServer } from './event-store.js';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const rawLatestPlayerStateSchema = z.object({
   server_id: z.string().min(1),
@@ -74,8 +74,7 @@ type RawTelemetryStore = z.infer<typeof rawTelemetryStoreSchema>;
 let storeCache: { path: string; expiresAt: number; store: RawTelemetryStore } | null = null;
 
 function resolveStorePath(): string {
-  const rawPath = process.env.PALWORLD_TELEMETRY_STORE_PATH ?? '../palworld-telemetry.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('PALWORLD_TELEMETRY_STORE_PATH', 'palworld-telemetry.json');
 }
 
 function normalizeLookup(value: string): string {

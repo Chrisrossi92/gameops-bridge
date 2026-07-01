@@ -3,10 +3,12 @@ import {
   type DataFreshnessResponse,
   type DataFreshnessStatus,
   type IdentityConfidence,
+  type LogTruthHealth,
   type ServerOperationalStatus
 } from '@gameops/shared';
 import { getServerOperationalStatus } from './connector-heartbeat.js';
 import { getActiveSessionsForServer, getRecentEventsForServer } from './event-store.js';
+import { getLogTruthHealth } from './log-truth-store.js';
 import { getPersistedPlayerRollupsForServer } from './player-intelligence-rollup-store.js';
 import { getCachedResult } from './request-performance.js';
 import { getConfiguredServerGame, isServerConfigured } from './server-config.js';
@@ -41,7 +43,12 @@ function maxTimestamp(values: Array<string | null | undefined>): string | null {
 function getRecommendedAction(input: {
   status: DataFreshnessStatus;
   operationalStatus: ServerOperationalStatus;
+  logTruthHealth?: LogTruthHealth;
 }): string {
+  if (input.logTruthHealth?.status === 'unhealthy') {
+    return 'Check log truth storage';
+  }
+
   if (input.status === 'not_started') {
     return 'Start the connector';
   }
@@ -69,11 +76,13 @@ function buildErrorFreshness(input: {
   lastEventAt: string | null;
   lastSessionActivityAt: string | null;
   hasStoredRollups: boolean;
+  logTruthHealth: LogTruthHealth;
 }): DataFreshnessResponse {
   const degraded = input.operationalStatus.connectorStatus === 'degraded';
   const warnings = [
     degraded ? 'Connector is reporting degraded polling' : 'Connector is reporting errors',
-    ...(input.hasStoredRollups ? ['Showing stored player history'] : [])
+    ...(input.hasStoredRollups ? ['Showing stored player history'] : []),
+    ...(input.logTruthHealth.status === 'unhealthy' ? ['Log truth storage is unhealthy'] : [])
   ];
 
   return dataFreshnessResponseSchema.parse({
@@ -91,13 +100,16 @@ function buildErrorFreshness(input: {
     trustWarnings: warnings,
     recommendedAction: getRecommendedAction({
       status: 'error',
-      operationalStatus: input.operationalStatus
-    })
+      operationalStatus: input.operationalStatus,
+      logTruthHealth: input.logTruthHealth
+    }),
+    logTruth: input.logTruthHealth
   });
 }
 
 function computeDataFreshnessForServer(serverId: string, now = new Date()): DataFreshnessResponse {
   const operationalStatus = getServerOperationalStatus(serverId, isServerConfigured(serverId), now);
+  const logTruthHealth = getLogTruthHealth();
   const recentEvent = getRecentEventsForServer(serverId, 1)[0] ?? null;
   const timeline = getSessionTimelineForServer(serverId, 50);
   const activeSessions = getActiveSessionsForServer(serverId);
@@ -120,7 +132,8 @@ function computeDataFreshnessForServer(serverId: string, now = new Date()): Data
       operationalStatus,
       lastEventAt,
       lastSessionActivityAt,
-      hasStoredRollups
+      hasStoredRollups,
+      logTruthHealth
     });
   }
 
@@ -180,6 +193,11 @@ function computeDataFreshnessForServer(serverId: string, now = new Date()): Data
     trustWarnings.push('Palworld REST data may be outdated');
   }
 
+  if (logTruthHealth.status === 'unhealthy') {
+    trustWarnings.push('Log truth storage is unhealthy');
+    confidence = 'low';
+  }
+
   return dataFreshnessResponseSchema.parse({
     serverId,
     status,
@@ -193,7 +211,8 @@ function computeDataFreshnessForServer(serverId: string, now = new Date()): Data
     connectorStatus: operationalStatus.connectorStatus,
     confidence,
     trustWarnings: Array.from(new Set(trustWarnings)),
-    recommendedAction: getRecommendedAction({ status, operationalStatus })
+    recommendedAction: getRecommendedAction({ status, operationalStatus, logTruthHealth }),
+    logTruth: logTruthHealth
   });
 }
 

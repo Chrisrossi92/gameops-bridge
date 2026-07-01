@@ -2,6 +2,7 @@ import {
   connectorHeartbeatSchema,
   serverOperationalStatusSchema,
   type ConnectorHeartbeat,
+  type ConnectorHeartbeatRequest,
   type ServerOperationalStatus
 } from '@gameops/shared';
 
@@ -32,7 +33,7 @@ function formatAge(seconds: number | null): string {
   return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
 }
 
-export function recordConnectorHeartbeat(input: ConnectorHeartbeat): ConnectorHeartbeat {
+export function recordConnectorHeartbeat(input: ConnectorHeartbeatRequest): ConnectorHeartbeat {
   const heartbeat = connectorHeartbeatSchema.parse(input);
   heartbeatByServerId.set(heartbeat.serverId, heartbeat);
   return heartbeat;
@@ -52,7 +53,8 @@ export function getServerOperationalStatus(serverId: string, configured: boolean
       heartbeatAgeSeconds: null,
       consecutiveFailureCount: null,
       connectorMode: null,
-      capabilities: []
+      capabilities: [],
+      collectors: []
     });
   }
 
@@ -67,7 +69,8 @@ export function getServerOperationalStatus(serverId: string, configured: boolean
       heartbeatAgeSeconds: null,
       consecutiveFailureCount: null,
       connectorMode: null,
-      capabilities: []
+      capabilities: [],
+      collectors: []
     });
   }
 
@@ -106,7 +109,8 @@ export function getServerOperationalStatus(serverId: string, configured: boolean
     heartbeatAgeSeconds,
     consecutiveFailureCount: failureCount,
     connectorMode: heartbeat.connectorMode,
-    capabilities: heartbeat.capabilities
+    capabilities: heartbeat.capabilities,
+    collectors: heartbeat.collectors
   });
 }
 

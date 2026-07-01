@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import {
   palworldApprovedIdentitySchema,
   palworldIdentityApprovalsResponseSchema,
@@ -10,10 +10,10 @@ import {
   type PalworldRejectedIdentity
 } from '@gameops/shared';
 import { getPalworldIdentityLinkReview } from './palworld-identity-links.js';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 function resolveApprovalsPath(): string {
-  const rawPath = process.env.PALWORLD_APPROVED_IDENTITIES_PATH ?? '../approved-identities.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('PALWORLD_APPROVED_IDENTITIES_PATH', 'approved-identities.json');
 }
 
 function normalize(value: string): string {

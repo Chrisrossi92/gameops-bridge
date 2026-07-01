@@ -1,15 +1,14 @@
 import { readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
 import {
   palworldIdentityLinksResponseSchema,
   type PalworldIdentityLinkCandidate,
   type PalworldIdentityLinkFailure,
   type PalworldIdentityLinksResponse
 } from '@gameops/shared';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 function resolveIdentityLinksPath(): string {
-  const rawPath = process.env.PALWORLD_IDENTITY_LINKS_PATH ?? '../identity-links.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('PALWORLD_IDENTITY_LINKS_PATH', 'identity-links.json');
 }
 
 function normalize(value: string): string {

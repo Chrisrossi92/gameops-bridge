@@ -1,4 +1,6 @@
+/* @jsxRuntime classic */
 import type { OperatorChangesSummaryResponse } from '@gameops/shared';
+import React from 'react';
 
 interface OperatorChangesCardProps {
   changes: OperatorChangesSummaryResponse | null;
@@ -78,4 +80,3 @@ export function OperatorChangesCard({ changes, loading, error }: OperatorChanges
     </article>
   );
 }
-

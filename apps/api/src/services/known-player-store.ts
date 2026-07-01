@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
 import {
   identityObservationSchema,
   knownPlayerRecordSchema,
   type IdentityObservation,
   type KnownPlayerRecord
 } from '@gameops/shared';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const STORE_CACHE_TTL_MS = 5_000;
 
@@ -17,8 +17,7 @@ interface KnownPlayerStore {
 let storeCache: { path: string; expiresAt: number; store: KnownPlayerStore } | null = null;
 
 function resolveStorePath(): string {
-  const rawPath = process.env.KNOWN_PLAYER_STORE_PATH ?? '../known-players.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('KNOWN_PLAYER_STORE_PATH', 'known-players.json');
 }
 
 function loadStore(): KnownPlayerStore {

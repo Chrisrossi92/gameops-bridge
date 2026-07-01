@@ -17,6 +17,7 @@ const EXAMPLE_PROMPTS = [
   'Current health'
 ];
 
+// eslint-disable-next-line react-refresh/only-export-components
 export async function askOperatorQuestion(input: {
   apiBaseUrl: string;
   question: string;

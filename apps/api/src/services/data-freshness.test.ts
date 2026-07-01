@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { join, resolve } from 'node:path';
@@ -122,6 +122,7 @@ async function withFreshness(run: (modules: {
   const previousPlayersSummaryPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH;
   const previousPlayerIntelligencePath = process.env.PLAYER_INTELLIGENCE_STORE_PATH;
   const previousPlayerEngagementPath = process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
+  const previousLogTruthPath = process.env.LOG_TRUTH_STORE_PATH;
   const previousConfigPath = process.env.GAMEOPS_CONFIG_PATH;
 
   process.env.SESSION_STATE_STORE_PATH = join(tempDir, 'session-state.json');
@@ -130,6 +131,7 @@ async function withFreshness(run: (modules: {
   process.env.PALWORLD_PLAYERS_SUMMARY_PATH = join(tempDir, 'players-summary.json');
   process.env.PLAYER_INTELLIGENCE_STORE_PATH = join(tempDir, 'player-intelligence-state.json');
   process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = join(tempDir, 'player-engagement-rollups.json');
+  process.env.LOG_TRUTH_STORE_PATH = join(tempDir, 'log-truth.json');
   process.env.GAMEOPS_CONFIG_PATH = join(tempDir, 'gameops.config.json');
 
   try {
@@ -162,6 +164,9 @@ async function withFreshness(run: (modules: {
 
     if (previousPlayerEngagementPath === undefined) delete process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
     else process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = previousPlayerEngagementPath;
+
+    if (previousLogTruthPath === undefined) delete process.env.LOG_TRUTH_STORE_PATH;
+    else process.env.LOG_TRUTH_STORE_PATH = previousLogTruthPath;
 
     if (previousConfigPath === undefined) delete process.env.GAMEOPS_CONFIG_PATH;
     else process.env.GAMEOPS_CONFIG_PATH = previousConfigPath;
@@ -201,6 +206,62 @@ test('recent heartbeat returns live', async () => {
     assert.equal(result.status, 'live');
     assert.equal(result.confidence, 'high');
     assert.equal(result.heartbeatAgeSeconds, 8);
+  });
+});
+
+test('data freshness includes healthy log truth status', async () => {
+  await withFreshness(({ store, heartbeat, freshness, tempDir }) => {
+    createConfig(join(tempDir, 'gameops.config.json'), 'fresh-log-truth-healthy');
+    heartbeat.recordConnectorHeartbeat({
+      serverId: 'fresh-log-truth-healthy',
+      game: 'valheim',
+      connectorMode: 'journal',
+      observedAt: '2026-06-11T12:00:00.000Z',
+      status: 'running',
+      message: 'Journal stream is active.',
+      capabilities: ['log_stream']
+    });
+    store.addEvents([
+      createEvent('fresh-log-truth-healthy', {
+        id: 'fresh-log-truth-event',
+        eventType: 'SERVER_ONLINE',
+        occurredAt: '2026-06-11T12:00:01.000Z'
+      })
+    ]);
+
+    const result = freshness.getDataFreshnessForServer('fresh-log-truth-healthy', new Date('2026-06-11T12:00:08.000Z'));
+
+    assert.equal(result.logTruth?.status, 'healthy');
+    assert.equal(result.logTruth?.readable, true);
+    assert.equal(result.logTruth?.writable, true);
+    assert.equal(result.logTruth?.totalEventCount, 1);
+    assert.match(result.logTruth?.lastSuccessfulAppendAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+test('data freshness warns when log truth storage is unhealthy', async () => {
+  await withFreshness(({ store, freshness, tempDir }) => {
+    createConfig(join(tempDir, 'gameops.config.json'), 'fresh-log-truth-unhealthy');
+    const badPath = join(tempDir, 'log-truth-dir');
+    mkdirSync(badPath);
+    process.env.LOG_TRUTH_STORE_PATH = badPath;
+
+    store.addEvents([
+      createEvent('fresh-log-truth-unhealthy', {
+        id: 'fresh-log-truth-failed-event',
+        eventType: 'SERVER_ONLINE',
+        occurredAt: '2026-06-11T12:00:01.000Z'
+      })
+    ]);
+
+    const result = freshness.getDataFreshnessForServer('fresh-log-truth-unhealthy', new Date('2026-06-11T12:00:08.000Z'));
+
+    assert.equal(result.logTruth?.status, 'unhealthy');
+    assert.equal(result.logTruth?.readable, false);
+    assert.equal(result.logTruth?.writable, false);
+    assert.match(result.logTruth?.lastError ?? '', /EISDIR|illegal operation|not a file|directory/i);
+    assert.equal(result.trustWarnings.includes('Log truth storage is unhealthy'), true);
+    assert.equal(result.recommendedAction, 'Check log truth storage');
   });
 });
 

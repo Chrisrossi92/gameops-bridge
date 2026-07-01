@@ -836,6 +836,27 @@ export type ConnectorMode = z.infer<typeof connectorModeSchema>;
 export const connectorHeartbeatStatusSchema = z.enum(['running', 'degraded', 'error']);
 export type ConnectorHeartbeatStatus = z.infer<typeof connectorHeartbeatStatusSchema>;
 
+export const collectorHealthSchema = z.object({
+  collectorId: z.string().min(1),
+  name: z.string().min(1),
+  game: gameKeySchema,
+  enabled: z.boolean(),
+  lastSuccessfulCollectionAt: z.string().datetime().nullable(),
+  lastError: z.string().min(1).nullable(),
+  lastCollectionDurationMs: z.number().int().min(0).nullable(),
+  totalEventsEmitted: z.number().int().min(0),
+  shadow: z.object({
+    enabled: z.boolean(),
+    lastRunAt: z.string().datetime().nullable(),
+    lastDurationMs: z.number().int().min(0).nullable(),
+    eventCount: z.number().int().min(0),
+    eventTypes: z.array(eventTypeSchema),
+    lastError: z.string().min(1).nullable(),
+    parityStatus: z.enum(['not_run', 'match', 'mismatch', 'unavailable', 'error'])
+  }).optional()
+});
+export type CollectorHealth = z.infer<typeof collectorHealthSchema>;
+
 export const connectorHeartbeatSchema = z.object({
   serverId: z.string().min(1),
   game: gameKeySchema,
@@ -845,12 +866,13 @@ export const connectorHeartbeatSchema = z.object({
   message: z.string().min(1),
   lastSuccessfulPollAt: z.string().datetime().optional(),
   consecutiveFailureCount: z.number().int().min(0).optional(),
-  capabilities: z.array(z.string().min(1)).default([])
+  capabilities: z.array(z.string().min(1)).default([]),
+  collectors: z.array(collectorHealthSchema).default([])
 });
 export type ConnectorHeartbeat = z.infer<typeof connectorHeartbeatSchema>;
 
 export const connectorHeartbeatRequestSchema = connectorHeartbeatSchema;
-export type ConnectorHeartbeatRequest = z.infer<typeof connectorHeartbeatRequestSchema>;
+export type ConnectorHeartbeatRequest = z.input<typeof connectorHeartbeatRequestSchema>;
 
 export const connectorHeartbeatResponseSchema = z.object({
   ok: z.literal(true),
@@ -871,12 +893,24 @@ export const serverOperationalStatusSchema = z.object({
   heartbeatAgeSeconds: z.number().int().min(0).nullable(),
   consecutiveFailureCount: z.number().int().min(0).nullable(),
   connectorMode: connectorModeSchema.nullable(),
-  capabilities: z.array(z.string())
+  capabilities: z.array(z.string()),
+  collectors: z.array(collectorHealthSchema).default([])
 });
 export type ServerOperationalStatus = z.infer<typeof serverOperationalStatusSchema>;
 
 export const dataFreshnessStatusSchema = z.enum(['live', 'stale', 'historical', 'not_started', 'error']);
 export type DataFreshnessStatus = z.infer<typeof dataFreshnessStatusSchema>;
+
+export const logTruthHealthSchema = z.object({
+  status: z.enum(['healthy', 'unhealthy']),
+  path: z.string().min(1),
+  readable: z.boolean(),
+  writable: z.boolean(),
+  lastSuccessfulAppendAt: z.string().datetime().nullable(),
+  lastError: z.string().min(1).nullable(),
+  totalEventCount: z.number().int().min(0)
+});
+export type LogTruthHealth = z.infer<typeof logTruthHealthSchema>;
 
 export const dataFreshnessResponseSchema = z.object({
   serverId: z.string().min(1),
@@ -891,7 +925,8 @@ export const dataFreshnessResponseSchema = z.object({
   connectorStatus: connectorOperationalStatusSchema,
   confidence: identityConfidenceSchema,
   trustWarnings: z.array(z.string().min(1)),
-  recommendedAction: z.string().min(1)
+  recommendedAction: z.string().min(1),
+  logTruth: logTruthHealthSchema.optional()
 });
 export type DataFreshnessResponse = z.infer<typeof dataFreshnessResponseSchema>;
 

@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import {
   palworldTransitionMilestoneEventSchema,
   type PalworldLevelTier,
@@ -10,6 +10,7 @@ import {
 import { z } from 'zod';
 import { getActiveSessionsForServer } from './event-store.js';
 import { getPalworldUnifiedProfilesForServer } from './palworld-player-profile.js';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const MAX_STORED_TRANSITION_EVENTS = 500;
 
@@ -36,8 +37,7 @@ const transitionStateByKey = new Map<string, TransitionStateRecord>();
 const recentTransitionEvents: PalworldTransitionMilestoneEvent[] = [];
 
 function resolveTransitionStorePath(): string {
-  const rawPath = process.env.PALWORLD_MILESTONE_TRANSITION_STORE_PATH ?? '../palworld-milestone-transitions.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('PALWORLD_MILESTONE_TRANSITION_STORE_PATH', 'palworld-milestone-transitions.json');
 }
 
 function getStateKey(serverId: string, playerId: string): string {

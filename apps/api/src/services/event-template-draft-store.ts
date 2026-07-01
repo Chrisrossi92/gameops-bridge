@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { eventTemplateDraftOverrideRequestSchema, type EventTemplateDraftOverrideRequest } from '@gameops/shared';
 import { z } from 'zod';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const eventTemplateDraftOverrideRecordSchema = eventTemplateDraftOverrideRequestSchema.extend({
   serverId: z.string().min(1),
@@ -23,8 +24,7 @@ const eventTemplateDraftStoreSchema = z.object({
 export type EventTemplateDraftOverrideRecord = z.infer<typeof eventTemplateDraftOverrideRecordSchema>;
 
 function resolveStorePath(): string {
-  const rawPath = process.env.EVENT_TEMPLATE_DRAFT_STORE_PATH ?? '../event-template-drafts.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('EVENT_TEMPLATE_DRAFT_STORE_PATH', 'event-template-drafts.json');
 }
 
 function loadStore(): z.infer<typeof eventTemplateDraftStoreSchema> {

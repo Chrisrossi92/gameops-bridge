@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   deriveRegionName,
@@ -77,9 +77,16 @@ type TelemetryStore = z.infer<typeof telemetryStoreSchema>;
 const MAX_PLAYER_SNAPSHOT_HISTORY = 50_000;
 const MAX_METRICS_SNAPSHOT_HISTORY = 10_000;
 const MAX_SETTINGS_CHANGE_HISTORY = 2_000;
+const PRODUCTION_DATA_DIR = '/srv/gameops-bridge/data';
+const LOCAL_DATA_DIR = './data';
+
+function getRuntimeDataDir(): string {
+  return process.env.GAMEOPS_DATA_DIR
+    ?? (process.env.NODE_ENV === 'production' ? PRODUCTION_DATA_DIR : LOCAL_DATA_DIR);
+}
 
 function resolveStorePath(): string {
-  const rawPath = process.env.PALWORLD_TELEMETRY_STORE_PATH ?? '../palworld-telemetry.json';
+  const rawPath = process.env.PALWORLD_TELEMETRY_STORE_PATH ?? join(getRuntimeDataDir(), 'palworld-telemetry.json');
   return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
 }
 

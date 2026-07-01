@@ -1,7 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { type NormalizedEvent, sessionRecordSchema, type SessionRecord } from '@gameops/shared';
+import { appendLogTruthEvents, getRecentLogTruthEventsForServer } from './log-truth-store.js';
 import { recordClosedSessionRollup, recordPlayerSeenFromSessionStart } from './player-intelligence-rollup-store.js';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const MAX_STORED_EVENTS = 500;
 const MAX_STORED_CLOSED_SESSIONS = 500;
@@ -17,8 +19,7 @@ interface PersistedSessionState {
 }
 
 function resolveSessionStatePath(): string {
-  const rawPath = process.env.SESSION_STATE_STORE_PATH ?? '../session-state.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('SESSION_STATE_STORE_PATH', 'session-state.json');
 }
 
 function parseSessionArray(rawValue: unknown): SessionRecord[] {
@@ -417,14 +418,20 @@ function applySessionTracking(event: NormalizedEvent): NormalizedEvent {
 
 export function addEvents(events: NormalizedEvent[]): void {
   initializeSessionStateIfNeeded();
-  const enrichedEvents = events.map((event) => applySessionTracking(event));
+  const acceptedEvents = appendLogTruthEvents(events).map((entry) => entry.event);
+
+  if (acceptedEvents.length === 0) {
+    return;
+  }
+
+  const enrichedEvents = acceptedEvents.map((event) => applySessionTracking(event));
   recentEvents.push(...enrichedEvents);
 
   if (recentEvents.length > MAX_STORED_EVENTS) {
     recentEvents.splice(0, recentEvents.length - MAX_STORED_EVENTS);
   }
 
-  if (events.some((event) =>
+  if (acceptedEvents.some((event) =>
     event.eventType === 'PLAYER_JOIN'
     || event.eventType === 'PLAYER_LEAVE'
     || isDisconnectSignalEvent(event)
@@ -434,10 +441,15 @@ export function addEvents(events: NormalizedEvent[]): void {
 }
 
 export function getRecentEventsForServer(serverId: string, limit = 10): NormalizedEvent[] {
-  return recentEvents
+  const boundedLimit = Math.max(1, limit);
+  const memoryEvents = recentEvents
     .filter((event) => event.serverId === serverId)
-    .slice(-Math.max(1, limit))
+    .slice(-boundedLimit)
     .reverse();
+
+  return memoryEvents.length > 0
+    ? memoryEvents
+    : getRecentLogTruthEventsForServer(serverId, boundedLimit);
 }
 
 export function getActiveSessionsForServer(serverId: string): SessionRecord[] {

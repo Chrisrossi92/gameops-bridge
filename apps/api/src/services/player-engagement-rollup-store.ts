@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import {
   playerIntelligenceConfidenceSchema,
   type PlayerIntelligenceConfidence,
@@ -7,6 +7,7 @@ import {
 } from '@gameops/shared';
 import { z } from 'zod';
 import { clearCachedResult } from './request-performance.js';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const MAX_PROCESSED_SESSION_IDS = 50_000;
 const MAX_SOURCE_SESSION_IDS_PER_DAY = 250;
@@ -49,8 +50,7 @@ type PlayerEngagementRollupStore = z.infer<typeof playerEngagementRollupStoreSch
 let storeCache: { path: string; expiresAt: number; store: PlayerEngagementRollupStore } | null = null;
 
 function resolveStorePath(): string {
-  const rawPath = process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH ?? '../player-engagement-rollups.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH', 'player-engagement-rollups.json');
 }
 
 function normalize(value: string): string {

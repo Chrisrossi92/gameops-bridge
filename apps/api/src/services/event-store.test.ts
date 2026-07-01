@@ -13,6 +13,14 @@ type EventStoreModule = {
   getRecentEventsForServer: (serverId: string, limit?: number) => NormalizedEvent[];
 };
 
+type RollupStoreModule = {
+  getPersistedPlayerRollupsForServer: (serverId: string) => Array<{
+    displayName: string;
+    totalTrackedSeconds: number;
+    sessionCount: number;
+  }>;
+};
+
 function createEvent(overrides: Partial<NormalizedEvent>): NormalizedEvent {
   return {
     game: 'valheim',
@@ -29,10 +37,12 @@ async function withFreshEventStore(run: (store: EventStoreModule) => Promise<voi
   const previousPath = process.env.SESSION_STATE_STORE_PATH;
   const previousPlayerIntelligencePath = process.env.PLAYER_INTELLIGENCE_STORE_PATH;
   const previousPlayerEngagementPath = process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
+  const previousLogTruthPath = process.env.LOG_TRUTH_STORE_PATH;
 
   process.env.SESSION_STATE_STORE_PATH = statePath;
   process.env.PLAYER_INTELLIGENCE_STORE_PATH = join(tempDir, 'player-intelligence-state.json');
   process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = join(tempDir, 'player-engagement-rollups.json');
+  process.env.LOG_TRUTH_STORE_PATH = join(tempDir, 'log-truth.json');
 
   try {
     const modulePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
@@ -57,8 +67,19 @@ async function withFreshEventStore(run: (store: EventStoreModule) => Promise<voi
       process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = previousPlayerEngagementPath;
     }
 
+    if (previousLogTruthPath === undefined) {
+      delete process.env.LOG_TRUTH_STORE_PATH;
+    } else {
+      process.env.LOG_TRUTH_STORE_PATH = previousLogTruthPath;
+    }
+
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+async function importRollupStore(): Promise<RollupStoreModule> {
+  const modulePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence-rollup-store.ts')).href;
+  return import(modulePath);
 }
 
 test('PLAYER_LEAVE closes an active session for a known player', async () => {
@@ -188,5 +209,110 @@ test('occupancy reconciliation does not close sessions when active count matches
     assert.equal(closed.length, 0);
     assert.equal(recentEvent?.raw?.sessionReconciledCount, undefined);
     assert.equal(recentEvent?.raw?.sessionCloseReason, undefined);
+  });
+});
+
+test('recent events survive an event-store module restart through log truth storage', async () => {
+  await withFreshEventStore(async (store) => {
+    store.addEvents([
+      createEvent({
+        id: 'durable-event-1',
+        eventType: 'SERVER_ONLINE',
+        occurredAt: '2026-04-05T12:00:00.000Z',
+        message: 'server online'
+      })
+    ]);
+
+    const modulePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
+    const restartedStore: EventStoreModule = await import(`${modulePath}?t=${Date.now()}-${Math.random()}-restart`);
+    const recentEvents = restartedStore.getRecentEventsForServer('srv-1', 5);
+
+    assert.equal(recentEvents.length, 1);
+    assert.equal(recentEvents[0]?.id, 'durable-event-1');
+    assert.equal(recentEvents[0]?.eventType, 'SERVER_ONLINE');
+    assert.equal(recentEvents[0]?.message, 'server online');
+  });
+});
+
+test('duplicate PLAYER_JOIN does not mutate active sessions or recent events twice', async () => {
+  await withFreshEventStore((store) => {
+    const join = createEvent({
+      id: 'duplicate-join',
+      eventType: 'PLAYER_JOIN',
+      playerName: 'Retry Alice',
+      occurredAt: '2026-04-05T12:00:00.000Z'
+    });
+
+    store.addEvents([join]);
+    store.addEvents([join]);
+
+    const active = store.getActiveSessionsForServer('srv-1');
+    const recentEvents = store.getRecentEventsForServer('srv-1', 10);
+
+    assert.equal(active.length, 1);
+    assert.equal(active[0]?.playerName, 'Retry Alice');
+    assert.equal(active[0]?.startedAt, '2026-04-05T12:00:00.000Z');
+    assert.equal(recentEvents.length, 1);
+    assert.equal(recentEvents[0]?.id, 'duplicate-join');
+  });
+});
+
+test('duplicate PLAYER_LEAVE does not double-close or double-count playtime', async () => {
+  await withFreshEventStore(async (store) => {
+    const join = createEvent({
+      id: 'duplicate-leave-join',
+      eventType: 'PLAYER_JOIN',
+      playerName: 'Retry Bob',
+      occurredAt: '2026-04-05T12:00:00.000Z'
+    });
+    const leave = createEvent({
+      id: 'duplicate-leave',
+      eventType: 'PLAYER_LEAVE',
+      playerName: 'Retry Bob',
+      occurredAt: '2026-04-05T12:05:00.000Z'
+    });
+
+    store.addEvents([join]);
+    store.addEvents([leave]);
+    store.addEvents([leave]);
+
+    const active = store.getActiveSessionsForServer('srv-1');
+    const closed = store.getRecentClosedSessionsForServer('srv-1', 10);
+    const recentEvents = store.getRecentEventsForServer('srv-1', 10);
+    const rollups = await importRollupStore();
+    const [player] = rollups.getPersistedPlayerRollupsForServer('srv-1')
+      .filter((rollup) => rollup.displayName === 'Retry Bob');
+
+    assert.equal(active.length, 0);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0]?.durationSeconds, 300);
+    assert.equal(closed[0]?.closeReason, 'player_leave');
+    assert.equal(recentEvents.length, 2);
+    assert.deepEqual(recentEvents.map((event) => event.id), ['duplicate-leave', 'duplicate-leave-join']);
+    assert.equal(player?.sessionCount, 1);
+    assert.equal(player?.totalTrackedSeconds, 300);
+  });
+});
+
+test('duplicate unknown events do not appear twice in recent events', async () => {
+  await withFreshEventStore((store) => {
+    const chat = createEvent({
+      eventType: 'CHAT_MESSAGE',
+      playerName: 'Retry Charlie',
+      message: 'Retry Charlie: hello',
+      occurredAt: '2026-04-05T12:00:00.000Z',
+      raw: {
+        channel: 'global'
+      }
+    });
+
+    store.addEvents([chat]);
+    store.addEvents([{ ...chat }]);
+
+    const recentEvents = store.getRecentEventsForServer('srv-1', 10);
+
+    assert.equal(recentEvents.length, 1);
+    assert.equal(recentEvents[0]?.eventType, 'CHAT_MESSAGE');
+    assert.equal(recentEvents[0]?.message, 'Retry Charlie: hello');
   });
 });

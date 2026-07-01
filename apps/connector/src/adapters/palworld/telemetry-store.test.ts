@@ -68,7 +68,7 @@ test('persists player, metrics, and settings telemetry with latest state updates
     assert.equal(raw.latestPlayerStates[0]?.total_sessions, 1);
     assert.equal(raw.latestPlayerStates[0]?.max_level_seen, 14);
     assert.equal(raw.latestPlayerStates[0]?.max_building_count_seen, 8);
-    assert.equal(raw.latestPlayerStates[0]?.last_region, 'northwest-frontier');
+    assert.equal(raw.latestPlayerStates[0]?.last_region, 'central-plains');
   } finally {
     if (previousStorePath === undefined) {
       delete process.env.PALWORLD_TELEMETRY_STORE_PATH;

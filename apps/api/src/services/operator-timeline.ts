@@ -10,6 +10,7 @@ import {
   type OperatorTimelineEventType
 } from '@gameops/shared';
 import { redactSecrets } from './operator-redaction.js';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 export const DEFAULT_OPERATOR_TIMELINE_LIMIT = 5_000;
 export const DEFAULT_OPERATOR_TIMELINE_DEDUP_WINDOW_MS = 15 * 60 * 1_000;
@@ -35,8 +36,12 @@ interface OperatorTimelineFile {
   events?: unknown[];
 }
 
-function resolveTimelinePath(path = process.env.GAMEOPS_OPERATOR_TIMELINE_PATH ?? './data/operator.timeline.json'): string {
-  return isAbsolute(path) ? path : resolve(process.cwd(), path);
+function resolveTimelinePath(path?: string): string {
+  if (path) {
+    return isAbsolute(path) ? path : resolve(process.cwd(), path);
+  }
+
+  return resolveRuntimeDataPath('GAMEOPS_OPERATOR_TIMELINE_PATH', 'operator.timeline.json');
 }
 
 function getDedupWindowMs(): number {
@@ -299,4 +304,3 @@ export function appendOperatorTimelineEvents(
 ): OperatorTimelineEvent[] {
   return buildTimelineEventsFromOperatorState(context, brief).map((event) => store.appendEvent(event));
 }
-

@@ -12,6 +12,7 @@ interface OperatorReasonCardProps {
   initialError?: string | null;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export async function runOperatorAnalysis(input: {
   apiBaseUrl: string;
   reasonFetch?: ReasonFetch;

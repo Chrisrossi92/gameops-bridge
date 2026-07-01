@@ -1,4 +1,6 @@
+/* @jsxRuntime classic */
 import type { OperatorInsight, OperatorInsightsResponse } from '@gameops/shared';
+import React from 'react';
 
 interface OperatorInsightsCardProps {
   insights: OperatorInsightsResponse | null;
@@ -63,4 +65,3 @@ export function OperatorInsightsCard({ insights, loading, error }: OperatorInsig
     </article>
   );
 }
-

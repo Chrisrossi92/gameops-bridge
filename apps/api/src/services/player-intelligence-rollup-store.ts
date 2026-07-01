@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import {
   gameKeySchema,
   playerIntelligenceConfidenceSchema,
@@ -12,6 +12,7 @@ import {
 import { z } from 'zod';
 import { recordClosedSessionEngagementRollup } from './player-engagement-rollup-store.js';
 import { clearCachedResult } from './request-performance.js';
+import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const MAX_PROCESSED_SESSION_IDS = 20_000;
 const MAX_RECENT_SESSIONS_PER_PLAYER = 25;
@@ -47,8 +48,7 @@ type PlayerIntelligenceStore = z.infer<typeof playerIntelligenceStoreSchema>;
 let storeCache: { path: string; expiresAt: number; store: PlayerIntelligenceStore } | null = null;
 
 function resolveStorePath(): string {
-  const rawPath = process.env.PLAYER_INTELLIGENCE_STORE_PATH ?? '../player-intelligence-state.json';
-  return isAbsolute(rawPath) ? rawPath : resolve(process.cwd(), rawPath);
+  return resolveRuntimeDataPath('PLAYER_INTELLIGENCE_STORE_PATH', 'player-intelligence-state.json');
 }
 
 function normalize(value: string): string {

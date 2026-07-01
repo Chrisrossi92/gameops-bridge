@@ -37,6 +37,7 @@ test('returns running while heartbeat is fresh', () => {
   assert.equal(status.heartbeatAgeSeconds, 8);
   assert.equal(status.lastSuccessfulPollAt, '2026-06-10T12:00:00.000Z');
   assert.deepEqual(status.capabilities, ['players', 'metrics']);
+  assert.deepEqual(status.collectors, []);
 });
 
 test('returns stale when heartbeat is older than threshold', () => {
@@ -76,4 +77,36 @@ test('returns error details from fresh failing heartbeat', () => {
   assert.equal(status.connectorStatus, 'error');
   assert.equal(status.consecutiveFailureCount, 3);
   assert.equal(status.explanation, 'Connector reporting errors after 3 consecutive failed polls.');
+});
+
+test('returns collector health from heartbeat in operational status', () => {
+  clearConnectorHeartbeatsForTests();
+  recordConnectorHeartbeat({
+    serverId: 'srv-collectors',
+    game: 'valheim',
+    connectorMode: 'journal',
+    observedAt: '2026-06-10T12:00:00.000Z',
+    status: 'running',
+    message: 'Collector runner is active.',
+    capabilities: ['collectors'],
+    collectors: [
+      {
+        collectorId: 'valheim:srv-collectors:journal',
+        name: 'Valheim Collector',
+        game: 'valheim',
+        enabled: true,
+        lastSuccessfulCollectionAt: '2026-06-10T12:00:00.000Z',
+        lastError: null,
+        lastCollectionDurationMs: 12,
+        totalEventsEmitted: 4
+      }
+    ]
+  });
+
+  const status = getServerOperationalStatus('srv-collectors', true, new Date('2026-06-10T12:00:05.000Z'));
+
+  assert.equal(status.connectorStatus, 'running');
+  assert.equal(status.collectors.length, 1);
+  assert.equal(status.collectors[0]?.collectorId, 'valheim:srv-collectors:journal');
+  assert.equal(status.collectors[0]?.totalEventsEmitted, 4);
 });
