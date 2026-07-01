@@ -940,6 +940,9 @@ export type DataFreshnessResponse = z.infer<typeof dataFreshnessResponseSchema>;
 export const serverHealthStatusSchema = z.enum(['healthy', 'warning', 'unhealthy']);
 export type ServerHealthStatus = z.infer<typeof serverHealthStatusSchema>;
 
+export const serverEngagementHealthStatusSchema = z.enum(['active', 'inactive', 'unknown']);
+export type ServerEngagementHealthStatus = z.infer<typeof serverEngagementHealthStatusSchema>;
+
 export const serverHealthSummarySchema = z.object({
   serverId: z.string().min(1),
   status: serverHealthStatusSchema,
@@ -951,6 +954,19 @@ export const serverHealthSummarySchema = z.object({
   uniquePlayersThisWeek: z.number().int().min(0),
   lastPlayerActivityAt: z.string().datetime().nullable(),
   lastWorldSaveAt: z.string().datetime().nullable(),
+  telemetryHealth: z.object({
+    status: serverHealthStatusSchema,
+    headline: z.string().min(1),
+    explanation: z.string().min(1)
+  }),
+  engagementHealth: z.object({
+    status: serverEngagementHealthStatusSchema,
+    headline: z.string().min(1),
+    explanation: z.string().min(1),
+    currentPlayers: z.number().int().min(0),
+    uniquePlayersThisWeek: z.number().int().min(0),
+    lastPlayerActivityAt: z.string().datetime().nullable()
+  }),
   collectorHealth: z.object({
     status: serverHealthStatusSchema,
     totalCollectors: z.number().int().min(0),

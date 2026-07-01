@@ -44,6 +44,14 @@ export function OperatorServerHealthCard({ servers }: OperatorServerHealthCardPr
               </span>
             </div>
             <p>{server.health.headline}</p>
+            <div className="operator-health-split">
+              <span className={`state-pill state-${server.health.telemetryHealth.status}`}>
+                Telemetry: {server.health.telemetryHealth.status}
+              </span>
+              <span className={`state-pill state-${server.health.engagementHealth.status}`}>
+                Engagement: {server.health.engagementHealth.status}
+              </span>
+            </div>
             <div className="operator-debug-meta">
               <span>Players: {server.health.currentPlayers}</span>
               <span>Week: {server.health.uniquePlayersThisWeek}</span>

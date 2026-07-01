@@ -1,25 +1,17 @@
-import {
-  serverHealthSummarySchema,
-  type CollectorHealth,
-  type DataFreshnessStatus,
-  type DataFreshnessResponse,
-  type NormalizedEvent,
-  type PlayerIntelligenceResponse,
-  type SessionRecord,
-  type ServerEngagementHealthStatus,
-  type ServerHealthStatus,
-  type ServerHealthSummary,
-  type ServerOperationalStatus
+import type {
+  CollectorHealth,
+  DataFreshnessResponse,
+  DataFreshnessStatus,
+  NormalizedEvent,
+  PlayerIntelligenceResponse,
+  ServerEngagementHealthStatus,
+  ServerHealthStatus,
+  ServerHealthSummary,
+  ServerOperationalStatus,
+  SessionRecord
 } from '@gameops/shared';
-import { getServerOperationalStatus } from './connector-heartbeat.js';
-import { getDataFreshnessForServer } from './data-freshness.js';
-import { getActiveSessionsForServer, getRecentClosedSessionsForServer, getRecentEventsForServer } from './event-store.js';
-import { getPlayerIntelligenceForServer } from './player-intelligence.js';
-import { getCachedResult } from './request-performance.js';
-import { buildServerHealthSummary as buildServerHealthSummaryFromInputs } from './server-health-summary.js';
-import { isServerConfigured } from './server-config.js';
+import { serverHealthSummarySchema } from '@gameops/shared';
 
-const SERVER_HEALTH_CACHE_TTL_MS = 10_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function maxTimestamp(values: Array<string | null | undefined>): string | null {
@@ -34,7 +26,6 @@ function isWithinWeek(value: string | null, now: Date): boolean {
   }
 
   const timestamp = Date.parse(value);
-
   return Number.isFinite(timestamp) && now.getTime() - timestamp <= WEEK_MS;
 }
 
@@ -59,7 +50,6 @@ function collectorLastSuccess(collector: CollectorHealth): string | null {
 
 function summarizeCollectors(operationalStatus: ServerOperationalStatus): ServerHealthSummary['collectorHealth'] {
   const collectors = operationalStatus.collectors;
-  const enabledCollectors = collectors.filter((collector) => collector.enabled);
   const unhealthyCollectors = collectors.filter(collectorHasError);
   const status: ServerHealthStatus = unhealthyCollectors.length > 0 || operationalStatus.connectorStatus === 'error'
     ? 'unhealthy'
@@ -70,7 +60,7 @@ function summarizeCollectors(operationalStatus: ServerOperationalStatus): Server
   return {
     status,
     totalCollectors: collectors.length,
-    enabledCollectors: enabledCollectors.length,
+    enabledCollectors: collectors.filter((collector) => collector.enabled).length,
     unhealthyCollectors: unhealthyCollectors.length,
     lastSuccessfulCollectionAt: maxTimestamp(collectors.map(collectorLastSuccess)),
     summaries: collectors.map((collector) => {
@@ -88,7 +78,6 @@ function summarizeCollectors(operationalStatus: ServerOperationalStatus): Server
 
 function isWorldSaveEvent(event: NormalizedEvent): boolean {
   const category = typeof event.raw?.valheimEventCategory === 'string' ? event.raw.valheimEventCategory : null;
-
   return category === 'world_saved' || /world saved/i.test(event.message ?? '');
 }
 
@@ -131,32 +120,19 @@ function getTelemetryStatus(input: {
 }
 
 function getTelemetryHeadline(status: ServerHealthStatus): string {
-  if (status === 'healthy') {
-    return 'Telemetry healthy';
-  }
-
-  if (status === 'unhealthy') {
-    return 'Telemetry unhealthy';
-  }
-
-  return 'Telemetry warning';
+  return status === 'healthy' ? 'Telemetry healthy' : status === 'unhealthy' ? 'Telemetry unhealthy' : 'Telemetry warning';
 }
 
 function getEngagementStatus(input: {
   telemetryStatus: ServerHealthStatus;
   currentPlayers: number;
   uniquePlayersThisWeek: number;
-  lastPlayerActivityAt: string | null;
 }): ServerEngagementHealthStatus {
   if (input.telemetryStatus === 'unhealthy' && input.uniquePlayersThisWeek === 0 && input.currentPlayers === 0) {
     return 'unknown';
   }
 
-  if (input.currentPlayers > 0 || input.uniquePlayersThisWeek > 0) {
-    return 'active';
-  }
-
-  return input.lastPlayerActivityAt ? 'inactive' : 'inactive';
+  return input.currentPlayers > 0 || input.uniquePlayersThisWeek > 0 ? 'active' : 'inactive';
 }
 
 function getEngagementHeadline(input: {
@@ -189,36 +165,25 @@ export function buildServerHealthSummary(input: {
   recentClosedSessions: SessionRecord[];
   recentEvents: NormalizedEvent[];
 }): ServerHealthSummary {
-  const {
-    serverId,
-    now,
-    operationalStatus,
-    freshness,
-    playerIntelligence,
-    activeSessions,
-    recentClosedSessions,
-    recentEvents
-  } = input;
-  const collectorHealth = summarizeCollectors(operationalStatus);
-  const logTruthHealth = freshness.logTruth ?? null;
-  const currentPlayers = activeSessions.length;
-  const uniquePlayersThisWeek = playerIntelligence.players
-    .filter((player) => isWithinWeek(player.lastSeenAt, now))
+  const collectorHealth = summarizeCollectors(input.operationalStatus);
+  const logTruthHealth = input.freshness.logTruth ?? null;
+  const currentPlayers = input.activeSessions.length;
+  const uniquePlayersThisWeek = input.playerIntelligence.players
+    .filter((player) => isWithinWeek(player.lastSeenAt, input.now))
     .length;
   const lastPlayerActivityAt = maxTimestamp([
-    freshness.lastSessionActivityAt,
-    ...playerIntelligence.players.map((player) => player.lastSeenAt)
+    input.freshness.lastSessionActivityAt,
+    ...input.playerIntelligence.players.map((player) => player.lastSeenAt)
   ]);
-  const lastWorldSaveAt = recentEvents.find(isWorldSaveEvent)?.occurredAt ?? null;
-  const sessionIsStale = freshness.status === 'stale' || (operationalStatus.connectorStatus === 'stale' && activeSessions.length > 0);
+  const lastWorldSaveAt = input.recentEvents.find(isWorldSaveEvent)?.occurredAt ?? null;
+  const sessionIsStale = input.freshness.status === 'stale'
+    || (input.operationalStatus.connectorStatus === 'stale' && input.activeSessions.length > 0);
   const sessionStatus: ServerHealthStatus = sessionIsStale ? 'warning' : 'healthy';
   const reasons: string[] = [];
 
-  if (freshness.status === 'error') {
-    reasons.push(freshness.explanation);
-  } else if (freshness.status === 'stale' || freshness.status === 'historical') {
-    reasons.push(freshness.explanation);
-  } else if (freshness.status === 'not_started') {
+  if (input.freshness.status === 'error' || input.freshness.status === 'stale' || input.freshness.status === 'historical') {
+    reasons.push(input.freshness.explanation);
+  } else if (input.freshness.status === 'not_started') {
     reasons.push('Connector has not reported and no server activity has been observed.');
   }
 
@@ -235,7 +200,7 @@ export function buildServerHealthSummary(input: {
   }
 
   const telemetryStatus = getTelemetryStatus({
-    freshnessStatus: freshness.status,
+    freshnessStatus: input.freshness.status,
     collectorHealth,
     logTruthStatus: logTruthHealth?.status ?? null,
     sessionStatus
@@ -243,8 +208,7 @@ export function buildServerHealthSummary(input: {
   const engagementStatus = getEngagementStatus({
     telemetryStatus,
     currentPlayers,
-    uniquePlayersThisWeek,
-    lastPlayerActivityAt
+    uniquePlayersThisWeek
   });
   const telemetryHeadline = getTelemetryHeadline(telemetryStatus);
   const engagementHeadline = getEngagementHeadline({
@@ -252,18 +216,17 @@ export function buildServerHealthSummary(input: {
     currentPlayers,
     uniquePlayersThisWeek
   });
-  const status = telemetryStatus;
   const explanation = telemetryStatus === 'healthy'
     ? 'Connector telemetry, collectors, Log Truth, and session state are currently healthy.'
     : Array.from(new Set(reasons)).join(' ');
 
   return serverHealthSummarySchema.parse({
-    serverId,
-    status,
+    serverId: input.serverId,
+    status: telemetryStatus,
     headline: `${telemetryHeadline}; ${engagementHeadline}`,
     explanation,
-    recommendedAction: getRecommendedAction(status, reasons),
-    generatedAt: now.toISOString(),
+    recommendedAction: getRecommendedAction(telemetryStatus, reasons),
+    generatedAt: input.now.toISOString(),
     currentPlayers,
     uniquePlayersThisWeek,
     lastPlayerActivityAt,
@@ -289,35 +252,18 @@ export function buildServerHealthSummary(input: {
     logTruthHealth,
     sessionHealth: {
       status: sessionStatus,
-      activeSessions: activeSessions.length,
-      recentClosedSessions: recentClosedSessions.length,
+      activeSessions: input.activeSessions.length,
+      recentClosedSessions: input.recentClosedSessions.length,
       stale: sessionIsStale,
       explanation: sessionIsStale
         ? 'Connector heartbeat is stale while sessions are still active.'
         : 'Session tracking is current.'
     },
     telemetry: {
-      status: freshness.status,
-      connectorStatus: operationalStatus.connectorStatus,
-      lastHeartbeatAt: operationalStatus.lastHeartbeatAt,
-      lastSuccessfulPollAt: operationalStatus.lastSuccessfulPollAt
+      status: input.freshness.status,
+      connectorStatus: input.operationalStatus.connectorStatus,
+      lastHeartbeatAt: input.operationalStatus.lastHeartbeatAt,
+      lastSuccessfulPollAt: input.operationalStatus.lastSuccessfulPollAt
     }
   });
-}
-
-function computeServerHealthSummary(serverId: string, now = new Date()): ServerHealthSummary {
-  return buildServerHealthSummaryFromInputs({
-    serverId,
-    now,
-    operationalStatus: getServerOperationalStatus(serverId, isServerConfigured(serverId), now),
-    freshness: getDataFreshnessForServer(serverId, now),
-    playerIntelligence: getPlayerIntelligenceForServer(serverId),
-    activeSessions: getActiveSessionsForServer(serverId),
-    recentClosedSessions: getRecentClosedSessionsForServer(serverId, 25),
-    recentEvents: getRecentEventsForServer(serverId, 250)
-  });
-}
-
-export function getServerHealthSummary(serverId: string, now = new Date()): ServerHealthSummary {
-  return getCachedResult(`server-health:${serverId}`, SERVER_HEALTH_CACHE_TTL_MS, () => computeServerHealthSummary(serverId, now));
 }

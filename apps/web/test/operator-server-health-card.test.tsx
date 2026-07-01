@@ -18,6 +18,19 @@ function health(overrides: Partial<ServerHealthSummary> = {}): ServerHealthSumma
     uniquePlayersThisWeek: 2,
     lastPlayerActivityAt: generatedAt,
     lastWorldSaveAt: generatedAt,
+    telemetryHealth: {
+      status: 'healthy',
+      headline: 'Telemetry healthy',
+      explanation: 'Connector telemetry, collectors, Log Truth, and session state are currently healthy.'
+    },
+    engagementHealth: {
+      status: 'active',
+      headline: '2 players active this week',
+      explanation: 'Recent player activity was captured from sessions and player intelligence.',
+      currentPlayers: 1,
+      uniquePlayersThisWeek: 2,
+      lastPlayerActivityAt: generatedAt
+    },
     collectorHealth: {
       status: 'healthy',
       totalCollectors: 1,
@@ -52,7 +65,7 @@ function health(overrides: Partial<ServerHealthSummary> = {}): ServerHealthSumma
   };
 }
 
-test('operator server health card renders healthy warning and unhealthy summaries', () => {
+test('operator server health card renders telemetry and engagement health separately', () => {
   const html = renderToStaticMarkup(
     <OperatorServerHealthCard
       servers={[
@@ -66,18 +79,30 @@ test('operator server health card renders healthy warning and unhealthy summarie
           game: 'valheim',
           health: health({
             serverId: 'server-2',
-            status: 'warning',
-            headline: 'Warning: no server activity observed yet',
-            recommendedAction: 'Check connector status',
+            status: 'healthy',
+            headline: 'Telemetry healthy; no player activity captured this week',
             currentPlayers: 0,
             uniquePlayersThisWeek: 0,
             lastPlayerActivityAt: null,
             lastWorldSaveAt: null,
+            telemetryHealth: {
+              status: 'healthy',
+              headline: 'Telemetry healthy',
+              explanation: 'Connector telemetry, collectors, Log Truth, and session state are currently healthy.'
+            },
+            engagementHealth: {
+              status: 'inactive',
+              headline: 'no player activity captured this week',
+              explanation: 'Telemetry is available, but no player activity has been captured this week.',
+              currentPlayers: 0,
+              uniquePlayersThisWeek: 0,
+              lastPlayerActivityAt: null
+            },
             telemetry: {
-              status: 'not_started',
-              connectorStatus: 'unknown',
-              lastHeartbeatAt: null,
-              lastSuccessfulPollAt: null
+              status: 'live',
+              connectorStatus: 'running',
+              lastHeartbeatAt: generatedAt,
+              lastSuccessfulPollAt: generatedAt
             }
           })
         },
@@ -87,8 +112,21 @@ test('operator server health card renders healthy warning and unhealthy summarie
           health: health({
             serverId: 'server-3',
             status: 'unhealthy',
-            headline: 'Unhealthy: telemetry or persistence requires attention',
+            headline: 'Telemetry unhealthy; engagement unknown',
             recommendedAction: 'Check collector logs and heartbeat payloads',
+            telemetryHealth: {
+              status: 'unhealthy',
+              headline: 'Telemetry unhealthy',
+              explanation: '1 collector issue detected.'
+            },
+            engagementHealth: {
+              status: 'unknown',
+              headline: 'engagement unknown',
+              explanation: 'Engagement cannot be trusted until telemetry is healthy.',
+              currentPlayers: 0,
+              uniquePlayersThisWeek: 0,
+              lastPlayerActivityAt: null
+            },
             collectorHealth: {
               status: 'unhealthy',
               totalCollectors: 1,
@@ -105,11 +143,14 @@ test('operator server health card renders healthy warning and unhealthy summarie
 
   assert.match(html, /Server Health/);
   assert.match(html, /Valheim Local/);
-  assert.match(html, /Healthy: 1 online/);
+  assert.match(html, /Telemetry: healthy/);
+  assert.match(html, /Engagement: active/);
+  assert.match(html, /Telemetry healthy; no player activity captured this week/);
   assert.match(html, /Quiet Server/);
-  assert.match(html, /Check connector status/);
+  assert.match(html, /Engagement: inactive/);
   assert.match(html, /Collector Error/);
-  assert.match(html, /unhealthy/);
+  assert.match(html, /Telemetry unhealthy; engagement unknown/);
+  assert.match(html, /Engagement: unknown/);
   assert.match(html, /Players: 1/);
   assert.match(html, /Week: 2/);
   assert.match(html, /Log Truth: healthy/);

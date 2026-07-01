@@ -464,6 +464,13 @@
   font-size: 0.82rem;
 }
 
+.operator-health-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+
 .operator-health-action {
   display: inline-flex;
   width: fit-content;
@@ -2847,6 +2854,16 @@
 .state-unhealthy {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.state-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.state-inactive {
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .state-restarting,

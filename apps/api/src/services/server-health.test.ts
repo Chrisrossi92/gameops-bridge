@@ -1,303 +1,233 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
-import type { CollectorHealth, NormalizedEvent, ServerHealthSummary } from '@gameops/shared';
+import type {
+  CollectorHealth,
+  DataFreshnessResponse,
+  NormalizedEvent,
+  PlayerIntelligenceResponse,
+  ServerOperationalStatus,
+  SessionRecord
+} from '@gameops/shared';
+import { buildServerHealthSummary } from './server-health-summary.js';
 
-type EventStoreModule = {
-  addEvents: (events: NormalizedEvent[]) => void;
-};
+const now = new Date('2026-06-11T12:00:08.000Z');
+const generatedAt = '2026-06-11T12:00:00.000Z';
 
-type HeartbeatModule = {
-  clearConnectorHeartbeatsForTests: () => void;
-  recordConnectorHeartbeat: (input: {
-    serverId: string;
-    game: 'valheim' | 'palworld';
-    connectorMode: 'journal' | 'rest';
-    observedAt: string;
-    status: 'running' | 'degraded' | 'error';
-    message: string;
-    lastSuccessfulPollAt?: string;
-    consecutiveFailureCount?: number;
-    capabilities?: string[];
-    collectors?: CollectorHealth[];
-  }) => void;
-};
-
-type ServerHealthModule = {
-  getServerHealthSummary: (serverId: string, now?: Date) => ServerHealthSummary;
-};
-
-function createConfig(path: string, serverId: string, game: 'valheim' | 'palworld' = 'valheim'): void {
-  writeFileSync(path, JSON.stringify({
-    version: 1,
-    workspace: {
-      workspaceId: 'test',
-      workspaceName: 'Test',
-      ownerName: 'Test Owner',
-      hostingMode: 'self_hosted',
-      timezone: 'UTC'
-    },
-    api: {
-      baseUrl: 'http://localhost:3001',
-      port: 3001
-    },
-    discord: {
-      enabled: false
-    },
-    servers: [
-      game === 'palworld'
-        ? {
-            id: serverId,
-            displayName: serverId,
-            game,
-            connector: {
-              mode: 'rest',
-              restHost: '127.0.0.1',
-              restPort: 8212,
-              restUsername: 'admin',
-              restPassword: 'secret'
-            }
-          }
-        : {
-            id: serverId,
-            displayName: serverId,
-            game,
-            connector: {
-              mode: 'journal',
-              journalServiceName: 'valheim.service'
-            }
-          }
-    ],
-    featureFlags: {
-      dashboardEnabled: true,
-      botEnabled: true,
-      connectorEnabled: true,
-      identityResolutionEnabled: true,
-      sessionReconciliationEnabled: true
-    }
-  }, null, 2), 'utf8');
-}
-
-function createEvent(serverId: string, overrides: Partial<NormalizedEvent>): NormalizedEvent {
+function operationalStatus(overrides: Partial<ServerOperationalStatus> = {}): ServerOperationalStatus {
   return {
-    game: 'valheim',
-    serverId,
-    occurredAt: '2026-06-11T12:00:00.000Z',
-    eventType: 'HEALTH_WARN',
+    serverId: 'health-test',
+    configured: true,
+    connectorStatus: 'running',
+    lastHeartbeatAt: generatedAt,
+    lastSuccessfulPollAt: generatedAt,
+    explanation: 'Connector running.',
+    heartbeatAgeSeconds: 8,
+    consecutiveFailureCount: 0,
+    connectorMode: 'journal',
+    capabilities: [],
+    collectors: [],
     ...overrides
   };
 }
 
-async function withServerHealth(run: (modules: {
-  store: EventStoreModule;
-  heartbeat: HeartbeatModule;
-  serverHealth: ServerHealthModule;
-  tempDir: string;
-}) => Promise<void> | void): Promise<void> {
-  const tempDir = mkdtempSync(join(tmpdir(), 'gameops-server-health-test-'));
-  const previousSessionPath = process.env.SESSION_STATE_STORE_PATH;
-  const previousKnownPath = process.env.KNOWN_PLAYER_STORE_PATH;
-  const previousTelemetryPath = process.env.PALWORLD_TELEMETRY_STORE_PATH;
-  const previousPlayersSummaryPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH;
-  const previousPlayerIntelligencePath = process.env.PLAYER_INTELLIGENCE_STORE_PATH;
-  const previousPlayerEngagementPath = process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
-  const previousLogTruthPath = process.env.LOG_TRUTH_STORE_PATH;
-  const previousConfigPath = process.env.GAMEOPS_CONFIG_PATH;
-
-  process.env.SESSION_STATE_STORE_PATH = join(tempDir, 'session-state.json');
-  process.env.KNOWN_PLAYER_STORE_PATH = join(tempDir, 'known-players.json');
-  process.env.PALWORLD_TELEMETRY_STORE_PATH = join(tempDir, 'palworld-telemetry.json');
-  process.env.PALWORLD_PLAYERS_SUMMARY_PATH = join(tempDir, 'players-summary.json');
-  process.env.PLAYER_INTELLIGENCE_STORE_PATH = join(tempDir, 'player-intelligence-state.json');
-  process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = join(tempDir, 'player-engagement-rollups.json');
-  process.env.LOG_TRUTH_STORE_PATH = join(tempDir, 'log-truth.json');
-  process.env.GAMEOPS_CONFIG_PATH = join(tempDir, 'gameops.config.json');
-
-  try {
-    const nonce = `${Date.now()}-${Math.random()}`;
-    const storePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
-    const heartbeatPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/connector-heartbeat.ts')).href;
-    const serverHealthPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/server-health.ts')).href;
-    const store: EventStoreModule = await import(storePath);
-    const heartbeat: HeartbeatModule = await import(heartbeatPath);
-    const serverHealth: ServerHealthModule = await import(`${serverHealthPath}?t=${nonce}`);
-    heartbeat.clearConnectorHeartbeatsForTests();
-    await run({ store, heartbeat, serverHealth, tempDir });
-  } finally {
-    if (previousSessionPath === undefined) delete process.env.SESSION_STATE_STORE_PATH;
-    else process.env.SESSION_STATE_STORE_PATH = previousSessionPath;
-
-    if (previousKnownPath === undefined) delete process.env.KNOWN_PLAYER_STORE_PATH;
-    else process.env.KNOWN_PLAYER_STORE_PATH = previousKnownPath;
-
-    if (previousTelemetryPath === undefined) delete process.env.PALWORLD_TELEMETRY_STORE_PATH;
-    else process.env.PALWORLD_TELEMETRY_STORE_PATH = previousTelemetryPath;
-
-    if (previousPlayersSummaryPath === undefined) delete process.env.PALWORLD_PLAYERS_SUMMARY_PATH;
-    else process.env.PALWORLD_PLAYERS_SUMMARY_PATH = previousPlayersSummaryPath;
-
-    if (previousPlayerIntelligencePath === undefined) delete process.env.PLAYER_INTELLIGENCE_STORE_PATH;
-    else process.env.PLAYER_INTELLIGENCE_STORE_PATH = previousPlayerIntelligencePath;
-
-    if (previousPlayerEngagementPath === undefined) delete process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
-    else process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = previousPlayerEngagementPath;
-
-    if (previousLogTruthPath === undefined) delete process.env.LOG_TRUTH_STORE_PATH;
-    else process.env.LOG_TRUTH_STORE_PATH = previousLogTruthPath;
-
-    if (previousConfigPath === undefined) delete process.env.GAMEOPS_CONFIG_PATH;
-    else process.env.GAMEOPS_CONFIG_PATH = previousConfigPath;
-
-    rmSync(tempDir, { recursive: true, force: true });
-  }
+function freshness(overrides: Partial<DataFreshnessResponse> = {}): DataFreshnessResponse {
+  return {
+    serverId: 'health-test',
+    status: 'live',
+    headline: 'Live data',
+    explanation: 'Live: connector last heard 8 seconds ago.',
+    lastHeartbeatAt: generatedAt,
+    heartbeatAgeSeconds: 8,
+    lastSuccessfulPollAt: generatedAt,
+    lastEventAt: null,
+    lastSessionActivityAt: null,
+    connectorStatus: 'running',
+    confidence: 'high',
+    trustWarnings: [],
+    recommendedAction: 'No action needed',
+    logTruth: {
+      status: 'healthy',
+      path: '/tmp/log-truth.json',
+      readable: true,
+      writable: true,
+      lastSuccessfulAppendAt: generatedAt,
+      lastError: null,
+      totalEventCount: 1
+    },
+    ...overrides
+  };
 }
 
-test('server health summarizes a healthy server', async () => {
-  await withServerHealth(({ store, heartbeat, serverHealth, tempDir }) => {
-    createConfig(join(tempDir, 'gameops.config.json'), 'health-ok');
-    heartbeat.recordConnectorHeartbeat({
-      serverId: 'health-ok',
-      game: 'valheim',
-      connectorMode: 'journal',
-      observedAt: '2026-06-11T12:00:00.000Z',
-      status: 'running',
-      message: 'Journal stream is active.',
-      lastSuccessfulPollAt: '2026-06-11T12:00:00.000Z',
-      collectors: [{
-        collectorId: 'valheim',
-        name: 'Valheim Collector Shadow',
-        game: 'valheim',
-        enabled: true,
-        lastSuccessfulCollectionAt: '2026-06-11T12:00:00.000Z',
-        lastError: null,
-        lastCollectionDurationMs: 10,
-        totalEventsEmitted: 2
-      }]
-    });
-    store.addEvents([
-      createEvent('health-ok', {
-        id: 'health-ok-join',
-        eventType: 'PLAYER_JOIN',
-        playerName: 'Mira',
-        occurredAt: '2026-06-11T12:00:01.000Z'
-      }),
-      createEvent('health-ok', {
-        id: 'health-ok-world-save',
-        eventType: 'HEALTH_WARN',
-        message: 'World saved',
-        occurredAt: '2026-06-11T12:00:02.000Z',
-        raw: { valheimEventCategory: 'world_saved' }
-      })
-    ]);
+function playerIntelligence(players: PlayerIntelligenceResponse['players'] = []): PlayerIntelligenceResponse {
+  return {
+    serverId: 'health-test',
+    explanation: 'Player intelligence test data.',
+    players
+  };
+}
 
-    const result = serverHealth.getServerHealthSummary('health-ok', new Date('2026-06-11T12:00:08.000Z'));
+function player(name: string, lastSeenAt: string): PlayerIntelligenceResponse['players'][number] {
+  return {
+    playerId: `health-test:${name}`,
+    serverId: 'health-test',
+    displayName: name,
+    aliases: [],
+    game: 'valheim',
+    identityConfidence: 'high',
+    identityExplanation: 'Test player.',
+    firstSeenAt: lastSeenAt,
+    lastSeenAt,
+    isOnline: false,
+    activeSessionId: null,
+    totalTrackedSeconds: 600,
+    sessionCount: 1,
+    averageSessionSeconds: 600,
+    sourceSummary: ['test']
+  };
+}
 
-    assert.equal(result.status, 'healthy');
-    assert.equal(result.currentPlayers, 1);
-    assert.equal(result.uniquePlayersThisWeek, 1);
-    assert.equal(result.lastWorldSaveAt, '2026-06-11T12:00:02.000Z');
-    assert.equal(result.collectorHealth.status, 'healthy');
-    assert.equal(result.logTruthHealth?.status, 'healthy');
-    assert.match(result.headline, /Healthy/);
+function activeSession(playerName: string): SessionRecord {
+  return {
+    serverId: 'health-test',
+    playerName,
+    startedAt: '2026-06-11T12:00:01.000Z',
+    startConfidence: 'high',
+    sourceEventIds: ['join-1']
+  };
+}
+
+function collector(overrides: Partial<CollectorHealth> = {}): CollectorHealth {
+  return {
+    collectorId: 'valheim',
+    name: 'Valheim Collector Shadow',
+    game: 'valheim',
+    enabled: true,
+    lastSuccessfulCollectionAt: generatedAt,
+    lastError: null,
+    lastCollectionDurationMs: 10,
+    totalEventsEmitted: 2,
+    ...overrides
+  };
+}
+
+function worldSave(): NormalizedEvent {
+  return {
+    id: 'world-save',
+    game: 'valheim',
+    serverId: 'health-test',
+    eventType: 'HEALTH_WARN',
+    message: 'World saved',
+    occurredAt: '2026-06-11T12:00:02.000Z',
+    raw: { valheimEventCategory: 'world_saved' }
+  };
+}
+
+function build(overrides: Partial<Parameters<typeof buildServerHealthSummary>[0]> = {}) {
+  return buildServerHealthSummary({
+    serverId: 'health-test',
+    now,
+    operationalStatus: operationalStatus(),
+    freshness: freshness(),
+    playerIntelligence: playerIntelligence(),
+    activeSessions: [],
+    recentClosedSessions: [],
+    recentEvents: [],
+    ...overrides
   });
+}
+
+test('server health separates healthy telemetry with no activity', () => {
+  const result = build();
+
+  assert.equal(result.status, 'healthy');
+  assert.equal(result.telemetryHealth.status, 'healthy');
+  assert.equal(result.engagementHealth.status, 'inactive');
+  assert.equal(result.headline, 'Telemetry healthy; no player activity captured this week');
 });
 
-test('server health warns for an inactive server', async () => {
-  await withServerHealth(({ serverHealth, tempDir }) => {
-    createConfig(join(tempDir, 'gameops.config.json'), 'health-inactive');
-
-    const result = serverHealth.getServerHealthSummary('health-inactive', new Date('2026-06-11T12:00:08.000Z'));
-
-    assert.equal(result.status, 'warning');
-    assert.equal(result.currentPlayers, 0);
-    assert.equal(result.uniquePlayersThisWeek, 0);
-    assert.equal(result.telemetry.status, 'not_started');
-    assert.equal(result.recommendedAction, 'Check connector status');
+test('server health separates healthy telemetry with active players', () => {
+  const result = build({
+    operationalStatus: operationalStatus({ collectors: [collector()] }),
+    playerIntelligence: playerIntelligence([player('Mira', '2026-06-11T12:00:01.000Z')]),
+    activeSessions: [activeSession('Mira')],
+    recentEvents: [worldSave()]
   });
+
+  assert.equal(result.status, 'healthy');
+  assert.equal(result.telemetryHealth.status, 'healthy');
+  assert.equal(result.engagementHealth.status, 'active');
+  assert.equal(result.currentPlayers, 1);
+  assert.equal(result.uniquePlayersThisWeek, 1);
+  assert.equal(result.lastWorldSaveAt, '2026-06-11T12:00:02.000Z');
+  assert.equal(result.headline, 'Telemetry healthy; 1 player active this week');
 });
 
-test('server health reports unhealthy collector', async () => {
-  await withServerHealth(({ heartbeat, serverHealth, tempDir }) => {
-    createConfig(join(tempDir, 'gameops.config.json'), 'health-bad-collector');
-    heartbeat.recordConnectorHeartbeat({
-      serverId: 'health-bad-collector',
-      game: 'valheim',
-      connectorMode: 'journal',
-      observedAt: '2026-06-11T12:00:00.000Z',
-      status: 'running',
-      message: 'Journal stream is active.',
-      collectors: [{
-        collectorId: 'valheim',
-        name: 'Valheim Collector Shadow',
-        game: 'valheim',
-        enabled: true,
+test('server health reports unhealthy telemetry with unknown engagement', () => {
+  const result = build({
+    operationalStatus: operationalStatus({
+      collectors: [collector({
         lastSuccessfulCollectionAt: null,
         lastError: 'journal read failed',
         lastCollectionDurationMs: null,
         totalEventsEmitted: 0
-      }]
-    });
-
-    const result = serverHealth.getServerHealthSummary('health-bad-collector', new Date('2026-06-11T12:00:08.000Z'));
-
-    assert.equal(result.status, 'unhealthy');
-    assert.equal(result.collectorHealth.unhealthyCollectors, 1);
-    assert.match(result.explanation, /collector issue/);
-    assert.equal(result.recommendedAction, 'Check collector logs and heartbeat payloads');
+      })]
+    })
   });
+
+  assert.equal(result.status, 'unhealthy');
+  assert.equal(result.telemetryHealth.status, 'unhealthy');
+  assert.equal(result.engagementHealth.status, 'unknown');
+  assert.equal(result.headline, 'Telemetry unhealthy; engagement unknown');
+  assert.equal(result.recommendedAction, 'Check collector logs and heartbeat payloads');
 });
 
-test('server health warns for stale telemetry with active sessions', async () => {
-  await withServerHealth(({ store, heartbeat, serverHealth, tempDir }) => {
-    createConfig(join(tempDir, 'gameops.config.json'), 'health-stale');
-    heartbeat.recordConnectorHeartbeat({
-      serverId: 'health-stale',
-      game: 'valheim',
-      connectorMode: 'journal',
-      observedAt: '2026-06-11T12:00:00.000Z',
-      status: 'running',
-      message: 'Journal stream is active.'
-    });
-    store.addEvents([
-      createEvent('health-stale', {
-        id: 'health-stale-join',
-        eventType: 'PLAYER_JOIN',
-        playerName: 'Iris',
-        occurredAt: '2026-06-11T12:00:05.000Z'
-      })
-    ]);
-
-    const result = serverHealth.getServerHealthSummary('health-stale', new Date('2026-06-11T12:02:00.000Z'));
-
-    assert.equal(result.status, 'warning');
-    assert.equal(result.telemetry.connectorStatus, 'stale');
-    assert.equal(result.sessionHealth.stale, true);
-    assert.equal(result.sessionHealth.status, 'warning');
-    assert.match(result.explanation, /stale/i);
+test('server health reports stale connector with recent historical activity', () => {
+  const result = build({
+    operationalStatus: operationalStatus({
+      connectorStatus: 'stale',
+      heartbeatAgeSeconds: 720,
+      explanation: 'Connector stale. Last heard 12 minutes ago.'
+    }),
+    freshness: freshness({
+      status: 'historical',
+      headline: 'Historical data only',
+      explanation: 'Historical only: connector last heard 12 minutes ago. Showing the latest stored GameOps data.',
+      heartbeatAgeSeconds: 720,
+      connectorStatus: 'stale',
+      lastSessionActivityAt: '2026-06-11T12:10:05.000Z'
+    }),
+    playerIntelligence: playerIntelligence([player('Iris', '2026-06-11T12:10:05.000Z')])
   });
+
+  assert.equal(result.status, 'warning');
+  assert.equal(result.telemetryHealth.status, 'warning');
+  assert.equal(result.engagementHealth.status, 'active');
+  assert.equal(result.uniquePlayersThisWeek, 1);
+  assert.equal(result.headline, 'Telemetry warning; 1 player active this week');
 });
 
-test('server health reports unhealthy log truth storage', async () => {
-  await withServerHealth(({ store, serverHealth, tempDir }) => {
-    createConfig(join(tempDir, 'gameops.config.json'), 'health-log-truth');
-    const badPath = join(tempDir, 'log-truth-dir');
-    mkdirSync(badPath);
-    process.env.LOG_TRUTH_STORE_PATH = badPath;
-    store.addEvents([
-      createEvent('health-log-truth', {
-        id: 'health-log-truth-event',
-        eventType: 'SERVER_ONLINE',
-        occurredAt: '2026-06-11T12:00:01.000Z'
-      })
-    ]);
-
-    const result = serverHealth.getServerHealthSummary('health-log-truth', new Date('2026-06-11T12:00:08.000Z'));
-
-    assert.equal(result.status, 'unhealthy');
-    assert.equal(result.logTruthHealth?.status, 'unhealthy');
-    assert.equal(result.recommendedAction, 'Check log truth storage');
+test('server health reports unhealthy log truth storage', () => {
+  const result = build({
+    freshness: freshness({
+      status: 'error',
+      headline: 'Connector error',
+      explanation: 'Log truth storage is unhealthy.',
+      confidence: 'low',
+      recommendedAction: 'Check log truth storage',
+      logTruth: {
+        status: 'unhealthy',
+        path: '/tmp/log-truth.json',
+        readable: false,
+        writable: false,
+        lastSuccessfulAppendAt: null,
+        lastError: 'permission denied',
+        totalEventCount: 0
+      }
+    })
   });
+
+  assert.equal(result.status, 'unhealthy');
+  assert.equal(result.telemetryHealth.status, 'unhealthy');
+  assert.equal(result.logTruthHealth?.status, 'unhealthy');
+  assert.equal(result.recommendedAction, 'Check log truth storage');
 });
