@@ -850,7 +850,7 @@ export const collectorHealthSchema = z.object({
     lastRunAt: z.string().datetime().nullable(),
     lastDurationMs: z.number().int().min(0).nullable(),
     eventCount: z.number().int().min(0),
-    eventTypes: z.array(eventTypeSchema),
+    eventTypes: z.array(z.string().min(1)),
     lastError: z.string().min(1).nullable(),
     parityStatus: z.enum(['not_run', 'matching', 'mismatch', 'not_available', 'error'])
   }).optional()

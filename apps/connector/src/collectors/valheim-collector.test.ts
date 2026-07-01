@@ -53,6 +53,24 @@ test('ValheimCollector ignores unknown lines like the existing parser', () => {
   assert.deepEqual(collector.collectLines([line]), []);
 });
 
+test('ValheimCollector shadow mode emits operational category labels', () => {
+  const collector = new ValheimCollector({
+    serverId: 'valheim-shadow-categories',
+    enabled: true,
+    mode: 'journal',
+    includeOperationalEventCategories: true
+  });
+  const line = '07/01/2026 10:00:00: World saved';
+
+  const events = collector.collectLines([line]);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.eventType, 'CHAT_MESSAGE');
+  assert.equal(events[0]?.raw?.valheimEventCategory, 'world_saved');
+  assert.equal(events[0]?.raw?.valheimEventConfidence, 'high');
+  assert.equal(events[0]?.raw?.valheimRawLine, line);
+});
+
 test('ValheimCollector file mode collects only new parsed lines', async () => {
   const tempDir = mkdtempSync(join(tmpdir(), 'gameops-valheim-collector-test-'));
   const logFile = join(tempDir, 'valheim.log');

@@ -2,7 +2,29 @@ import type { NormalizedEvent } from '@gameops/shared';
 import { normalizedEventSchema } from '@gameops/shared';
 import type { GameLogAdapter, ParseContext } from '../types.js';
 
-function splitTimestampAndMessage(line: string): { occurredAt: string; message: string } {
+export type ValheimEventCategory =
+  | 'world_saved'
+  | 'connection_count'
+  | 'player_connected_hint'
+  | 'player_disconnected_hint'
+  | 'socket_closed'
+  | 'server_token_refresh'
+  | 'health_noise'
+  | 'unknown_event';
+
+export type ValheimEventConfidence = 'low' | 'medium' | 'high';
+
+export interface ValheimLineClassification {
+  category: ValheimEventCategory;
+  confidence: ValheimEventConfidence;
+  occurredAt: string;
+  message: string;
+  rawLine: string;
+  emitShadowEvent: boolean;
+  details?: Record<string, string | number | boolean>;
+}
+
+export function splitTimestampAndMessage(line: string): { occurredAt: string; message: string } {
   const timestampMatch = /^\[(.+?)\]\s*(.*)$/.exec(line);
 
   if (!timestampMatch) {
@@ -21,7 +43,7 @@ function splitTimestampAndMessage(line: string): { occurredAt: string; message: 
   };
 }
 
-function normalizeJournalPrefixes(message: string): string {
+export function normalizeJournalPrefixes(message: string): string {
   let normalized = message.trim();
 
   // Example: Apr 02 10:28:44 ubuntu-32gb-ash-2 run-valheim.sh[467370]:
@@ -34,6 +56,15 @@ function normalizeJournalPrefixes(message: string): string {
   normalized = normalized.replace(/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}:\s*/, '');
 
   return normalized.trim();
+}
+
+function parseInteger(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function createEvent(input: Omit<NormalizedEvent, 'game'>): NormalizedEvent {
@@ -70,6 +101,109 @@ function extractPlayerName(message: string, pattern: RegExp): string | null {
 
   // Strip trailing metadata segments that often appear in journal lines.
   return captured.replace(/\s+\(.*\)$/, '').replace(/\s+\[.*\]$/, '');
+}
+
+export function classifyValheimLine(line: string): ValheimLineClassification {
+  const { occurredAt, message: rawMessage } = splitTimestampAndMessage(line);
+  const message = normalizeJournalPrefixes(rawMessage);
+  const base = {
+    occurredAt,
+    message,
+    rawLine: line
+  };
+
+  if (!message) {
+    return {
+      ...base,
+      category: 'unknown_event',
+      confidence: 'low',
+      emitShadowEvent: false
+    };
+  }
+
+  if (/world saved/i.test(message)) {
+    return {
+      ...base,
+      category: 'world_saved',
+      confidence: 'high',
+      emitShadowEvent: true
+    };
+  }
+
+  const connectionCountMatch = /connections\s+(\d+)\s+zdos[:\s]+(\d+)(?:\s+sent[:\s]+(\d+))?(?:\s+recv[:\s]+(\d+))?/i.exec(message);
+  if (connectionCountMatch) {
+    return {
+      ...base,
+      category: 'connection_count',
+      confidence: 'high',
+      emitShadowEvent: true,
+      details: {
+        connections: parseInteger(connectionCountMatch[1]) ?? 0,
+        zdos: parseInteger(connectionCountMatch[2]) ?? 0,
+        sent: parseInteger(connectionCountMatch[3]) ?? 0,
+        recv: parseInteger(connectionCountMatch[4]) ?? 0
+      }
+    };
+  }
+
+  if (/rpc_disconnect/i.test(message)) {
+    return {
+      ...base,
+      category: 'player_disconnected_hint',
+      confidence: 'medium',
+      emitShadowEvent: true
+    };
+  }
+
+  const closingSocketMatch = /closing socket\s+([a-z0-9:_-]+)/i.exec(message);
+  if (closingSocketMatch || /zplayfabsocket::dispose/i.test(message)) {
+    return {
+      ...base,
+      category: 'socket_closed',
+      confidence: 'medium',
+      emitShadowEvent: true,
+      details: {
+        ...(closingSocketMatch?.[1] ? { socketId: closingSocketMatch[1] } : {})
+      }
+    };
+  }
+
+  if (/update playfab entity token|entity token/i.test(message)) {
+    return {
+      ...base,
+      category: 'server_token_refresh',
+      confidence: 'high',
+      emitShadowEvent: true
+    };
+  }
+
+  if (/lobby refreshed|refresh(?:ed)? lobby/i.test(message)) {
+    return {
+      ...base,
+      category: 'health_noise',
+      confidence: 'high',
+      emitShadowEvent: true,
+      details: {
+        noiseType: 'lobby_refreshed'
+      }
+    };
+  }
+
+  if (/got character zdoid from/i.test(message)) {
+    return {
+      ...base,
+      category: 'player_connected_hint',
+      confidence: 'medium',
+      emitShadowEvent: true
+    };
+  }
+
+  return {
+    ...base,
+    category: 'unknown_event',
+    confidence: 'low',
+    emitShadowEvent: false
+  };
 }
 
 function extractDisconnectPlayerName(message: string): string | null {

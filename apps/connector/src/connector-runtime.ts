@@ -2,7 +2,6 @@ import {
   connectorHeartbeatRequestSchema,
   type CollectorHealth,
   type ConnectorHeartbeat,
-  type EventType,
   type GameKey,
   type NormalizedEvent
 } from '@gameops/shared';
@@ -43,16 +42,19 @@ export interface ConnectorHeartbeatBuildInput {
 
 type ValheimCollectorShadowParityStatus = NonNullable<CollectorHealth['shadow']>['parityStatus'];
 
-function eventTypes(events: NormalizedEvent[]): EventType[] {
-  return events.map((event) => event.eventType);
+function eventTypes(events: NormalizedEvent[]): string[] {
+  return events.map((event) => {
+    const category = event.raw?.valheimEventCategory;
+    return typeof category === 'string' && category.length > 0 ? category : event.eventType;
+  });
 }
 
-function sameEventTypes(left: EventType[], right: EventType[]): boolean {
+function sameEventTypes(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((eventType, index) => eventType === right[index]);
 }
 
 function resolveParityStatus(input: {
-  collectedTypes: EventType[];
+  collectedTypes: string[];
   oldPathEvents?: NormalizedEvent[] | undefined;
 }): ValheimCollectorShadowParityStatus {
   if (!input.oldPathEvents) {
@@ -147,7 +149,7 @@ export class ValheimCollectorShadowMode {
   private lastRunAt: string | null = null;
   private lastDurationMs: number | null = null;
   private eventCount = 0;
-  private lastEventTypes: EventType[] = [];
+  private lastEventTypes: string[] = [];
   private lastError: string | null = null;
   private parityStatus: ValheimCollectorShadowParityStatus = 'not_run';
   private totalCollectedEvents = 0;
@@ -250,6 +252,7 @@ export function createValheimCollectorShadow(settings: ValheimCollectorShadowSet
     mode: settings.mode,
     label: 'Valheim Collector Shadow',
     ...(settings.backfillLines !== undefined ? { shadowBackfillLines: settings.backfillLines } : {}),
+    includeOperationalEventCategories: true,
     ...(settings.logFile ? { logFile: settings.logFile } : {}),
     ...(settings.journalServiceName ? { journalServiceName: settings.journalServiceName } : {})
   }), {

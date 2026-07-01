@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { NormalizedEvent } from '@gameops/shared';
 import { readValheimJournalRecentLines } from '../adapters/valheim/journal.js';
-import { valheimAdapter } from '../adapters/valheim/parser.js';
+import { classifyValheimLine, valheimAdapter } from '../adapters/valheim/parser.js';
 import { BaseCollector } from './base.js';
 import type { CollectorConfiguration } from './types.js';
 
@@ -21,10 +21,52 @@ export class ValheimCollector extends BaseCollector {
     return valheimAdapter.parseLine(line, { serverId: this.configuration.serverId });
   }
 
+  private classifyLineForShadow(line: string): NormalizedEvent | null {
+    if (!this.configuration.includeOperationalEventCategories) {
+      return null;
+    }
+
+    const classification = classifyValheimLine(line);
+
+    if (!classification.emitShadowEvent) {
+      return null;
+    }
+
+    return {
+      game: 'valheim',
+      serverId: this.configuration.serverId,
+      eventType: 'CHAT_MESSAGE',
+      occurredAt: classification.occurredAt,
+      message: classification.message,
+      raw: {
+        valheimEventCategory: classification.category,
+        valheimEventConfidence: classification.confidence,
+        valheimRawLine: classification.rawLine,
+        valheimEventSource: 'journal',
+        ...(classification.details ?? {})
+      }
+    };
+  }
+
   public collectLines(lines: string[]): NormalizedEvent[] {
-    return lines
-      .map((line) => this.parseLine(line))
-      .filter((event): event is NormalizedEvent => event !== null);
+    const events: NormalizedEvent[] = [];
+
+    for (const line of lines) {
+      const classifiedEvent = this.classifyLineForShadow(line);
+
+      if (classifiedEvent) {
+        events.push(classifiedEvent);
+        continue;
+      }
+
+      const parsedEvent = this.parseLine(line);
+
+      if (parsedEvent) {
+        events.push(parsedEvent);
+      }
+    }
+
+    return events;
   }
 
   public async collect(): Promise<NormalizedEvent[]> {

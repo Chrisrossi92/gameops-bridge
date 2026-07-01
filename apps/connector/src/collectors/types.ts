@@ -8,6 +8,7 @@ export interface CollectorConfiguration {
   logFile?: string;
   journalServiceName?: string;
   shadowBackfillLines?: number;
+  includeOperationalEventCategories?: boolean;
 }
 
 export interface GameCollector {
