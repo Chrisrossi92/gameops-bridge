@@ -47,6 +47,7 @@ function summary(overrides: Partial<PlayerIntelligenceSummaryResponse> = {}): Pl
 test('operator player intelligence card renders compact summary and top players', () => {
   const html = renderToStaticMarkup(
     <OperatorPlayerIntelligenceCard
+      apiBaseUrl="http://localhost:3000"
       servers={[{
         displayName: 'Valheim Local',
         game: 'valheim',
@@ -62,12 +63,14 @@ test('operator player intelligence card renders compact summary and top players'
   assert.match(html, /At risk: 1/);
   assert.match(html, /Most recent: Sol/);
   assert.match(html, /Mira/);
+  assert.match(html, /button/);
   assert.match(html, /3h/);
 });
 
 test('operator player intelligence card renders empty state', () => {
   const html = renderToStaticMarkup(
     <OperatorPlayerIntelligenceCard
+      apiBaseUrl="http://localhost:3000"
       servers={[{
         displayName: 'Quiet Server',
         game: 'palworld',

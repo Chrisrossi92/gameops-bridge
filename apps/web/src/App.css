@@ -485,6 +485,7 @@
 
 .operator-player-mini-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   border-radius: 0.35rem;
@@ -497,6 +498,216 @@
 .operator-player-mini-list li span:last-child {
   color: #64748b;
   white-space: nowrap;
+}
+
+.operator-player-link {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #0f172a;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.operator-player-link:hover,
+.operator-player-link:focus-visible {
+  color: #1d4ed8;
+  outline: none;
+  text-decoration: underline;
+}
+
+.operator-player-drawer-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.operator-player-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.2);
+  cursor: pointer;
+}
+
+.operator-player-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  width: min(480px, 100vw);
+  height: 100%;
+  overflow-y: auto;
+  border-left: 1px solid #dbe4ee;
+  background: #fff;
+  padding: 0.85rem;
+  box-shadow: -12px 0 30px rgba(15, 23, 42, 0.16);
+}
+
+.operator-player-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid #e5eaf2;
+  padding-bottom: 0.65rem;
+}
+
+.operator-player-drawer-header h2 {
+  margin: 0.08rem 0 0.1rem;
+  font-size: 1.15rem;
+}
+
+.operator-player-drawer-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.operator-player-drawer-section {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid #e5eaf2;
+  border-radius: 0.45rem;
+  background: #fbfdff;
+  padding: 0.6rem;
+}
+
+.operator-player-drawer-section h3 {
+  margin: 0;
+  color: #334155;
+  font-size: 0.82rem;
+}
+
+.operator-player-detail-status,
+.operator-player-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.operator-player-token-row span {
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  padding: 0.14rem 0.42rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.operator-player-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.operator-player-detail-grid div {
+  min-width: 0;
+  border-radius: 0.35rem;
+  background: #fff;
+  padding: 0.4rem;
+}
+
+.operator-player-detail-grid dt {
+  color: #64748b;
+  font-size: 0.66rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.operator-player-detail-grid dd {
+  margin: 0.08rem 0 0;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.operator-player-detail-list,
+.operator-player-drawer-debug ul {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operator-player-detail-list li,
+.operator-player-drawer-debug li {
+  display: grid;
+  gap: 0.12rem;
+  border-radius: 0.35rem;
+  background: #fff;
+  padding: 0.38rem 0.42rem;
+  color: #334155;
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.operator-player-detail-list li span:first-child {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.operator-session-bars {
+  display: grid;
+  gap: 0.34rem;
+}
+
+.operator-session-bar-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) minmax(80px, 1.5fr) auto;
+  align-items: center;
+  gap: 0.42rem;
+  color: #475569;
+  font-size: 0.72rem;
+}
+
+.operator-session-bar {
+  display: block;
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.operator-session-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+}
+
+.operator-player-drawer-debug {
+  border: 1px solid #e5eaf2;
+  border-radius: 0.45rem;
+  background: #f8fafc;
+  padding: 0.58rem;
+}
+
+.operator-player-drawer-debug summary {
+  cursor: pointer;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.operator-player-drawer-debug ul {
+  margin-top: 0.45rem;
+}
+
+.operator-player-drawer-debug code {
+  color: #0f172a;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
 }
 
 .operator-empty-note {

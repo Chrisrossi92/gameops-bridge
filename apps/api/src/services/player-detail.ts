@@ -1,8 +1,11 @@
 import {
   playerDetailEvidenceSchema,
+  playerDetailEventReferenceSchema,
   playerDetailResponseSchema,
   playerDetailSessionSchema,
+  type NormalizedEvent,
   type PlayerDetailEvidence,
+  type PlayerDetailEventReference,
   type PlayerDetailResponse,
   type PlayerDetailSession,
   type PlayerIntelligenceConfidence,
@@ -10,6 +13,7 @@ import {
   type SessionRecord
 } from '@gameops/shared';
 import { getActiveSessionsForServer, getRecentClosedSessionsForServer } from './event-store.js';
+import { getRecentLogTruthEventsForServer } from './log-truth-store.js';
 import { getPlayerIntelligenceForServer } from './player-intelligence.js';
 import { getClosedSessionRollupId, getPersistedPlayerRollupsForServer } from './player-intelligence-rollup-store.js';
 
@@ -68,6 +72,44 @@ function sessionMatchesPlayer(session: SessionRecord, player: PlayerIntelligence
   return observedName === normalize(player.displayName)
     || player.aliases.some((alias) => normalize(alias) === observedName)
     || normalize(getSessionId(session)) === normalize(player.activeSessionId ?? '');
+}
+
+function eventMatchesPlayer(event: NormalizedEvent, player: PlayerIntelligenceRecord): boolean {
+  const observedName = event.playerName ? normalize(event.playerName) : '';
+  const playerNames = [player.displayName, ...player.aliases].map((name) => normalize(name));
+
+  if (observedName && playerNames.includes(observedName)) {
+    return true;
+  }
+
+  const closedPlayers = event.raw?.sessionClosedPlayers;
+
+  if (Array.isArray(closedPlayers)) {
+    return closedPlayers.some((value) => typeof value === 'string' && playerNames.includes(normalize(value)));
+  }
+
+  return false;
+}
+
+function getEventSource(event: NormalizedEvent): string {
+  const rawSource = event.raw?.source
+    ?? event.raw?.eventSource
+    ?? event.raw?.valheimEventSource
+    ?? event.raw?.palworldEventSource;
+
+  return typeof rawSource === 'string' && rawSource.trim() ? rawSource.trim() : 'durable log truth';
+}
+
+function toDetailEventReference(event: NormalizedEvent): PlayerDetailEventReference {
+  return playerDetailEventReferenceSchema.parse({
+    id: event.id ?? null,
+    eventType: event.eventType,
+    occurredAt: event.occurredAt,
+    playerName: event.playerName ?? null,
+    message: event.message ?? null,
+    source: getEventSource(event),
+    raw: event.raw ?? null
+  });
 }
 
 function buildEvidence(player: PlayerIntelligenceRecord, recentSessions: PlayerDetailSession[]): PlayerDetailEvidence[] {
@@ -197,6 +239,10 @@ export function getPlayerDetail(serverId: string, playerId: string): PlayerDetai
   const recentSessions = Array.from(sessionsById.values())
     .sort((left, right) => (right.endedAt ?? right.startedAt).localeCompare(left.endedAt ?? left.startedAt))
     .slice(0, 25);
+  const recentEvents = getRecentLogTruthEventsForServer(serverId, 200)
+    .filter((event) => eventMatchesPlayer(event, player))
+    .slice(0, 25)
+    .map(toDetailEventReference);
 
   return playerDetailResponseSchema.parse({
     serverId,
@@ -219,6 +265,7 @@ export function getPlayerDetail(serverId: string, playerId: string): PlayerDetai
       gameFields: player.gameFields
     },
     recentSessions,
+    recentEvents,
     evidence: buildEvidence(player, recentSessions),
     status: getStatus(player),
     explanation: getExplanation(player)

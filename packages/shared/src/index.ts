@@ -780,6 +780,17 @@ export const playerDetailEvidenceSchema = z.object({
 });
 export type PlayerDetailEvidence = z.infer<typeof playerDetailEvidenceSchema>;
 
+export const playerDetailEventReferenceSchema = z.object({
+  id: z.string().min(1).nullable(),
+  eventType: eventTypeSchema,
+  occurredAt: z.string().datetime(),
+  playerName: z.string().nullable(),
+  message: z.string().nullable(),
+  source: z.string().min(1),
+  raw: normalizedEventRawSchema.nullable()
+});
+export type PlayerDetailEventReference = z.infer<typeof playerDetailEventReferenceSchema>;
+
 export const playerDetailSummarySchema = z.object({
   playerId: z.string().min(1),
   serverId: z.string().min(1),
@@ -804,6 +815,7 @@ export const playerDetailResponseSchema = z.object({
   serverId: z.string().min(1),
   player: playerDetailSummarySchema,
   recentSessions: z.array(playerDetailSessionSchema),
+  recentEvents: z.array(playerDetailEventReferenceSchema),
   evidence: z.array(playerDetailEvidenceSchema),
   status: z.string().min(1),
   explanation: z.string().min(1)

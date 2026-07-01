@@ -8,10 +8,16 @@ import type { NormalizedEvent, SessionRecord, SessionTimelineResponse } from '@g
 
 type EventStoreModule = {
   addEvents: (events: NormalizedEvent[]) => void;
+  resetSessionStateForTests: () => void;
 };
 
 type RollupStoreModule = {
   recordClosedSessionRollup: (input: { game: 'valheim' | 'palworld'; session: SessionRecord }) => boolean;
+  resetPlayerIntelligenceRollupStoreForTests: () => void;
+};
+
+type LogTruthStoreModule = {
+  resetLogTruthStoreForTests: () => void;
 };
 
 type TimelineModule = {
@@ -50,6 +56,7 @@ async function withFreshTimeline(run: (modules: {
 }) => Promise<void> | void): Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'gameops-session-timeline-test-'));
   const previousSessionPath = process.env.SESSION_STATE_STORE_PATH;
+  const previousLogTruthPath = process.env.LOG_TRUTH_STORE_PATH;
   const previousKnownPath = process.env.KNOWN_PLAYER_STORE_PATH;
   const previousTelemetryPath = process.env.PALWORLD_TELEMETRY_STORE_PATH;
   const previousPlayersSummaryPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH;
@@ -57,6 +64,7 @@ async function withFreshTimeline(run: (modules: {
   const previousPlayerEngagementPath = process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
 
   process.env.SESSION_STATE_STORE_PATH = join(tempDir, 'session-state.json');
+  process.env.LOG_TRUTH_STORE_PATH = join(tempDir, 'log-truth.json');
   process.env.KNOWN_PLAYER_STORE_PATH = join(tempDir, 'known-players.json');
   process.env.PALWORLD_TELEMETRY_STORE_PATH = join(tempDir, 'palworld-telemetry.json');
   process.env.PALWORLD_PLAYERS_SUMMARY_PATH = join(tempDir, 'players-summary.json');
@@ -64,19 +72,29 @@ async function withFreshTimeline(run: (modules: {
   process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = join(tempDir, 'player-engagement-rollups.json');
 
   try {
-    const nonce = `${Date.now()}-${Math.random()}`;
-    const storePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
-    const rollupPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence-rollup-store.ts')).href;
-    const timelinePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/session-timeline.ts')).href;
+    const storePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.js')).href;
+    const logTruthPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/log-truth-store.js')).href;
+    const rollupPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence-rollup-store.js')).href;
+    const timelinePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/session-timeline.js')).href;
     const store: EventStoreModule = await import(storePath);
+    const logTruth: LogTruthStoreModule = await import(logTruthPath);
     const rollups: RollupStoreModule = await import(rollupPath);
-    const timeline: TimelineModule = await import(`${timelinePath}?t=${nonce}`);
+    logTruth.resetLogTruthStoreForTests();
+    store.resetSessionStateForTests();
+    rollups.resetPlayerIntelligenceRollupStoreForTests();
+    const timeline: TimelineModule = await import(timelinePath);
     await run({ store, rollups, timeline });
   } finally {
     if (previousSessionPath === undefined) {
       delete process.env.SESSION_STATE_STORE_PATH;
     } else {
       process.env.SESSION_STATE_STORE_PATH = previousSessionPath;
+    }
+
+    if (previousLogTruthPath === undefined) {
+      delete process.env.LOG_TRUTH_STORE_PATH;
+    } else {
+      process.env.LOG_TRUTH_STORE_PATH = previousLogTruthPath;
     }
 
     if (previousKnownPath === undefined) {

@@ -117,7 +117,7 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
 
       <div className="operator-workspace-grid">
         <OperatorServerHealthCard servers={props.serverHealth} />
-        <OperatorPlayerIntelligenceCard servers={props.playerIntelligenceSummary} />
+        <OperatorPlayerIntelligenceCard apiBaseUrl={props.apiBaseUrl} servers={props.playerIntelligenceSummary} />
         <OperatorDebugPanel servers={props.debugServers} />
         <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />
         <OperatorReasonCard apiBaseUrl={props.apiBaseUrl} />

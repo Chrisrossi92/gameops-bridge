@@ -8,6 +8,15 @@ import type { NormalizedEvent, PlayerIntelligenceResponse } from '@gameops/share
 
 type EventStoreModule = {
   addEvents: (events: NormalizedEvent[]) => void;
+  resetSessionStateForTests: () => void;
+};
+
+type LogTruthStoreModule = {
+  resetLogTruthStoreForTests: () => void;
+};
+
+type RollupStoreModule = {
+  resetPlayerIntelligenceRollupStoreForTests: () => void;
 };
 
 type PlayerIntelligenceModule = {
@@ -30,6 +39,7 @@ async function withFreshPlayerIntelligence(run: (modules: {
 }) => Promise<void> | void): Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'gameops-player-intelligence-test-'));
   const previousSessionPath = process.env.SESSION_STATE_STORE_PATH;
+  const previousLogTruthPath = process.env.LOG_TRUTH_STORE_PATH;
   const previousKnownPath = process.env.KNOWN_PLAYER_STORE_PATH;
   const previousTelemetryPath = process.env.PALWORLD_TELEMETRY_STORE_PATH;
   const previousPlayersSummaryPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH;
@@ -37,6 +47,7 @@ async function withFreshPlayerIntelligence(run: (modules: {
   const previousPlayerEngagementPath = process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH;
 
   process.env.SESSION_STATE_STORE_PATH = join(tempDir, 'session-state.json');
+  process.env.LOG_TRUTH_STORE_PATH = join(tempDir, 'log-truth.json');
   process.env.KNOWN_PLAYER_STORE_PATH = join(tempDir, 'known-players.json');
   process.env.PALWORLD_TELEMETRY_STORE_PATH = join(tempDir, 'palworld-telemetry.json');
   process.env.PALWORLD_PLAYERS_SUMMARY_PATH = join(tempDir, 'players-summary.json');
@@ -44,17 +55,29 @@ async function withFreshPlayerIntelligence(run: (modules: {
   process.env.PLAYER_ENGAGEMENT_ROLLUP_STORE_PATH = join(tempDir, 'player-engagement-rollups.json');
 
   try {
-    const eventStorePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
-    const intelligencePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence.ts')).href;
-    const nonce = `${Date.now()}-${Math.random()}`;
-    const intelligence: PlayerIntelligenceModule = await import(`${intelligencePath}?t=${nonce}`);
+    const eventStorePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.js')).href;
+    const logTruthPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/log-truth-store.js')).href;
+    const rollupPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence-rollup-store.js')).href;
+    const intelligencePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence.js')).href;
     const store: EventStoreModule = await import(eventStorePath);
+    const logTruth: LogTruthStoreModule = await import(logTruthPath);
+    const rollups: RollupStoreModule = await import(rollupPath);
+    logTruth.resetLogTruthStoreForTests();
+    store.resetSessionStateForTests();
+    rollups.resetPlayerIntelligenceRollupStoreForTests();
+    const intelligence: PlayerIntelligenceModule = await import(intelligencePath);
     await run({ store, intelligence });
   } finally {
     if (previousSessionPath === undefined) {
       delete process.env.SESSION_STATE_STORE_PATH;
     } else {
       process.env.SESSION_STATE_STORE_PATH = previousSessionPath;
+    }
+
+    if (previousLogTruthPath === undefined) {
+      delete process.env.LOG_TRUTH_STORE_PATH;
+    } else {
+      process.env.LOG_TRUTH_STORE_PATH = previousLogTruthPath;
     }
 
     if (previousKnownPath === undefined) {

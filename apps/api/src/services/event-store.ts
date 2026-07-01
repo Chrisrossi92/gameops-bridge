@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { type NormalizedEvent, sessionRecordSchema, type SessionRecord } from '@gameops/shared';
 import { appendLogTruthEvents, getRecentLogTruthEventsForServer } from './log-truth-store.js';
 import { recordClosedSessionRollup, recordPlayerSeenFromSessionStart } from './player-intelligence-rollup-store.js';
+import { clearCachedResult } from './request-performance.js';
 import { resolveRuntimeDataPath } from './runtime-paths.js';
 
 const MAX_STORED_EVENTS = 500;
@@ -587,4 +588,16 @@ export function getRecentClosedSessionsForServer(serverId: string, limit = 10): 
   return sessions
     .slice(-Math.max(1, limit))
     .reverse();
+}
+
+export function resetSessionStateForTests(): void {
+  recentEvents.splice(0, recentEvents.length);
+  activeSessionsByServer.clear();
+  recentClosedSessionsByServer.clear();
+  sessionStateInitialized = false;
+  clearCachedResult('player-intelligence:');
+  clearCachedResult('session-timeline:');
+  clearCachedResult('player-engagement:');
+  clearCachedResult('data-freshness:');
+  persistSessionState();
 }

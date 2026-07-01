@@ -8,6 +8,11 @@ import type { NormalizedEvent, PlayerEngagementDetail, PlayerEngagementSummary, 
 
 type EventStoreModule = {
   addEvents: (events: NormalizedEvent[]) => void;
+  resetSessionStateForTests: () => void;
+};
+
+type LogTruthStoreModule = {
+  resetLogTruthStoreForTests: () => void;
 };
 
 type HeartbeatModule = {
@@ -16,6 +21,7 @@ type HeartbeatModule = {
 
 type RollupStoreModule = {
   recordClosedSessionRollup: (input: { game: 'valheim' | 'palworld'; session: SessionRecord }) => boolean;
+  resetPlayerIntelligenceRollupStoreForTests: () => void;
 };
 
 type EngagementModule = {
@@ -93,6 +99,7 @@ async function withFreshEngagement(run: (modules: {
 }) => Promise<void> | void): Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'gameops-player-engagement-test-'));
   const previousSessionPath = process.env.SESSION_STATE_STORE_PATH;
+  const previousLogTruthPath = process.env.LOG_TRUTH_STORE_PATH;
   const previousKnownPath = process.env.KNOWN_PLAYER_STORE_PATH;
   const previousTelemetryPath = process.env.PALWORLD_TELEMETRY_STORE_PATH;
   const previousPlayersSummaryPath = process.env.PALWORLD_PLAYERS_SUMMARY_PATH;
@@ -101,6 +108,7 @@ async function withFreshEngagement(run: (modules: {
   const previousConfigPath = process.env.GAMEOPS_CONFIG_PATH;
 
   process.env.SESSION_STATE_STORE_PATH = join(tempDir, 'session-state.json');
+  process.env.LOG_TRUTH_STORE_PATH = join(tempDir, 'log-truth.json');
   process.env.KNOWN_PLAYER_STORE_PATH = join(tempDir, 'known-players.json');
   process.env.PALWORLD_TELEMETRY_STORE_PATH = join(tempDir, 'palworld-telemetry.json');
   process.env.PALWORLD_PLAYERS_SUMMARY_PATH = join(tempDir, 'players-summary.json');
@@ -109,20 +117,27 @@ async function withFreshEngagement(run: (modules: {
   process.env.GAMEOPS_CONFIG_PATH = join(tempDir, 'gameops.config.json');
 
   try {
-    const nonce = `${Date.now()}-${Math.random()}`;
-    const storePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.ts')).href;
+    const storePath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/event-store.js')).href;
+    const logTruthPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/log-truth-store.js')).href;
     const heartbeatPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/connector-heartbeat.ts')).href;
-    const rollupPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence-rollup-store.ts')).href;
-    const engagementPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-engagement.ts')).href;
+    const rollupPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-intelligence-rollup-store.js')).href;
+    const engagementPath = pathToFileURL(resolve('../gameops-bridge/apps/api/src/services/player-engagement.js')).href;
     const store: EventStoreModule = await import(storePath);
+    const logTruth: LogTruthStoreModule = await import(logTruthPath);
     const heartbeat: HeartbeatModule = await import(heartbeatPath);
     const rollups: RollupStoreModule = await import(rollupPath);
-    const engagement: EngagementModule = await import(`${engagementPath}?t=${nonce}`);
+    logTruth.resetLogTruthStoreForTests();
+    store.resetSessionStateForTests();
+    rollups.resetPlayerIntelligenceRollupStoreForTests();
+    const engagement: EngagementModule = await import(engagementPath);
     heartbeat.clearConnectorHeartbeatsForTests();
     await run({ store, heartbeat, rollups, engagement, tempDir });
   } finally {
     if (previousSessionPath === undefined) delete process.env.SESSION_STATE_STORE_PATH;
     else process.env.SESSION_STATE_STORE_PATH = previousSessionPath;
+
+    if (previousLogTruthPath === undefined) delete process.env.LOG_TRUTH_STORE_PATH;
+    else process.env.LOG_TRUTH_STORE_PATH = previousLogTruthPath;
 
     if (previousKnownPath === undefined) delete process.env.KNOWN_PLAYER_STORE_PATH;
     else process.env.KNOWN_PLAYER_STORE_PATH = previousKnownPath;
