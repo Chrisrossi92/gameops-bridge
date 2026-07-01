@@ -10,6 +10,7 @@ import {
   createValheimCollectorShadow,
   getCollectorHealthForHeartbeat,
   getValheimCollectorShadowHealthForHeartbeat,
+  resolveValheimCollectorShadowBackfillLines,
   resolveValheimCollectorShadowEnabled,
   resolveCollectorsEnabled
 } from './connector-runtime.js';
@@ -133,6 +134,25 @@ test('valheim collector shadow flag can come from environment or feature flag', 
   }), false);
 });
 
+test('valheim collector shadow backfill is disabled by default', () => {
+  assert.equal(resolveValheimCollectorShadowBackfillLines({ env: {} }), 0);
+  assert.equal(resolveValheimCollectorShadowBackfillLines({
+    env: { GAMEOPS_VALHEIM_COLLECTOR_SHADOW_BACKFILL_LINES: 'not-a-number' },
+    featureFlagValue: 25
+  }), 0);
+});
+
+test('valheim collector shadow backfill line count can come from environment or config', () => {
+  assert.equal(resolveValheimCollectorShadowBackfillLines({ env: {}, featureFlagValue: 25 }), 25);
+  assert.equal(resolveValheimCollectorShadowBackfillLines({
+    env: { GAMEOPS_VALHEIM_COLLECTOR_SHADOW_BACKFILL_LINES: '10' },
+    featureFlagValue: 25
+  }), 10);
+  assert.equal(resolveValheimCollectorShadowBackfillLines({
+    env: { GAMEOPS_VALHEIM_COLLECTOR_SHADOW_BACKFILL_LINES: '-5' }
+  }), 0);
+});
+
 test('valheim collector shadow runs without forwarding events', async () => {
   const shadow = createValheimCollectorShadow({
     serverId: 'srv-shadow',
@@ -194,6 +214,44 @@ test('valheim collector shadow scheduled run collects from configured file witho
   }
 });
 
+test('valheim collector shadow backfill reads recent file window and does not forward events', async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'gameops-valheim-shadow-backfill-test-'));
+  const logFile = join(tempDir, 'valheim.log');
+
+  try {
+    writeFileSync(logFile, [
+      '[2026-04-01T20:00:00Z] Game server connected',
+      '[2026-04-01T20:01:10Z] Player joined: Alice',
+      '[2026-04-01T20:10:05Z] Player left: Alice'
+    ].join('\n'), 'utf8');
+
+    const shadow = createValheimCollectorShadow({
+      serverId: 'srv-shadow-backfill',
+      game: 'valheim',
+      mode: 'file',
+      enabled: true,
+      backfillLines: 2,
+      logFile
+    });
+    const apiIngestedEvents: NormalizedEvent[] = [];
+
+    assert.ok(shadow);
+
+    await shadow.runBackfill();
+
+    const health = shadow.health();
+
+    assert.deepEqual(apiIngestedEvents, []);
+    assert.equal(health.shadow?.eventCount, 2);
+    assert.deepEqual(health.shadow?.eventTypes, ['PLAYER_JOIN', 'PLAYER_LEAVE']);
+    assert.equal(health.shadow?.parityStatus, 'not_available');
+    assert.match(health.shadow?.lastRunAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(health.shadow?.lastError, null);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('valheim collector shadow failure records health without throwing', async () => {
   const shadow = createValheimCollectorShadow({
     serverId: 'srv-shadow-failure',
@@ -234,6 +292,28 @@ test('valheim collector shadow scheduled failure updates lastError without throw
   const health = shadow.health();
 
   assert.match(health.shadow?.lastError ?? '', /requires configuration\.logFile/);
+  assert.equal(health.shadow?.parityStatus, 'error');
+  assert.equal(health.shadow?.eventCount, 0);
+});
+
+test('valheim collector shadow backfill failure updates lastError without forwarding', async () => {
+  const shadow = createValheimCollectorShadow({
+    serverId: 'srv-shadow-backfill-failure',
+    game: 'valheim',
+    mode: 'file',
+    enabled: true,
+    backfillLines: 5
+  });
+  const apiIngestedEvents: NormalizedEvent[] = [];
+
+  assert.ok(shadow);
+
+  await shadow.runBackfill();
+
+  const health = shadow.health();
+
+  assert.deepEqual(apiIngestedEvents, []);
+  assert.match(health.shadow?.lastError ?? '', /backfill requires configuration\.logFile/);
   assert.equal(health.shadow?.parityStatus, 'error');
   assert.equal(health.shadow?.eventCount, 0);
 });

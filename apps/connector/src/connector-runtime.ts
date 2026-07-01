@@ -23,6 +23,7 @@ export interface ValheimCollectorShadowSettings {
   game: GameKey;
   mode: ConnectorMode;
   enabled: boolean;
+  backfillLines?: number;
   logFile?: string;
   journalServiceName?: string;
 }
@@ -101,6 +102,21 @@ export function resolveValheimCollectorShadowEnabled(input: {
     ?? false;
 }
 
+export function resolveValheimCollectorShadowBackfillLines(input: {
+  env?: NodeJS.ProcessEnv;
+  featureFlagValue?: number | undefined;
+} = {}): number {
+  const env = input.env ?? process.env;
+  const rawValue = env.GAMEOPS_VALHEIM_COLLECTOR_SHADOW_BACKFILL_LINES;
+  const candidate = rawValue === undefined ? (input.featureFlagValue ?? 0) : Number(rawValue);
+
+  if (!Number.isFinite(candidate)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(candidate));
+}
+
 export function createCollectorRegistry(settings: ConnectorCollectorRuntimeSettings): CollectorRegistry {
   const registry = new CollectorRegistry();
 
@@ -127,6 +143,7 @@ export function createCollectorRegistry(settings: ConnectorCollectorRuntimeSetti
 
 export class ValheimCollectorShadowMode {
   private readonly collector: ValheimCollector;
+  private readonly backfillLines: number;
   private lastRunAt: string | null = null;
   private lastDurationMs: number | null = null;
   private eventCount = 0;
@@ -135,8 +152,11 @@ export class ValheimCollectorShadowMode {
   private parityStatus: ValheimCollectorShadowParityStatus = 'not_run';
   private totalCollectedEvents = 0;
 
-  public constructor(collector: ValheimCollector) {
+  public constructor(collector: ValheimCollector, input: {
+    backfillLines?: number | undefined;
+  } = {}) {
     this.collector = collector;
+    this.backfillLines = Math.max(0, Math.floor(input.backfillLines ?? 0));
   }
 
   public async run(input: {
@@ -177,7 +197,22 @@ export class ValheimCollectorShadowMode {
     });
   }
 
+  public async runBackfill(): Promise<void> {
+    if (this.backfillLines <= 0) {
+      return;
+    }
+
+    await this.run({
+      collect: () => this.collector.collectBackfillLines(this.backfillLines)
+    });
+  }
+
   public async runScheduled(): Promise<void> {
+    if (this.backfillLines > 0 && this.collector.configuration.mode === 'journal') {
+      await this.runBackfill();
+      return;
+    }
+
     await this.run({});
   }
 
@@ -214,9 +249,12 @@ export function createValheimCollectorShadow(settings: ValheimCollectorShadowSet
     enabled: true,
     mode: settings.mode,
     label: 'Valheim Collector Shadow',
+    ...(settings.backfillLines !== undefined ? { shadowBackfillLines: settings.backfillLines } : {}),
     ...(settings.logFile ? { logFile: settings.logFile } : {}),
     ...(settings.journalServiceName ? { journalServiceName: settings.journalServiceName } : {})
-  }));
+  }), {
+    backfillLines: settings.backfillLines
+  });
 }
 
 export function createCollectorRunner(registry: CollectorRegistry): CollectorRunner {

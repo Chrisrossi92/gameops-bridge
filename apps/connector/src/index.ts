@@ -32,6 +32,7 @@ import {
   getCollectorHealthForHeartbeat,
   getValheimCollectorShadowHealthForHeartbeat,
   resolveCollectorsEnabled,
+  resolveValheimCollectorShadowBackfillLines,
   resolveValheimCollectorShadowEnabled
 } from './connector-runtime.js';
 import { findKnownPlayer, upsertKnownPlayerObservation } from './identity/known-player-store.js';
@@ -55,6 +56,7 @@ interface ConnectorRuntimeSettings {
   pollIntervalMs: number;
   collectorsEnabled: boolean;
   valheimCollectorShadowEnabled: boolean;
+  valheimCollectorShadowBackfillLines: number;
   logFile?: string;
   journalServiceName?: string;
   restHost?: string;
@@ -123,7 +125,7 @@ function resolveFromSharedConfig(): ConnectorRuntimeSettings | null {
     const resolvedLogFile = envLogFile || selected.connector.logPath;
     const resolvedJournalService = envJournalService || selected.connector.journalServiceName;
 
-    const featureFlags = parsed.featureFlags as Record<string, boolean | undefined>;
+    const featureFlags = parsed.featureFlags as Record<string, boolean | number | undefined>;
     const settings: ConnectorRuntimeSettings = {
       serverId: selected.id,
       game: selected.game,
@@ -131,10 +133,15 @@ function resolveFromSharedConfig(): ConnectorRuntimeSettings | null {
       apiBaseUrl,
       pollIntervalMs,
       collectorsEnabled: resolveCollectorsEnabled({
-        featureFlagValue: featureFlags.collectorsEnabled
+        featureFlagValue: featureFlags.collectorsEnabled === true
       }),
       valheimCollectorShadowEnabled: resolveValheimCollectorShadowEnabled({
-        featureFlagValue: featureFlags.valheimCollectorShadow
+        featureFlagValue: featureFlags.valheimCollectorShadow === true
+      }),
+      valheimCollectorShadowBackfillLines: resolveValheimCollectorShadowBackfillLines({
+        featureFlagValue: typeof featureFlags.valheimCollectorShadowBackfillLines === 'number'
+          ? featureFlags.valheimCollectorShadowBackfillLines
+          : undefined
       })
     };
 
@@ -193,6 +200,7 @@ function resolveFromLegacyEnv(): ConnectorRuntimeSettings {
     pollIntervalMs: parsePositiveInt(process.env.POLL_INTERVAL_MS, 2000),
     collectorsEnabled: resolveCollectorsEnabled(),
     valheimCollectorShadowEnabled: resolveValheimCollectorShadowEnabled(),
+    valheimCollectorShadowBackfillLines: resolveValheimCollectorShadowBackfillLines(),
     ...(logFileFromEnv ? { logFile: logFileFromEnv } : {}),
     ...(process.env.VALHEIM_JOURNAL_SERVICE ? { journalServiceName: process.env.VALHEIM_JOURNAL_SERVICE } : {}),
     ...(process.env.PALWORLD_REST_HOST ? { restHost: process.env.PALWORLD_REST_HOST } : {}),
@@ -236,6 +244,7 @@ const valheimCollectorShadow = createValheimCollectorShadow({
   game,
   mode,
   enabled: runtime.valheimCollectorShadowEnabled,
+  backfillLines: runtime.valheimCollectorShadowBackfillLines,
   ...(logFile ? { logFile } : {}),
   ...(journalServiceName ? { journalServiceName } : {})
 });
@@ -687,6 +696,10 @@ async function runFileMode(): Promise<void> {
 
   console.log(`Starting ${game} connector for ${serverId} in file mode`);
   console.log(`Watching log file: ${requiredLogFile}`);
+
+  if (game === 'valheim' && valheimCollectorShadow) {
+    await valheimCollectorShadow.runBackfill();
+  }
 
   async function pollLogsAndIngest(): Promise<void> {
     const content = await readFile(requiredLogFile, 'utf8');

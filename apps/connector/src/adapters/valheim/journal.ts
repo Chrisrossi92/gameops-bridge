@@ -1,6 +1,10 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { createInterface } from 'node:readline';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 interface JournalStreamOptions {
   onLine: (line: string) => Promise<void> | void;
@@ -41,4 +45,27 @@ export function startValheimJournalStream(options: JournalStreamOptions): ChildP
   });
 
   return child;
+}
+
+export async function readValheimJournalRecentLines(options: {
+  serviceName?: string | undefined;
+  lineCount: number;
+}): Promise<string[]> {
+  const lineCount = Math.max(0, Math.floor(options.lineCount));
+
+  if (lineCount <= 0) {
+    return [];
+  }
+
+  const serviceName = options.serviceName?.trim() || 'valheim';
+  const { stdout } = await execFileAsync(
+    'journalctl',
+    ['-u', serviceName, '-n', String(lineCount), '-o', 'cat', '--no-pager'],
+    { maxBuffer: 1024 * 1024 }
+  );
+
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }

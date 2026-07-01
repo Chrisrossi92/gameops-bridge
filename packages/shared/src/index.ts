@@ -1845,8 +1845,9 @@ export const featureFlagsSchema = z.object({
   botEnabled: z.boolean().default(true),
   connectorEnabled: z.boolean().default(true),
   identityResolutionEnabled: z.boolean().default(true),
-  sessionReconciliationEnabled: z.boolean().default(true)
-}).catchall(z.boolean());
+  sessionReconciliationEnabled: z.boolean().default(true),
+  valheimCollectorShadowBackfillLines: z.number().int().min(0).default(0)
+}).catchall(z.boolean().or(z.number()));
 
 export const gameOpsConfigSchema = z.object({
   version: z.literal(1),

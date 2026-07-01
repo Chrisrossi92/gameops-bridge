@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { NormalizedEvent } from '@gameops/shared';
+import { readValheimJournalRecentLines } from '../adapters/valheim/journal.js';
 import { valheimAdapter } from '../adapters/valheim/parser.js';
 import { BaseCollector } from './base.js';
 import type { CollectorConfiguration } from './types.js';
@@ -49,6 +50,42 @@ export class ValheimCollector extends BaseCollector {
     this.processedLineCount = allLines.length;
 
     return this.collectLines(newLines);
+  }
+
+  public async collectBackfillLines(lineCount: number): Promise<NormalizedEvent[]> {
+    const safeLineCount = Math.max(0, Math.floor(lineCount));
+
+    if (safeLineCount <= 0) {
+      return [];
+    }
+
+    if (this.configuration.mode === 'file') {
+      if (!this.configuration.logFile) {
+        throw new Error('Valheim file collector backfill requires configuration.logFile.');
+      }
+
+      const content = await readFile(this.configuration.logFile, 'utf8');
+      const allLines = content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      const tailLines = allLines.slice(Math.max(0, allLines.length - safeLineCount));
+
+      this.processedLineCount = Math.max(0, allLines.length - tailLines.length);
+
+      return this.collectLines(tailLines);
+    }
+
+    if (this.configuration.mode === 'journal') {
+      const lines = await readValheimJournalRecentLines({
+        serviceName: this.configuration.journalServiceName,
+        lineCount: safeLineCount
+      });
+
+      return this.collectLines(lines);
+    }
+
+    return [];
   }
 
   public collectJournalLine(line: string): NormalizedEvent[] {

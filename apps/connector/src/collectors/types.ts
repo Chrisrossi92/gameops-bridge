@@ -7,6 +7,7 @@ export interface CollectorConfiguration {
   label?: string;
   logFile?: string;
   journalServiceName?: string;
+  shadowBackfillLines?: number;
 }
 
 export interface GameCollector {

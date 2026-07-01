@@ -389,14 +389,16 @@ async function main(): Promise<void> {
         botEnabled: await askYesNo('Feature: bot enabled?', true),
         connectorEnabled: await askYesNo('Feature: connector enabled?', true),
         identityResolutionEnabled: await askYesNo('Feature: identity resolution enabled?', true),
-        sessionReconciliationEnabled: await askYesNo('Feature: session reconciliation enabled?', true)
+        sessionReconciliationEnabled: await askYesNo('Feature: session reconciliation enabled?', true),
+        valheimCollectorShadowBackfillLines: 0
       }
     : {
         dashboardEnabled: true,
         botEnabled: true,
         connectorEnabled: true,
         identityResolutionEnabled: true,
-        sessionReconciliationEnabled: true
+        sessionReconciliationEnabled: true,
+        valheimCollectorShadowBackfillLines: 0
       };
 
   const configCandidate = {
