@@ -135,6 +135,48 @@ test('capture verification reports capturing when a join is captured with identi
   assert.equal(result.playerIdentityFieldsPresent, true);
 });
 
+test('capture verification derives Palworld join evidence from session start when raw join is missing', () => {
+  const result = build({
+    recentEvents: [
+      event({
+        id: 'palworld-leave-cdawg',
+        game: 'palworld',
+        eventType: 'PLAYER_LEAVE',
+        playerName: 'CDAWG9000',
+        platformId: 'steam_123',
+        occurredAt: '2026-07-01T20:40:38.359Z',
+        raw: {
+          palworldEventSource: 'rest_players'
+        }
+      })
+    ],
+    recentClosedSessions: [
+      session({
+        serverId: 'pal-1',
+        playerName: 'CDAWG9000',
+        startedAt: '2026-07-01T20:38:38.359Z',
+        endedAt: '2026-07-01T20:40:38.359Z',
+        durationSeconds: 120,
+        sourceEventIds: ['palworld-join-cdawg', 'palworld-leave-cdawg']
+      })
+    ],
+    knownPlayers: [
+      knownPlayer({
+        displayName: 'CDAWG9000',
+        normalizedPlayerKey: 'cdawg9000',
+        lastSeenAt: '2026-07-01T20:40:38.359Z'
+      })
+    ]
+  });
+
+  assert.equal(result.status, 'capturing');
+  assert.equal(result.latestPlayerJoinEvent?.occurredAt, '2026-07-01T20:38:38.359Z');
+  assert.equal(result.latestPlayerJoinEvent?.playerName, 'CDAWG9000');
+  assert.equal(result.latestPlayerJoinEvent?.identityFieldsPresent, true);
+  assert.equal(result.latestPlayerJoinEvent?.eventId, null);
+  assert.equal(result.latestPlayerLeaveEvent?.playerName, 'CDAWG9000');
+});
+
 test('capture verification reports capture evidence for leave and closed session', () => {
   const result = build({
     recentEvents: [

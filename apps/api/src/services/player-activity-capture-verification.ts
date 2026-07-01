@@ -82,6 +82,23 @@ function toEventEvidence(event: NormalizedEvent | null, closedSessions: SessionR
   };
 }
 
+function latestSessionStartEvidence(sessions: SessionRecord[]): PlayerActivityCaptureEventEvidence | null {
+  const latest = sessions
+    .filter((session) => Boolean(session.playerName?.trim()))
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0] ?? null;
+
+  if (!latest) {
+    return null;
+  }
+
+  return {
+    occurredAt: latest.startedAt,
+    playerName: latest.playerName,
+    identityFieldsPresent: true,
+    eventId: null
+  };
+}
+
 function latestSessionStart(sessions: SessionRecord[]): string | null {
   return maxTimestamp(sessions.map((session) => session.startedAt));
 }
@@ -211,12 +228,14 @@ export function buildPlayerActivityCaptureVerification(input: {
   knownPlayers: KnownPlayerRecord[];
   operationalStatus: ServerOperationalStatus;
 }): PlayerActivityCaptureVerification {
-  const latestJoin = toEventEvidence(latestEvent(input.recentEvents, 'PLAYER_JOIN'), input.recentClosedSessions);
+  const allSessions = [...input.activeSessions, ...input.recentClosedSessions];
+  const latestJoin = toEventEvidence(latestEvent(input.recentEvents, 'PLAYER_JOIN'), input.recentClosedSessions)
+    ?? latestSessionStartEvidence(allSessions);
   const latestLeave = toEventEvidence(latestEvent(input.recentEvents, 'PLAYER_LEAVE'), input.recentClosedSessions);
   const latestPlayerEvidence = [latestJoin, latestLeave]
     .filter((value): value is PlayerActivityCaptureEventEvidence => Boolean(value))
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0] ?? null;
-  const latestSessionStartAt = latestSessionStart([...input.activeSessions, ...input.recentClosedSessions]);
+  const latestSessionStartAt = latestSessionStart(allSessions);
   const latestSessionCloseAt = latestSessionClose(input.recentClosedSessions);
   const latestKnownPlayerUpdateAt = latestKnownPlayerUpdate(input.knownPlayers);
   const latestCollectorSnapshotPollAt = latestCollectorSnapshotPoll(input.operationalStatus);
