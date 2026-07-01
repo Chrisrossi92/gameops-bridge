@@ -2042,6 +2042,10 @@ function getGameLabel(game: ServerOption['game']): string {
   return game === 'palworld' ? 'Palworld' : 'Valheim';
 }
 
+function getGameSymbol(game: ServerOption['game']): string {
+  return game === 'palworld' ? 'P' : 'V';
+}
+
 function getLatestActivityLabel(summary: ServerSummary | undefined): string {
   if (!summary) {
     return 'Loading world activity';
@@ -4737,7 +4741,8 @@ function App() {
                 setSelectedGameFilter('all');
               }}
             >
-              Overview
+              <span className="workspace-nav-symbol" aria-hidden="true">O</span>
+              <span>Overview</span>
             </button>
             <button
               type="button"
@@ -4747,7 +4752,8 @@ function App() {
                 setSelectedGameFilter('valheim');
               }}
             >
-              Valheim
+              <span className="workspace-nav-symbol" aria-hidden="true">V</span>
+              <span>Valheim</span>
             </button>
             <button
               type="button"
@@ -4757,7 +4763,8 @@ function App() {
                 setSelectedGameFilter('palworld');
               }}
             >
-              Palworld
+              <span className="workspace-nav-symbol" aria-hidden="true">P</span>
+              <span>Palworld</span>
             </button>
           </nav>
 
@@ -4864,7 +4871,10 @@ function App() {
                 >
                   <div className="world-card-top">
                     <div>
-                      <span className="summary-label">{getGameLabel(server.game)}</span>
+                      <span className="world-card-identity">
+                        <span className="world-card-symbol" aria-hidden="true">{getGameSymbol(server.game)}</span>
+                        <span className="summary-label">{getGameLabel(server.game)}</span>
+                      </span>
                       <h3>{summary?.displayName ?? server.displayName}</h3>
                     </div>
                     <span className={`state-pill state-${summary?.state ?? 'offline'}`}>
@@ -4914,10 +4924,13 @@ function App() {
             {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
             {detailError ? <p className="subtle dashboard-message">{detailError}</p> : null}
             <section className={`world-workspace-header world-workspace-header-${selectedServer.game}`}>
-              <div>
-                <span className="summary-label">{getGameLabel(selectedServer.game)} Workspace</span>
-                <h2>{selectedServerSummary.displayName}</h2>
-                <p>{selectedServer.game === 'palworld' ? 'Palworld players, guilds, world context, and operations for this server only.' : 'Valheim community, players, world history, and operations for this server only.'}</p>
+              <div className="world-workspace-presence">
+                <span className="world-workspace-symbol" aria-hidden="true">{getGameSymbol(selectedServer.game)}</span>
+                <div>
+                  <span className="summary-label">{getGameLabel(selectedServer.game)} Workspace</span>
+                  <h2>{selectedServerSummary.displayName}</h2>
+                  <p>{selectedServer.game === 'palworld' ? 'Palworld players, guilds, world context, and operations for this server only.' : 'Valheim community, players, world history, and operations for this server only.'}</p>
+                </div>
               </div>
               <span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span>
             </section>
@@ -5042,7 +5055,7 @@ function App() {
                       <section className="command-subsection command-subsection-online">
                         <h3>Online Now</h3>
                         <ul className="list review-list">
-                          {nowOnlinePlayerProfiles.length === 0 ? <li className="empty-line">No players observed online yet.</li> : null}
+                          {nowOnlinePlayerProfiles.length === 0 ? <li className="empty-line">This world is quiet right now. Online players will appear here as soon as activity is collected.</li> : null}
                           {nowOnlinePlayerProfiles.map((profile) => (
                             <OnlinePlayerRow
                               key={`online:${profile.playerId}:${profile.lookupKey ?? 'profile'}`}
@@ -5056,7 +5069,7 @@ function App() {
                       <section className="command-subsection command-subsection-leaders">
                         <h3>7-Day Playtime Leaders</h3>
                         <ul className="list review-list">
-                          {topPlayerProfiles.length === 0 ? <li className="empty-line">No sessions tracked yet.</li> : null}
+                          {topPlayerProfiles.length === 0 ? <li className="empty-line">This world has not recorded enough session history for playtime leaders yet.</li> : null}
                           {topPlayerProfiles.map((profile, index) => (
                             <TopPlayerRow
                               key={`top:${profile.playerId}:${profile.lookupKey ?? 'profile'}`}
@@ -5071,7 +5084,7 @@ function App() {
                       <section className="command-subsection command-subsection-save-rail">
                         <h3>Save Link Needed</h3>
                         <ul className="save-link-needed-list">
-                          {saveLinkNeededPlayerProfiles.length === 0 ? <li className="empty-line">No player save links needed yet.</li> : null}
+                          {saveLinkNeededPlayerProfiles.length === 0 ? <li className="empty-line">Save links look settled for the active players we can see.</li> : null}
                           {saveLinkNeededPlayerProfiles.map((profile) => (
                             <SaveLinkNeededRow key={`save-link:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} profile={profile} />
                           ))}
@@ -5178,7 +5191,7 @@ function App() {
                     <article className="card">
                       <h2>Core Players</h2>
                       <ul className="list review-list">
-                        {valheimCorePlayers.length === 0 ? <li>No players observed yet. Start connector to begin tracking join/leave activity.</li> : null}
+                        {valheimCorePlayers.length === 0 ? <li>This world has not recorded enough player history yet.</li> : null}
                         {valheimCorePlayers.map((player) => (
                           <li key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`} className="review-row">
                             <div className="review-main">
@@ -5307,7 +5320,7 @@ function App() {
                         <article className="card">
                           <h2>Active Players</h2>
                           <ul className="list">
-                            {selectedServerSummary.activePlayers === 0 ? <li>Connector has not reported active players yet.</li> : null}
+                            {selectedServerSummary.activePlayers === 0 ? <li>This world is quiet right now. Active players will appear here when join activity is collected.</li> : null}
                             {selectedServerSummary.recentEvents
                               .filter((event) => event.eventType === 'PLAYER_JOIN')
                               .slice(0, 8)
@@ -5453,7 +5466,7 @@ function App() {
                           <h2>Palworld Telemetry</h2>
                           {palworldPlayerProfilesLoading ? <p className="subtle">Refreshing player intelligence...</p> : null}
                           <ul className="list telemetry-list">
-                            {palworldLatestPlayers.length === 0 ? <li>No players observed yet. Start connector to begin tracking Palworld activity.</li> : null}
+                            {palworldLatestPlayers.length === 0 ? <li>This Palworld server has not recorded player activity for this view yet.</li> : null}
                             {palworldPlayerList.map(({ player, identityState }) => (
                               <li
                                 key={`${player.lookupKey}:${player.lastSeenAt}`}
@@ -5482,7 +5495,7 @@ function App() {
 
                         <article className="card">
                           <h2>Player Profile / History</h2>
-                          {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect the unified live/save identity profile and recent snapshots.</p> : null}
+                          {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect live/save identity evidence and recent snapshots.</p> : null}
                           {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
                           {selectedPalworldPlayerProfile ? (
                             <div className="detail-grid">
@@ -5523,7 +5536,7 @@ function App() {
                               <div className="detail-block">
                                 <h3>History</h3>
                                 <ul className="list compact">
-                                  {selectedPalworldHistory.length === 0 ? <li>No telemetry snapshots recorded for this player yet.</li> : null}
+                                  {selectedPalworldHistory.length === 0 ? <li>This player does not have enough snapshot history yet.</li> : null}
                                   {selectedPalworldHistory.map((snapshot) => (
                                     <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
                                       <div className="history-entry">
@@ -5627,7 +5640,7 @@ function App() {
                           Reviewed: {guildActivityProgress.reviewedCount} / {guildActivityProgress.totalCount} {guildActivityProgress.labelSuffix}
                         </div>
                         <ul className="list review-list guild-activity-list">
-                          {!palworldGuildsError && visibleGuildActivity.length === 0 ? <li className="empty-line">No guild activity parsed yet. Start the save parser to map guild membership.</li> : null}
+                          {!palworldGuildsError && visibleGuildActivity.length === 0 ? <li className="empty-line">Guild tracking will appear as activity is collected and matched to save data.</li> : null}
                           {visibleGuildActivity.map((guild) => (
                             <GuildRiskRow
                               key={`all-guild:${guild.guildName}`}
