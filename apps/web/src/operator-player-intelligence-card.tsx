@@ -118,9 +118,9 @@ function OperatorPlayerDetailDrawer({
             </section>
 
             <section className="operator-player-drawer-section">
-              <h3>Recent session timeline</h3>
+              <h3>Recent adventures</h3>
               <ul className="operator-player-detail-list">
-                {detail.recentSessions.length === 0 ? <li>No recent sessions stored yet.</li> : null}
+                {detail.recentSessions.length === 0 ? <li>This player has not recorded enough adventure history yet.</li> : null}
                 {detail.recentSessions.slice(0, 8).map((session) => (
                   <li key={session.sessionId}>
                     <span>{formatTimestamp(session.startedAt)}</span>
@@ -272,12 +272,12 @@ export function OperatorPlayerIntelligenceCard({ apiBaseUrl, servers }: Operator
       <div className="operator-debug-heading">
         <div>
           <span className="summary-label">Players</span>
-          <h2>Player Intelligence</h2>
+          <h2>Players</h2>
         </div>
         <span className="state-pill state-unknown">{servers.length} servers</span>
       </div>
 
-      {!hasPlayers ? <p className="operator-empty-note">No player activity captured yet.</p> : null}
+      {!hasPlayers ? <p className="operator-empty-note">This world has not recorded enough player history yet.</p> : null}
 
       <div className="operator-player-intelligence-list">
         {servers.map((server) => (

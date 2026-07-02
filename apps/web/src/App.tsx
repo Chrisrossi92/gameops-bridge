@@ -351,9 +351,9 @@ function FreshnessInlineLabel({ freshness }: DataFreshnessBannerProps) {
 function ActivityLogPanel({ items }: ActivityLogPanelProps) {
   return (
     <article className="card activity-log-card">
-      <h2>Activity Log</h2>
+      <h2>Operations Journal</h2>
       <ul className="list activity-list">
-        {items.length === 0 ? <li>Connector has not reported activity yet.</li> : null}
+        {items.length === 0 ? <li>This server has not recorded operational activity for this view yet.</li> : null}
         {items.map((item) => (
           <li key={item.id} className="activity-row activity-row-rich">
             <div className="activity-main activity-main-rich">
@@ -376,6 +376,8 @@ function ActivityLogPanel({ items }: ActivityLogPanelProps) {
 interface WorldChroniclePanelProps {
   title: string;
   events: WorldChronicleEvent[];
+  emptyMessage?: string;
+  compact?: boolean;
 }
 
 function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
@@ -401,23 +403,25 @@ function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
   }
 }
 
-function WorldChroniclePanel({ title, events }: WorldChroniclePanelProps) {
+function WorldChroniclePanel({ title, events, emptyMessage = 'This realm is still writing its story. More adventures will appear as players explore.', compact = false }: WorldChroniclePanelProps) {
+  const visibleEvents = compact ? events.slice(0, 5) : events;
+
   return (
-    <article className="card world-chronicle-card">
+    <article className={`card world-chronicle-card ${compact ? 'world-chronicle-card-compact' : ''}`}>
       <div className="world-chronicle-heading">
         <div>
-          <span className="summary-label">World Chronicle</span>
+          <span className="summary-label">Chronicle</span>
           <h2>{title}</h2>
         </div>
         <span className="source-badge">{events.length} entries</span>
       </div>
 
       {events.length === 0 ? (
-        <p className="world-chronicle-empty">This realm is still writing its story. More adventures will appear as players explore.</p>
+        <p className="world-chronicle-empty">{emptyMessage}</p>
       ) : null}
 
       <ol className="world-chronicle-list">
-        {events.map((event) => (
+        {visibleEvents.map((event) => (
           <li key={event.id} className={`world-chronicle-row world-chronicle-${event.kind}`}>
             <div className="world-chronicle-marker" aria-hidden="true" />
             <div className="world-chronicle-main">
@@ -475,7 +479,7 @@ function SessionTimelinePanel({ timeline, freshness }: SessionTimelinePanelProps
     <article className="card session-timeline-card">
       <div className="session-timeline-heading">
         <div>
-          <h2>Recent Sessions</h2>
+          <h2>Adventures</h2>
           <p className="subtle">{timeline.explanation}</p>
         </div>
         <div className="session-timeline-summary">
@@ -487,7 +491,7 @@ function SessionTimelinePanel({ timeline, freshness }: SessionTimelinePanelProps
       </div>
 
       {timeline.sessions.length === 0 ? (
-        <p className="subtle">No sessions observed yet. Start the connector and wait for player join/leave activity.</p>
+        <p className="subtle">This world has not recorded enough adventure history yet.</p>
       ) : null}
 
       {activeSessions.length > 0 ? (
@@ -519,7 +523,7 @@ function SessionTimelinePanel({ timeline, freshness }: SessionTimelinePanelProps
       ) : null}
 
       <section className="session-timeline-section">
-        <h3>Recent History</h3>
+        <h3>Recent Adventures</h3>
         <ul className="list session-timeline-list">
           {endedSessions.length === 0 && activeSessions.length > 0 ? <li className="empty-line">No ended sessions tracked yet.</li> : null}
           {endedSessions.map((session) => (
@@ -1580,13 +1584,13 @@ function PlayerIntelligencePanel({ players, explanation, freshness, selectedPlay
   return (
     <article className="card player-intelligence-card">
       <div className="panel-title-row">
-        <h2>Player Intelligence</h2>
+        <h2>Players</h2>
         <FreshnessInlineLabel freshness={freshness} />
       </div>
       <p className="subtle">{explanation}</p>
       <ul className="list player-intelligence-list">
         {players.length === 0 ? (
-          <li className="empty-line">No players observed yet. Once the connector sees joins/leaves, players will appear here automatically.</li>
+          <li className="empty-line">This world has not recorded enough player history yet.</li>
         ) : null}
         {players.map((player) => (
           <li
@@ -1727,9 +1731,9 @@ function PlayerDetailPanel({ detail, loading, error }: PlayerDetailPanelProps) {
           </section>
 
           <section className="detail-block">
-            <h3>Recent Sessions</h3>
+            <h3>Recent Adventures</h3>
             <ul className="list compact">
-              {detail.recentSessions.length === 0 ? <li>No recent sessions stored yet.</li> : null}
+              {detail.recentSessions.length === 0 ? <li>This player has not recorded enough adventure history yet.</li> : null}
               {detail.recentSessions.map((session) => (
                 <li key={session.sessionId}>
                   <span>{formatTimestamp(session.startedAt)}</span>
@@ -1877,9 +1881,9 @@ function PlayerDetailDrawer({
         </section>
 
         <section className="player-drawer-sessions">
-          <h3>Recent Sessions</h3>
+          <h3>Recent Adventures</h3>
           <ul>
-            {recentSessions.length === 0 ? <li className="empty-line">No recent sessions</li> : null}
+            {recentSessions.length === 0 ? <li className="empty-line">This player has not recorded enough adventure history yet.</li> : null}
             {recentSessions.map((session, index) => (
               <li key={`${session.startedAt}:${session.endedAt ?? 'open'}:${index}`}>
                 <span>{formatDurationMaybe(session.durationSeconds)}</span>
@@ -2020,7 +2024,7 @@ function PalworldGuildIntelligencePanel({ guilds, selectedGuildName, reviewedGui
     <article className="card palworld-guild-intelligence-card">
       <div className="command-panel-heading">
         <div>
-          <span className="summary-label">Guild Intelligence</span>
+          <span className="summary-label">Guilds</span>
           <h2>Guilds Shaping This World</h2>
           <p className="subtle">Guild activity is based on matched save data and tracked player activity for this server.</p>
         </div>
@@ -4715,19 +4719,19 @@ function App() {
   const detailTabs = useMemo(() => {
     if (selectedServer?.game === 'palworld') {
       return [
+        { key: 'highlights', label: 'Chronicle' },
         { key: 'overview', label: 'Community' },
         { key: 'players', label: 'Players' },
         { key: 'guilds', label: 'Guilds' },
-        { key: 'highlights', label: 'World' },
         { key: 'ops', label: 'Operations' }
       ] satisfies Array<{ key: DashboardTab; label: string }>;
     }
 
     return [
+      { key: 'activity', label: 'Chronicle' },
       { key: 'overview', label: 'Community' },
       { key: 'players', label: 'Players' },
       { key: 'characters', label: 'Characters' },
-      { key: 'activity', label: 'World History' },
       { key: 'ops', label: 'Operations' }
     ] satisfies Array<{ key: DashboardTab; label: string }>;
   }, [selectedServer?.game]);
@@ -5228,6 +5232,17 @@ function App() {
               </div>
             </section>
 
+            {selectedDashboardTab === 'overview' ? (
+              <WorldChroniclePanel
+                title={selectedServer.game === 'palworld' ? 'Archipelago Chronicle' : 'Realm Chronicle'}
+                events={selectedServer.game === 'palworld' ? palworldChronicleEvents : valheimChronicleEvents}
+                compact
+                emptyMessage={selectedServer.game === 'palworld'
+                  ? 'The archipelago has not recorded enough guild history yet. More memories will appear as players explore.'
+                  : 'This realm is still writing its story. More memories will appear as players explore.'}
+              />
+            ) : null}
+
             {selectedDashboardTab === 'ops' ? (
             <section className="workspace-operations-quiet" aria-label="Technical confidence">
               <DataFreshnessBanner freshness={selectedServerSummary.dataFreshness} />
@@ -5610,7 +5625,7 @@ function App() {
                                 </ul>
                               </div>
                               <div className="detail-block">
-                                <h3>Recent Sessions</h3>
+                                <h3>Recent Adventures</h3>
                                 <ul className="list compact">
                                   <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
                                   {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
@@ -5630,7 +5645,7 @@ function App() {
 
                     {selectedDashboardTab === 'activity' ? (
                       <>
-                        <WorldChroniclePanel title="Realm History" events={valheimChronicleEvents} />
+                        <WorldChroniclePanel title="Realm Chronicle" events={valheimChronicleEvents} />
 
                         <article className="card valheim-world-highlights-card">
                           <h2>Recent World Highlights</h2>
@@ -5741,6 +5756,12 @@ function App() {
                   <>
                     {selectedDashboardTab === 'highlights' ? (
                       <>
+                        <WorldChroniclePanel
+                          title="Archipelago Chronicle"
+                          events={palworldChronicleEvents}
+                          emptyMessage="The archipelago has not recorded enough guild history yet. More memories will appear as players explore."
+                        />
+
                         <article className="card palworld-world-highlights-card">
                           <h2>World Highlights</h2>
                           <ul className="list review-list">
@@ -5750,8 +5771,6 @@ function App() {
                             ))}
                           </ul>
                         </article>
-
-                        <WorldChroniclePanel title="Guild Chronicle" events={palworldChronicleEvents} />
 
                         <article className="card">
                           <h2>Current Milestone Feed</h2>
@@ -5851,7 +5870,7 @@ function App() {
                                   <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
                                 </ul>
                                 <div className="milestone-block">
-                                  <h4>Player Intelligence</h4>
+                                  <h4>Player Signals</h4>
                                   <ul className="list compact">
                                     <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
                                     <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
@@ -5936,7 +5955,11 @@ function App() {
                           baseTrend={palworldBaseSignalTrend}
                         />
 
-                        <WorldChroniclePanel title="Guild Chronicle" events={palworldChronicleEvents} />
+                        <WorldChroniclePanel
+                          title="Guild Chronicle"
+                          events={palworldChronicleEvents}
+                          emptyMessage="Guild tracking will appear as trusted Palworld activity is collected."
+                        />
 
                         <article className="card guild-activity-card">
                           <div className="command-panel-heading">

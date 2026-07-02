@@ -56,7 +56,7 @@ test('operator player intelligence card renders compact summary and top players'
     />
   );
 
-  assert.match(html, /Player Intelligence/);
+  assert.match(html, /Players/);
   assert.match(html, /Valheim Local/);
   assert.match(html, /Known: 4/);
   assert.match(html, /New: 1/);
@@ -89,7 +89,7 @@ test('operator player intelligence card renders empty state', () => {
     />
   );
 
-  assert.match(html, /No player activity captured yet/);
+  assert.match(html, /not recorded enough player history/);
   assert.match(html, /Quiet Server/);
   assert.match(html, /Known: 0/);
 });

@@ -297,7 +297,7 @@ function addValheimMemory(
       confidence: player.identityConfidence,
       chronicleReferences: [],
       relationships: [],
-      sourceLabel: 'Player Intelligence',
+      sourceLabel: 'Players',
       metadata: {
         playerId: player.playerId,
         sessionCount: player.sessionCount,
@@ -314,7 +314,7 @@ function addValheimMemory(
       fromRecordId: recordId,
       toRecordId: worldRecordId,
       confidence: player.identityConfidence,
-      sourceLabel: 'Player Intelligence'
+      sourceLabel: 'Players'
     });
 
     return { player, record, importedCharacter };
@@ -334,7 +334,7 @@ function addValheimMemory(
       actorName: player.displayName,
       memoryRecordId: characterId(input.serverId, player.playerId),
       confidence: player.confidence === 'unknown' ? 'low' : player.confidence,
-      sourceLabel: 'Player Intelligence'
+      sourceLabel: 'Players'
     });
   }
 
@@ -361,7 +361,7 @@ function addValheimMemory(
         id: `join:${event.id ?? event.occurredAt}:${playerName}`,
         kind: 'join',
         occurredAt: event.occurredAt,
-        title: `${playerName} joined the world.`,
+        title: `${playerName} entered the realm.`,
         detail: event.raw?.valheimCurrentPlayerCount !== undefined
           ? `${event.raw.valheimCurrentPlayerCount} player${event.raw.valheimCurrentPlayerCount === 1 ? '' : 's'} online after this arrival.`
           : undefined,
@@ -374,14 +374,14 @@ function addValheimMemory(
 
     if (event.eventType === 'PLAYER_LEAVE') {
       const playerName = event.playerName ?? 'An adventurer';
+      const sessionDuration = typeof event.raw?.sessionDurationSeconds === 'number'
+        ? formatDurationFromSeconds(event.raw.sessionDurationSeconds)
+        : null;
       addChronicleEvent({
         id: `leave:${event.id ?? event.occurredAt}:${playerName}`,
         kind: 'leave',
         occurredAt: event.occurredAt,
-        title: `${playerName} left the world.`,
-        detail: typeof event.raw?.sessionDurationSeconds === 'number'
-          ? `Session lasted ${formatDurationFromSeconds(event.raw.sessionDurationSeconds)}.`
-          : undefined,
+        title: sessionDuration ? `${playerName} explored for ${sessionDuration}.` : `${playerName} left the realm.`,
         actorName: playerName,
         memoryRecordId: characterId(input.serverId, playerName),
         confidence: event.platformId ? 'high' : 'medium',

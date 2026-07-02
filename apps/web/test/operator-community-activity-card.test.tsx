@@ -68,7 +68,7 @@ test('operator community activity card renders compact community facts', () => {
     />
   );
 
-  assert.match(html, /Community Activity/);
+  assert.match(html, /Community Pulse/);
   assert.match(html, /Valheim Local/);
   assert.match(html, /Sessions/);
   assert.match(html, /5/);
@@ -110,7 +110,7 @@ test('operator community activity card renders empty states', () => {
     />
   );
 
-  assert.match(html, /No community activity captured yet/);
+  assert.match(html, /not recorded enough community history/);
   assert.match(html, /Not enough spaced session history yet/);
   assert.match(html, /No recent players observed/);
   assert.match(html, /No quiet players with enough history/);

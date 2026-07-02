@@ -53,12 +53,12 @@ export function OperatorCommunityActivityCard({ servers }: OperatorCommunityActi
       <div className="operator-debug-heading">
         <div>
           <span className="summary-label">Community</span>
-          <h2>Community Activity</h2>
+          <h2>Community Pulse</h2>
         </div>
         <span className="state-pill state-unknown">{servers.length} servers</span>
       </div>
 
-      {!hasActivity ? <p className="operator-empty-note">No community activity captured yet.</p> : null}
+      {!hasActivity ? <p className="operator-empty-note">This world has not recorded enough community history yet.</p> : null}
 
       <div className="operator-community-list">
         {servers.map((server) => {
