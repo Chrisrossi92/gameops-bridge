@@ -93,6 +93,18 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
+import {
+  createWorldMemoryRegistry,
+  getGuildConfidence,
+  getPalworldBaseLifecycleState,
+  getPalworldGuildActivityState,
+  getPalworldGuildIntelligenceFromMemory,
+  getValheimCharactersFromMemory,
+  type PalworldGuildIntelligence,
+  type ValheimCharacterEntry,
+  type WorldChronicleEvent,
+  type WorldChronicleEventKind
+} from './world-memory.ts';
 import './App.css';
 
 interface HealthResponse {
@@ -178,57 +190,6 @@ interface PalworldPlayerListEntry {
 }
 
 type PalworldReviewAction = 'approve' | 'reject';
-
-type WorldChronicleEventKind =
-  | 'arrival'
-  | 'return'
-  | 'join'
-  | 'leave'
-  | 'restart'
-  | 'imported_character'
-  | 'guild_active'
-  | 'guild_quiet'
-  | 'base_lifecycle';
-
-interface WorldChronicleEvent {
-  id: string;
-  kind: WorldChronicleEventKind;
-  occurredAt: string;
-  title: string;
-  detail?: string;
-  actorName?: string;
-  confidence: 'low' | 'medium' | 'high';
-  sourceLabel: string;
-}
-
-interface ImportedCharacterSignal {
-  detected: boolean;
-  label: string;
-  confidence: 'medium' | 'high';
-  evidence: string;
-}
-
-interface ValheimCharacterEntry {
-  id: string;
-  name: string;
-  isOnline: boolean;
-  firstSeenAt: string | null;
-  lastSeenAt: string | null;
-  sessionCount: number;
-  totalTrackedSeconds: number;
-  identityConfidence: PlayerIntelligenceRecord['identityConfidence'];
-  identityExplanation: string;
-  importedCharacter: ImportedCharacterSignal | null;
-}
-
-interface PalworldGuildIntelligence {
-  guild: PalworldGuildActivityEntry;
-  confidence: GuildConfidence;
-  activeMemberCount: number;
-  activityState: string;
-  lifecycleState: string;
-  lifecycleDetail: string;
-}
 
 interface PalworldGuildHint {
   guildName?: string | null;
@@ -1939,58 +1900,6 @@ interface GuildRiskRowProps {
   onMarkReviewed: () => void;
 }
 
-interface GuildConfidence {
-  trackedCount: number;
-  totalCount: number;
-  label: string;
-  shortLabel: string;
-  tone: 'low' | 'partial' | 'medium' | 'high';
-}
-
-function getGuildConfidence(members: PalworldGuildActivityMember[], memberCountFallback: number): GuildConfidence {
-  const trackedCount = members.filter((member) => member.matched).length;
-  const totalCount = members.length > 0 ? members.length : memberCountFallback;
-  const ratio = totalCount > 0 ? trackedCount / totalCount : 0;
-
-  if (trackedCount === 0) {
-    return {
-      trackedCount,
-      totalCount,
-      label: 'Low confidence',
-      shortLabel: 'Low',
-      tone: 'low'
-    };
-  }
-
-  if (ratio < 0.5) {
-    return {
-      trackedCount,
-      totalCount,
-      label: 'Partial confidence',
-      shortLabel: 'Partial',
-      tone: 'partial'
-    };
-  }
-
-  if (ratio < 1) {
-    return {
-      trackedCount,
-      totalCount,
-      label: 'Medium confidence',
-      shortLabel: 'Medium',
-      tone: 'medium'
-    };
-  }
-
-  return {
-    trackedCount,
-    totalCount,
-    label: 'High confidence',
-    shortLabel: 'High',
-    tone: 'high'
-  };
-}
-
 function GuildRiskRow({ guild, reviewed, onOpen, onMarkReviewed }: GuildRiskRowProps) {
   const riskText = guild.daysInactive !== null
     ? `${guild.daysInactive}d inactive`
@@ -2393,336 +2302,6 @@ function getLatestActivityLabel(summary: ServerSummary | undefined): string {
     ?? summary.serverAliveRhythm.summary;
 
   return latestActivity || 'No recent activity yet';
-}
-
-function readGameField(fields: Record<string, unknown> | undefined, keys: string[]): unknown {
-  if (!fields) {
-    return undefined;
-  }
-
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(fields, key)) {
-      return fields[key];
-    }
-  }
-
-  return undefined;
-}
-
-function isTruthyField(value: unknown): boolean {
-  if (value === true) {
-    return true;
-  }
-
-  if (typeof value === 'string') {
-    return ['true', 'yes', 'imported', 'external', 'existing_progression'].includes(value.trim().toLowerCase());
-  }
-
-  return false;
-}
-
-function getImportedCharacterSignal(player: PlayerIntelligenceRecord): ImportedCharacterSignal | null {
-  const gameFields = player.gameFields;
-  const explicitImportFlag = readGameField(gameFields, [
-    'importedCharacter',
-    'imported_character',
-    'appearsImported',
-    'appears_imported',
-    'existingProgression',
-    'existing_progression'
-  ]);
-  const progressionSource = readGameField(gameFields, ['progressionSource', 'progression_source', 'characterSource', 'character_source']);
-  const evidence = readGameField(gameFields, ['importEvidence', 'import_evidence', 'progressionEvidence', 'progression_evidence']);
-
-  /*
-   * Imported Character Detection V1 is deliberately conservative.
-   * The dashboard only surfaces this owner-awareness indicator when trusted
-   * upstream data already exposes an explicit import/progression flag or source.
-   * It does not infer imports from playtime, session count, names, or activity
-   * patterns because those would be guesses without character progression data.
-   */
-  if (isTruthyField(explicitImportFlag) || isTruthyField(progressionSource)) {
-    return {
-      detected: true,
-      label: 'Imported character detected',
-      confidence: explicitImportFlag === true ? 'high' : 'medium',
-      evidence: typeof evidence === 'string' && evidence.trim() !== ''
-        ? evidence
-        : 'Trusted character metadata marks this player as entering with existing progression.'
-    };
-  }
-
-  return null;
-}
-
-function buildValheimCharacters(summary: ServerSummary | null): ValheimCharacterEntry[] {
-  if (!summary) {
-    return [];
-  }
-
-  return summary.playerIntelligence
-    .map((player) => ({
-      id: player.playerId,
-      name: player.displayName,
-      isOnline: player.isOnline,
-      firstSeenAt: player.firstSeenAt,
-      lastSeenAt: player.lastSeenAt,
-      sessionCount: player.sessionCount,
-      totalTrackedSeconds: player.totalTrackedSeconds,
-      identityConfidence: player.identityConfidence,
-      identityExplanation: player.identityExplanation,
-      importedCharacter: getImportedCharacterSignal(player)
-    }))
-    .sort((left, right) => {
-      if (Number(right.isOnline) !== Number(left.isOnline)) {
-        return Number(right.isOnline) - Number(left.isOnline);
-      }
-
-      if (right.lastSeenAt !== left.lastSeenAt) {
-        return (right.lastSeenAt ?? '').localeCompare(left.lastSeenAt ?? '');
-      }
-
-      return right.totalTrackedSeconds - left.totalTrackedSeconds;
-    });
-}
-
-function buildValheimChronicle(summary: ServerSummary | null, characters: ValheimCharacterEntry[]): WorldChronicleEvent[] {
-  if (!summary) {
-    return [];
-  }
-
-  const events = new Map<string, WorldChronicleEvent>();
-  const addEvent = (event: WorldChronicleEvent): void => {
-    events.set(event.id, event);
-  };
-
-  for (const player of summary.playerEngagement.returningPlayers.slice(0, 6)) {
-    if (!player.lastSeenAt) {
-      continue;
-    }
-
-    addEvent({
-      id: `return:${player.playerId}:${player.lastSeenAt}`,
-      kind: 'return',
-      occurredAt: player.lastSeenAt,
-      title: `${player.displayName} returned to the realm.`,
-      detail: player.reason,
-      actorName: player.displayName,
-      confidence: player.confidence === 'unknown' ? 'low' : player.confidence,
-      sourceLabel: 'Player Intelligence'
-    });
-  }
-
-  for (const player of summary.knownPlayers.slice(0, 12)) {
-    addEvent({
-      id: `arrival:${player.normalizedPlayerKey}:${player.firstSeenAt}`,
-      kind: 'arrival',
-      occurredAt: player.firstSeenAt,
-      title: `${player.displayName} entered the realm.`,
-      detail: player.observationCount > 1
-        ? `${player.observationCount} trusted observations have been recorded.`
-        : 'First trusted identity observation for this world.',
-      actorName: player.displayName,
-      confidence: player.confidence,
-      sourceLabel: 'Known Players'
-    });
-  }
-
-  for (const event of summary.recentEvents) {
-    if (event.eventType === 'PLAYER_JOIN') {
-      const playerName = event.playerName ?? 'A new adventurer';
-      addEvent({
-        id: `join:${event.id ?? event.occurredAt}:${playerName}`,
-        kind: 'join',
-        occurredAt: event.occurredAt,
-        title: `${playerName} joined the world.`,
-        detail: event.raw?.valheimCurrentPlayerCount !== undefined
-          ? `${event.raw.valheimCurrentPlayerCount} player${event.raw.valheimCurrentPlayerCount === 1 ? '' : 's'} online after this arrival.`
-          : undefined,
-        actorName: playerName,
-        confidence: event.platformId ? 'high' : 'medium',
-        sourceLabel: 'Trusted event'
-      });
-    }
-
-    if (event.eventType === 'PLAYER_LEAVE') {
-      const playerName = event.playerName ?? 'An adventurer';
-      addEvent({
-        id: `leave:${event.id ?? event.occurredAt}:${playerName}`,
-        kind: 'leave',
-        occurredAt: event.occurredAt,
-        title: `${playerName} left the world.`,
-        detail: typeof event.raw?.sessionDurationSeconds === 'number'
-          ? `Session lasted ${formatDurationFromSeconds(event.raw.sessionDurationSeconds)}.`
-          : undefined,
-        actorName: playerName,
-        confidence: event.platformId ? 'high' : 'medium',
-        sourceLabel: 'Trusted event'
-      });
-    }
-
-    if (event.eventType === 'SERVER_RESTARTING' || event.eventType === 'SERVER_ONLINE') {
-      addEvent({
-        id: `server:${event.eventType}:${event.id ?? event.occurredAt}`,
-        kind: 'restart',
-        occurredAt: event.occurredAt,
-        title: event.eventType === 'SERVER_RESTARTING' ? 'The world began restarting.' : 'The world came online.',
-        detail: event.message,
-        confidence: 'high',
-        sourceLabel: 'Server event'
-      });
-    }
-  }
-
-  for (const character of characters) {
-    if (!character.importedCharacter || !character.lastSeenAt) {
-      continue;
-    }
-
-    addEvent({
-      id: `imported:${character.id}:${character.lastSeenAt}`,
-      kind: 'imported_character',
-      occurredAt: character.lastSeenAt,
-      title: `${character.name} appears to have entered this realm with existing progression.`,
-      detail: character.importedCharacter.evidence,
-      actorName: character.name,
-      confidence: character.importedCharacter.confidence,
-      sourceLabel: 'Character metadata'
-    });
-  }
-
-  return [...events.values()]
-    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
-    .slice(0, 14);
-}
-
-function getPalworldGuildActivityState(guild: PalworldGuildActivityEntry): string {
-  switch (guild.riskLevel) {
-    case 'active':
-      return 'Alive';
-    case 'watch':
-      return 'Quiet';
-    case 'risk':
-      return 'Monitoring';
-    case 'expired':
-      return 'Near inactivity threshold';
-    case 'unknown':
-      return 'Activity unknown';
-  }
-}
-
-function getPalworldBaseLifecycleState(guild: PalworldGuildActivityEntry): { state: string; detail: string } {
-  if (guild.daysInactive === null || guild.daysUntilPalboxRisk === null) {
-    return {
-      state: 'Evidence needed',
-      detail: 'Base lifecycle cannot be estimated until this guild has matched member activity.'
-    };
-  }
-
-  if (guild.riskLevel === 'expired') {
-    return {
-      state: 'Near inactivity threshold',
-      detail: `No matched member activity for ${guild.daysInactive} days. The server uses a 30-day base deletion setting.`
-    };
-  }
-
-  if (guild.riskLevel === 'risk') {
-    return {
-      state: 'Monitoring',
-      detail: `${guild.daysUntilPalboxRisk} days remain before the 30-day inactivity window is reached.`
-    };
-  }
-
-  if (guild.riskLevel === 'watch') {
-    return {
-      state: 'Quiet',
-      detail: `${guild.daysInactive} days since matched member activity. Keep watching this guild.`
-    };
-  }
-
-  return {
-    state: 'Healthy',
-    detail: `Matched member activity was seen ${guild.daysInactive} days ago.`
-  };
-}
-
-function buildPalworldGuildIntelligence(guilds: PalworldGuildActivityEntry[]): PalworldGuildIntelligence[] {
-  const riskRank: Record<GuildRiskLevel, number> = {
-    expired: 0,
-    risk: 1,
-    watch: 2,
-    active: 3,
-    unknown: 4
-  };
-
-  return [...guilds]
-    .map((guild) => {
-      const confidence = getGuildConfidence(guild.members, guild.memberCount);
-      const activeMemberCount = guild.members.filter((member) => member.daysSinceSeen !== null && member.daysSinceSeen <= 7).length;
-      const lifecycle = getPalworldBaseLifecycleState(guild);
-
-      return {
-        guild,
-        confidence,
-        activeMemberCount,
-        activityState: getPalworldGuildActivityState(guild),
-        lifecycleState: lifecycle.state,
-        lifecycleDetail: lifecycle.detail
-      };
-    })
-    .sort((left, right) => {
-      const riskDelta = riskRank[left.guild.riskLevel] - riskRank[right.guild.riskLevel];
-
-      if (riskDelta !== 0) {
-        return riskDelta;
-      }
-
-      if (right.activeMemberCount !== left.activeMemberCount) {
-        return right.activeMemberCount - left.activeMemberCount;
-      }
-
-      return (right.guild.lastMemberSeenAt ?? '').localeCompare(left.guild.lastMemberSeenAt ?? '');
-    });
-}
-
-function buildPalworldChronicle(guilds: PalworldGuildActivityEntry[]): WorldChronicleEvent[] {
-  const events = new Map<string, WorldChronicleEvent>();
-  const addEvent = (event: WorldChronicleEvent): void => {
-    events.set(event.id, event);
-  };
-
-  for (const guild of guilds) {
-    if (guild.lastMemberSeenAt) {
-      addEvent({
-        id: `guild-active:${guild.guildName}:${guild.lastMemberSeenAt}`,
-        kind: 'guild_active',
-        occurredAt: guild.lastMemberSeenAt,
-        title: `${guild.guildName} showed activity.`,
-        detail: guild.lastSeenMemberName ? `${guild.lastSeenMemberName} was the most recently seen member.` : undefined,
-        actorName: guild.guildName,
-        confidence: getGuildConfidence(guild.members, guild.memberCount).tone === 'high' ? 'high' : 'medium',
-        sourceLabel: 'Guild activity'
-      });
-    }
-
-    if (guild.lastMemberSeenAt && (guild.riskLevel === 'watch' || guild.riskLevel === 'risk' || guild.riskLevel === 'expired')) {
-      const lifecycle = getPalworldBaseLifecycleState(guild);
-      addEvent({
-        id: `base-lifecycle:${guild.guildName}:${guild.riskLevel}:${guild.lastMemberSeenAt}`,
-        kind: guild.riskLevel === 'watch' ? 'guild_quiet' : 'base_lifecycle',
-        occurredAt: guild.lastMemberSeenAt,
-        title: `${guild.guildName} is ${lifecycle.state.toLowerCase()}.`,
-        detail: lifecycle.detail,
-        actorName: guild.guildName,
-        confidence: 'medium',
-        sourceLabel: '30-day base lifecycle'
-      });
-    }
-  }
-
-  return [...events.values()]
-    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
-    .slice(0, 14);
 }
 
 function App() {
@@ -4810,14 +4389,6 @@ function App() {
     return focusedGuild ? [focusedGuild] : [];
   }, [expandedGuildActivityName, guildActivityFilterOptions.filteredGuildActivity, guildFocusMode]);
 
-  const palworldGuildIntelligence = useMemo(() => {
-    return buildPalworldGuildIntelligence(guildActivity);
-  }, [guildActivity]);
-
-  const palworldChronicleEvents = useMemo(() => {
-    return buildPalworldChronicle(guildActivity);
-  }, [guildActivity]);
-
   const selectedPalworldGuild = useMemo(() => {
     if (!expandedGuildActivityName) {
       return null;
@@ -5083,6 +4654,32 @@ function App() {
   }, [filteredServers, selectedServerId]);
 
   const selectedServerSummary = selectedServer ? fleetByServerId[selectedServer.id] ?? null : null;
+  const selectedWorldMemory = useMemo(() => {
+    if (!selectedServer || !selectedServerSummary) {
+      return createWorldMemoryRegistry({ serverId: selectedServerId || 'unselected' });
+    }
+
+    if (selectedServer.game === 'valheim') {
+      return createWorldMemoryRegistry({
+        serverId: selectedServer.id,
+        valheim: {
+          serverId: selectedServer.id,
+          playerIntelligence: selectedServerSummary.playerIntelligence,
+          playerEngagement: selectedServerSummary.playerEngagement,
+          knownPlayers: selectedServerSummary.knownPlayers,
+          recentEvents: selectedServerSummary.recentEvents
+        }
+      });
+    }
+
+    return createWorldMemoryRegistry({
+      serverId: selectedServer.id,
+      palworld: {
+        serverId: selectedServer.id,
+        guildActivity
+      }
+    });
+  }, [guildActivity, selectedServer, selectedServerId, selectedServerSummary]);
   const worldCards = useMemo(() => {
     return serverOptions
       .filter((server) => server.game === 'valheim' || server.game === 'palworld')
@@ -5265,11 +4862,25 @@ function App() {
     ? palworldOverviewHighlights
     : valheimOverviewHighlights;
   const valheimCharacters = useMemo(() => {
-    return selectedServer?.game === 'valheim' ? buildValheimCharacters(selectedServerSummary) : [];
-  }, [selectedServer?.game, selectedServerSummary]);
+    return selectedServer?.game === 'valheim' ? getValheimCharactersFromMemory(selectedWorldMemory) : [];
+  }, [selectedServer?.game, selectedWorldMemory]);
   const valheimChronicleEvents = useMemo(() => {
-    return selectedServer?.game === 'valheim' ? buildValheimChronicle(selectedServerSummary, valheimCharacters) : [];
-  }, [selectedServer?.game, selectedServerSummary, valheimCharacters]);
+    return selectedServer?.game === 'valheim' ? selectedWorldMemory.chronicleEvents.slice(0, 14) : [];
+  }, [selectedServer?.game, selectedWorldMemory]);
+  const palworldGuildIntelligence = useMemo(() => {
+    return selectedServer?.game === 'palworld' ? getPalworldGuildIntelligenceFromMemory(selectedWorldMemory) : [];
+  }, [selectedServer?.game, selectedWorldMemory]);
+  const palworldChronicleEvents = useMemo(() => {
+    return selectedServer?.game === 'palworld' ? selectedWorldMemory.chronicleEvents.slice(0, 14) : [];
+  }, [selectedServer?.game, selectedWorldMemory]);
+  const selectedPalworldGuildMemoryDetail = useMemo(() => {
+    if (!selectedPalworldGuild) {
+      return null;
+    }
+
+    const guildMemory = palworldGuildIntelligence.find((entry) => entry.guild.guildName === selectedPalworldGuild.guildName);
+    return guildMemory ? selectedWorldMemory.getDetail(guildMemory.memoryRecordId) : null;
+  }, [palworldGuildIntelligence, selectedPalworldGuild, selectedWorldMemory]);
   const palworldCommunityPulse = useMemo(() => {
     const onlinePlayers = palworldLatestPlayers.filter((player) => player.isOnline).length;
     const activeGuilds = palworldGuildSummary.activeGuildsTwoPlus;
@@ -6605,7 +6216,7 @@ function App() {
         <PalworldGuildDrawer
           guild={selectedPalworldGuild}
           reviewed={reviewedGuildNames.has(selectedPalworldGuild.guildName)}
-          chronicleEvents={palworldChronicleEvents.filter((event) => event.actorName === selectedPalworldGuild.guildName)}
+          chronicleEvents={selectedPalworldGuildMemoryDetail?.chronicleEvents ?? []}
           onClose={() => setExpandedGuildActivityName(null)}
           onMarkReviewed={() => markGuildReviewedAndAdvance(selectedPalworldGuild.guildName)}
         />
