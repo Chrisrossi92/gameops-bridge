@@ -3632,6 +3632,34 @@
   align-items: flex-start;
 }
 
+.world-memory-relationships {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.world-memory-relationship-list li {
+  align-items: flex-start;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.86));
+}
+
+.world-memory-relationship-list li > span:first-child {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.world-memory-relationship-list strong {
+  color: #0f172a;
+  font-size: 0.84rem;
+}
+
+.world-memory-relationship-list small {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .world-chronicle-card,
 .valheim-character-card {
   grid-column: 1 / -1;

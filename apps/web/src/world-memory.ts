@@ -558,7 +558,11 @@ function addPalworldMemory(
         chronicleReferences: [],
         relationships: [],
         sourceLabel: 'Guild member activity',
-        metadata: { member }
+        metadata: {
+          member,
+          guildName: guild.guildName,
+          guildMemberCount: guild.memberCount
+        }
       });
       addRelationship({
         id: `relationship:${memberRecordId}:guild:${recordId}`,

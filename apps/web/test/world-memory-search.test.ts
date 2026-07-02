@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { searchWorldMemoryRecords, type WorldMemoryRecord } from '../src/world-memory.ts';
+import { createWorldMemoryRegistry, searchWorldMemoryRecords, type WorldMemoryRecord } from '../src/world-memory.ts';
 
 function record(overrides: Partial<WorldMemoryRecord>): WorldMemoryRecord {
   return {
@@ -45,4 +45,50 @@ test('world memory search supports case-insensitive name and type matching', () 
 
 test('world memory search returns no results for an empty query', () => {
   assert.deepEqual(searchWorldMemoryRecords([record({ displayName: 'Any Memory' })], '   ', 'valheim'), []);
+});
+
+test('world memory registry exposes guild member relationships', () => {
+  const registry = createWorldMemoryRegistry({
+    serverId: 'palworld',
+    palworld: {
+      serverId: 'palworld',
+      guildActivity: [{
+        guildName: 'Iron Wolves',
+        memberCount: 2,
+        lastMemberSeenAt: '2026-07-01T12:00:00.000Z',
+        lastSeenMemberName: 'Mira',
+        riskLevel: 'active',
+        daysInactive: 0,
+        daysUntilPalboxRisk: 30,
+        members: [{
+          memberName: 'Mira',
+          matched: true,
+          matchedPlayerName: 'Mira',
+          lastSeenAt: '2026-07-01T12:00:00.000Z',
+          daysSinceSeen: 0,
+          level: 42,
+          saveLinked: true
+        }, {
+          memberName: 'Sol',
+          matched: false,
+          matchedPlayerName: null,
+          lastSeenAt: null,
+          daysSinceSeen: null,
+          level: null,
+          saveLinked: null
+        }]
+      }]
+    }
+  });
+
+  const guild = registry.getRecordsByType('guild').find((memory) => memory.displayName === 'Iron Wolves');
+  assert.ok(guild);
+
+  const detail = registry.getDetail(guild.id);
+  assert.ok(detail);
+  assert.equal(detail.relationships.some((relationship) => relationship.type === 'guild_member'), true);
+
+  const member = registry.getRecordsByType('person').find((memory) => memory.displayName === 'Mira');
+  assert.ok(member);
+  assert.equal(member.metadata.guildName, 'Iron Wolves');
 });

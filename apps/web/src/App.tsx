@@ -107,7 +107,8 @@ import {
   type WorldChronicleEventKind,
   type WorldMemoryDetailModel,
   type WorldMemoryRecord,
-  type WorldMemoryRecordType
+  type WorldMemoryRecordType,
+  type WorldMemoryRelationship
 } from './world-memory.ts';
 import './App.css';
 
@@ -486,6 +487,63 @@ function getWorldMemoryTypeLabel(type: WorldMemoryRecordType): string {
   }
 }
 
+function getRelationshipTypeLabel(type: WorldMemoryRelationship['type']): string {
+  switch (type) {
+    case 'player_character':
+      return 'Character link';
+    case 'character_realm':
+      return 'Realm activity';
+    case 'guild_member':
+      return 'Guild member';
+    case 'guild_base':
+      return 'Base link';
+    case 'base_world':
+      return 'World base';
+    case 'event_subject':
+      return 'World activity';
+  }
+}
+
+function getRelatedRecord(relationship: WorldMemoryRelationship, subjectRecordId: string, records: WorldMemoryRecord[]): WorldMemoryRecord | null {
+  const relatedRecordId = relationship.fromRecordId === subjectRecordId
+    ? relationship.toRecordId
+    : relationship.fromRecordId;
+
+  return records.find((record) => record.id === relatedRecordId) ?? null;
+}
+
+function getRelationshipOwnerLabel(relationship: WorldMemoryRelationship, subject: WorldMemoryRecord, related: WorldMemoryRecord | null): string {
+  if (relationship.type === 'character_realm') {
+    return subject.type === 'character' ? 'Character belongs to this realm' : 'Realm includes this character';
+  }
+
+  if (relationship.type === 'guild_member') {
+    return subject.type === 'guild' ? 'Guild member' : `Member of ${related?.displayName ?? 'this guild'}`;
+  }
+
+  if (relationship.type === 'event_subject') {
+    return subject.type === 'guild' ? 'Guild belongs to this archipelago' : 'World activity';
+  }
+
+  if (relationship.type === 'guild_base') {
+    return subject.type === 'guild' ? 'Future base relationship' : 'Base belongs to guild';
+  }
+
+  if (relationship.type === 'base_world') {
+    return subject.type === 'base' ? 'Base belongs to this world' : 'World base relationship';
+  }
+
+  return getRelationshipTypeLabel(relationship.type);
+}
+
+function getChronicleReferenceSummary(count: number): string {
+  if (count === 0) {
+    return 'No Chronicle references yet';
+  }
+
+  return `Appears in ${count} Chronicle ${count === 1 ? 'entry' : 'entries'}`;
+}
+
 function normalizeMemorySearchValue(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -493,17 +551,24 @@ function normalizeMemorySearchValue(value: string): string {
 function getWorldMemorySearchContext(record: WorldMemoryRecord): string {
   if (record.game === 'valheim' && record.type === 'character') {
     const sessionCount = Number(record.metadata.sessionCount ?? 0);
-    return sessionCount > 0 ? `${sessionCount} adventure${sessionCount === 1 ? '' : 's'} remembered` : 'Character remembered from trusted realm activity';
+    return sessionCount > 0
+      ? `Linked to realm activity · ${sessionCount} adventure${sessionCount === 1 ? '' : 's'} remembered`
+      : 'Linked to realm activity';
   }
 
   if (record.game === 'palworld' && record.type === 'guild') {
     const activeMemberCount = Number(record.metadata.activeMemberCount ?? 0);
-    return `${activeMemberCount} active member${activeMemberCount === 1 ? '' : 's'} remembered`;
+    const guild = record.metadata.guild as PalworldGuildActivityEntry | undefined;
+    const memberCount = guild?.memberCount ?? Number(record.metadata.guildMemberCount ?? 0);
+    return `${memberCount} member${memberCount === 1 ? '' : 's'} · ${activeMemberCount} active this week`;
   }
 
   if (record.game === 'palworld' && record.type === 'person') {
     const member = record.metadata.member as PalworldGuildActivityMember | undefined;
-    return member?.matched ? 'Matched from guild member activity' : 'Remembered from trusted Palworld activity';
+    const guildName = typeof record.metadata.guildName === 'string' ? record.metadata.guildName : null;
+    return guildName
+      ? `Member of ${guildName}`
+      : member?.matched ? 'Matched from guild member activity' : 'Remembered from trusted Palworld activity';
   }
 
   return record.sourceLabel;
@@ -599,10 +664,59 @@ function WorldMemorySearch({ game, query, results, totalMemories, onQueryChange,
 
 interface WorldMemoryDetailDrawerProps {
   detail: WorldMemoryDetailModel;
+  records: WorldMemoryRecord[];
   onClose: () => void;
 }
 
-function WorldMemoryDetailDrawer({ detail, onClose }: WorldMemoryDetailDrawerProps) {
+interface WorldMemoryRelationshipPanelProps {
+  detail: WorldMemoryDetailModel;
+  records: WorldMemoryRecord[];
+  title?: string;
+  emptyMessage?: string;
+}
+
+function WorldMemoryRelationshipPanel({
+  detail,
+  records,
+  title = 'Connected Memories',
+  emptyMessage = 'No connected memories are available yet.'
+}: WorldMemoryRelationshipPanelProps) {
+  const { record, relationships, chronicleEvents } = detail;
+
+  return (
+    <section className="player-drawer-sessions world-memory-relationships">
+      <h3>{title}</h3>
+      <ul className="world-memory-relationship-list">
+        {relationships.length === 0 ? <li>{emptyMessage}</li> : null}
+        {relationships.map((relationship) => {
+          const relatedRecord = getRelatedRecord(relationship, record.id, records);
+          const relatedName = relatedRecord?.displayName ?? 'This world';
+          const relatedType = relatedRecord ? getWorldMemoryTypeLabel(relatedRecord.type) : 'World';
+
+          return (
+            <li key={relationship.id}>
+              <span>
+                <strong>{getRelationshipOwnerLabel(relationship, record, relatedRecord)}</strong>
+                <small>{relatedName} · {relatedType}</small>
+              </span>
+              <span className={`confidence-badge confidence-${relationship.confidence === 'unknown' ? 'low' : relationship.confidence}`}>
+                {relationship.confidence}
+              </span>
+            </li>
+          );
+        })}
+        <li>
+          <span>
+            <strong>{getChronicleReferenceSummary(chronicleEvents.length)}</strong>
+            <small>{chronicleEvents[0] ? `Last remembered event ${formatRelativeTime(chronicleEvents[0].occurredAt)}` : 'More memories will appear as this world writes its story.'}</small>
+          </span>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+function WorldMemoryDetailDrawer({ detail, records, onClose }: WorldMemoryDetailDrawerProps) {
   const { record, relationships, chronicleEvents } = detail;
 
   return (
@@ -633,8 +747,10 @@ function WorldMemoryDetailDrawer({ detail, onClose }: WorldMemoryDetailDrawerPro
           <dd>{relationships.length}</dd>
         </dl>
 
+        <WorldMemoryRelationshipPanel detail={detail} records={records} />
+
         <section className="player-drawer-sessions">
-          <h3>Chronicle References</h3>
+          <h3>Recent Chronicle</h3>
           <ul>
             {chronicleEvents.length === 0 ? <li>This memory does not have enough story history yet.</li> : null}
             {chronicleEvents.map((event) => (
@@ -2320,14 +2436,17 @@ function PalworldBaseLifecyclePanel({ guilds, hasBaseTelemetry, baseCapacity, ba
 interface PalworldGuildDrawerProps {
   guild: PalworldGuildActivityEntry;
   reviewed: boolean;
-  chronicleEvents: WorldChronicleEvent[];
+  memoryDetail: WorldMemoryDetailModel | null;
+  records: WorldMemoryRecord[];
   onClose: () => void;
   onMarkReviewed: () => void;
 }
 
-function PalworldGuildDrawer({ guild, reviewed, chronicleEvents, onClose, onMarkReviewed }: PalworldGuildDrawerProps) {
+function PalworldGuildDrawer({ guild, reviewed, memoryDetail, records, onClose, onMarkReviewed }: PalworldGuildDrawerProps) {
   const confidence = getGuildConfidence(guild.members, guild.memberCount);
   const activeMembers = guild.members.filter((member) => member.daysSinceSeen !== null && member.daysSinceSeen <= 7);
+  const chronicleEvents = memoryDetail?.chronicleEvents ?? [];
+  const memberRelationships = memoryDetail?.relationships.filter((relationship) => relationship.type === 'guild_member') ?? [];
 
   return (
     <div className="player-drawer-shell" role="presentation">
@@ -2365,8 +2484,37 @@ function PalworldGuildDrawer({ guild, reviewed, chronicleEvents, onClose, onMark
           onMarkReviewed={onMarkReviewed}
         />
 
+        <section className="player-drawer-sessions world-memory-relationships">
+          <h3>Guild Connections</h3>
+          <ul className="world-memory-relationship-list">
+            <li>
+              <span>
+                <strong>{guild.memberCount} known {guild.memberCount === 1 ? 'member' : 'members'}</strong>
+                <small>{activeMembers.length} active this week from trusted member activity</small>
+              </span>
+            </li>
+            {memberRelationships.length === 0 ? <li>No matched player memories are connected to this guild yet.</li> : null}
+            {memberRelationships.slice(0, 6).map((relationship) => {
+              const relatedRecord = memoryDetail ? getRelatedRecord(relationship, memoryDetail.record.id, records) : null;
+
+              return (
+                <li key={relationship.id}>
+                  <span>
+                    <strong>{relatedRecord?.displayName ?? 'Matched member'}</strong>
+                    <small>{relatedRecord ? getWorldMemorySearchContext(relatedRecord) : 'Matched from guild member activity'}</small>
+                  </span>
+                  <span className={`confidence-badge confidence-${relationship.confidence === 'unknown' ? 'low' : relationship.confidence}`}>
+                    {relationship.confidence}
+                  </span>
+                </li>
+              );
+            })}
+            {memberRelationships.length > 6 ? <li>{memberRelationships.length - 6} more connected members.</li> : null}
+          </ul>
+        </section>
+
         <section className="player-drawer-sessions">
-          <h3>Guild Timeline</h3>
+          <h3>Recent Chronicle</h3>
           <ul>
             {chronicleEvents.length === 0 ? <li>This guild does not have enough matched activity for a timeline yet.</li> : null}
             {chronicleEvents.map((event) => (
@@ -2379,8 +2527,8 @@ function PalworldGuildDrawer({ guild, reviewed, chronicleEvents, onClose, onMark
         </section>
 
         <section className="player-drawer-sessions">
-          <h3>Future Base Information</h3>
-          <p className="subtle">Base owner guild and exact base lifecycle will appear when trusted base-to-guild evidence is available.</p>
+          <h3>Base Lifecycle Relationship</h3>
+          <p className="subtle">Base records are not available yet. Guild activity is being tracked so future base lifecycle monitoring can use member recency.</p>
         </section>
       </aside>
     </div>
@@ -5111,6 +5259,22 @@ function App() {
     const guildMemory = palworldGuildIntelligence.find((entry) => entry.guild.guildName === selectedPalworldGuild.guildName);
     return guildMemory ? selectedWorldMemory.getDetail(guildMemory.memoryRecordId) : null;
   }, [palworldGuildIntelligence, selectedPalworldGuild, selectedWorldMemory]);
+  const selectedValheimCharacterMemoryDetail = useMemo(() => {
+    if (selectedServer?.game !== 'valheim' || (!selectedPlayerIntelligenceId && !selectedValheimPlayerLookupKey)) {
+      return null;
+    }
+
+    const characterRecord = selectedWorldMemory.records.find((record) => (
+      record.game === 'valheim'
+      && record.type === 'character'
+      && (
+        String(record.metadata.playerId ?? record.id) === selectedPlayerIntelligenceId
+        || normalizePlayerKey(record.displayName) === selectedValheimPlayerLookupKey
+      )
+    ));
+
+    return characterRecord ? selectedWorldMemory.getDetail(characterRecord.id) : null;
+  }, [selectedPlayerIntelligenceId, selectedServer?.game, selectedValheimPlayerLookupKey, selectedWorldMemory]);
   function openWorldMemoryRecord(record: WorldMemoryRecord): void {
     setSelectedMemoryDetail(null);
 
@@ -5835,29 +5999,47 @@ function App() {
                           <h2>Player Detail</h2>
                           {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a known player to inspect session and identity data.</p> : null}
                           {selectedValheimPlayerProfile?.player ? (
-                            <div className="detail-grid">
-                              <div className="detail-block">
-                                <h3>Identity</h3>
-                                <ul className="list compact">
-                                  <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
-                                  <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
-                                  <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
-                                  <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
-                                </ul>
+                            <>
+                              <div className="detail-grid">
+                                <div className="detail-block">
+                                  <h3>Identity</h3>
+                                  <ul className="list compact">
+                                    <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
+                                    <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
+                                    <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
+                                    <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
+                                  </ul>
+                                </div>
+                                <div className="detail-block">
+                                  <h3>Adventures</h3>
+                                  <ul className="list compact">
+                                    <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                    {selectedValheimPlayerProfile.recentSessions.slice(0, 4).map((session, index) => (
+                                      <li key={`${session.startedAt}:${index}`}>
+                                        <span>{formatTimestamp(session.startedAt)}</span>
+                                        <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
                               </div>
-                              <div className="detail-block">
-                                <h3>Sessions</h3>
-                                <ul className="list compact">
-                                  <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                                  {selectedValheimPlayerProfile.recentSessions.slice(0, 4).map((session, index) => (
-                                    <li key={`${session.startedAt}:${index}`}>
-                                      <span>{formatTimestamp(session.startedAt)}</span>
-                                      <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </div>
+                              {selectedValheimCharacterMemoryDetail ? (
+                                <WorldMemoryRelationshipPanel
+                                  detail={selectedValheimCharacterMemoryDetail}
+                                  records={selectedWorldMemory.records}
+                                  title="Player Connections"
+                                  emptyMessage="This player is not connected to other memories yet."
+                                />
+                              ) : null}
+                            </>
+                          ) : null}
+                          {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
+                            <WorldMemoryRelationshipPanel
+                              detail={selectedValheimCharacterMemoryDetail}
+                              records={selectedWorldMemory.records}
+                              title="Player Connections"
+                              emptyMessage="This player is not connected to other memories yet."
+                            />
                           ) : null}
                         </article>
                       </>
@@ -5877,31 +6059,49 @@ function App() {
                           <h2>Character Evidence</h2>
                           {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a character to inspect session and identity evidence for this realm.</p> : null}
                           {selectedValheimPlayerProfile?.player ? (
-                            <div className="detail-grid">
-                              <div className="detail-block">
-                                <h3>Identity</h3>
-                                <ul className="list compact">
-                                  <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
-                                  <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
-                                  <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
-                                  <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
-                                  <li><span>Observations</span><span>{selectedValheimPlayerProfile.player.observationCount}</span></li>
-                                </ul>
+                            <>
+                              <div className="detail-grid">
+                                <div className="detail-block">
+                                  <h3>Identity</h3>
+                                  <ul className="list compact">
+                                    <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
+                                    <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
+                                    <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
+                                    <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
+                                    <li><span>Observations</span><span>{selectedValheimPlayerProfile.player.observationCount}</span></li>
+                                  </ul>
+                                </div>
+                                <div className="detail-block">
+                                  <h3>Recent Adventures</h3>
+                                  <ul className="list compact">
+                                    <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                    {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
+                                    {selectedValheimPlayerProfile.recentSessions.slice(0, 5).map((session, index) => (
+                                      <li key={`${session.startedAt}:${index}`}>
+                                        <span>{formatTimestamp(session.startedAt)}</span>
+                                        <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
                               </div>
-                              <div className="detail-block">
-                                <h3>Recent Adventures</h3>
-                                <ul className="list compact">
-                                  <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                                  {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
-                                  {selectedValheimPlayerProfile.recentSessions.slice(0, 5).map((session, index) => (
-                                    <li key={`${session.startedAt}:${index}`}>
-                                      <span>{formatTimestamp(session.startedAt)}</span>
-                                      <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </div>
+                              {selectedValheimCharacterMemoryDetail ? (
+                                <WorldMemoryRelationshipPanel
+                                  detail={selectedValheimCharacterMemoryDetail}
+                                  records={selectedWorldMemory.records}
+                                  title="Character Connections"
+                                  emptyMessage="This character is not connected to other memories yet."
+                                />
+                              ) : null}
+                            </>
+                          ) : null}
+                          {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
+                            <WorldMemoryRelationshipPanel
+                              detail={selectedValheimCharacterMemoryDetail}
+                              records={selectedWorldMemory.records}
+                              title="Character Connections"
+                              emptyMessage="This character is not connected to other memories yet."
+                            />
                           ) : null}
                         </article>
                       </>
@@ -6503,7 +6703,8 @@ function App() {
         <PalworldGuildDrawer
           guild={selectedPalworldGuild}
           reviewed={reviewedGuildNames.has(selectedPalworldGuild.guildName)}
-          chronicleEvents={selectedPalworldGuildMemoryDetail?.chronicleEvents ?? []}
+          memoryDetail={selectedPalworldGuildMemoryDetail}
+          records={selectedWorldMemory.records}
           onClose={() => setExpandedGuildActivityName(null)}
           onMarkReviewed={() => markGuildReviewedAndAdvance(selectedPalworldGuild.guildName)}
         />
@@ -6511,6 +6712,7 @@ function App() {
       {selectedMemoryDetail ? (
         <WorldMemoryDetailDrawer
           detail={selectedMemoryDetail}
+          records={selectedWorldMemory.records}
           onClose={() => setSelectedMemoryDetail(null)}
         />
       ) : null}
