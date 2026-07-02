@@ -104,7 +104,8 @@ interface HealthResponse {
 interface KnownPlayerEntry {
   displayName: string;
   normalizedPlayerKey: string;
-  confidence: string;
+  confidence: 'low' | 'medium' | 'high';
+  firstSeenAt: string;
   lastSeenAt: string;
   observationCount: number;
 }
@@ -177,6 +178,39 @@ interface PalworldPlayerListEntry {
 }
 
 type PalworldReviewAction = 'approve' | 'reject';
+
+type WorldChronicleEventKind = 'arrival' | 'return' | 'join' | 'leave' | 'restart' | 'imported_character';
+
+interface WorldChronicleEvent {
+  id: string;
+  kind: WorldChronicleEventKind;
+  occurredAt: string;
+  title: string;
+  detail?: string;
+  actorName?: string;
+  confidence: 'low' | 'medium' | 'high';
+  sourceLabel: string;
+}
+
+interface ImportedCharacterSignal {
+  detected: boolean;
+  label: string;
+  confidence: 'medium' | 'high';
+  evidence: string;
+}
+
+interface ValheimCharacterEntry {
+  id: string;
+  name: string;
+  isOnline: boolean;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  sessionCount: number;
+  totalTrackedSeconds: number;
+  identityConfidence: PlayerIntelligenceRecord['identityConfidence'];
+  identityExplanation: string;
+  importedCharacter: ImportedCharacterSignal | null;
+}
 
 interface PalworldGuildHint {
   guildName?: string | null;
@@ -356,6 +390,66 @@ function ActivityLogPanel({ items }: ActivityLogPanelProps) {
           </li>
         ))}
       </ul>
+    </article>
+  );
+}
+
+interface WorldChroniclePanelProps {
+  title: string;
+  events: WorldChronicleEvent[];
+}
+
+function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
+  switch (kind) {
+    case 'arrival':
+      return 'Arrival';
+    case 'return':
+      return 'Return';
+    case 'join':
+      return 'Joined';
+    case 'leave':
+      return 'Left';
+    case 'restart':
+      return 'Restart';
+    case 'imported_character':
+      return 'Character';
+  }
+}
+
+function WorldChroniclePanel({ title, events }: WorldChroniclePanelProps) {
+  return (
+    <article className="card world-chronicle-card">
+      <div className="world-chronicle-heading">
+        <div>
+          <span className="summary-label">World Chronicle</span>
+          <h2>{title}</h2>
+        </div>
+        <span className="source-badge">{events.length} entries</span>
+      </div>
+
+      {events.length === 0 ? (
+        <p className="world-chronicle-empty">This realm is still writing its story. More adventures will appear as players explore.</p>
+      ) : null}
+
+      <ol className="world-chronicle-list">
+        {events.map((event) => (
+          <li key={event.id} className={`world-chronicle-row world-chronicle-${event.kind}`}>
+            <div className="world-chronicle-marker" aria-hidden="true" />
+            <div className="world-chronicle-main">
+              <div className="world-chronicle-title-row">
+                <span className="source-badge">{getChronicleKindLabel(event.kind)}</span>
+                <strong>{event.title}</strong>
+              </div>
+              {event.detail ? <p>{event.detail}</p> : null}
+              <div className="world-chronicle-meta">
+                <span>{formatRelativeTime(event.occurredAt)}</span>
+                <span>{event.sourceLabel}</span>
+                <span className={`confidence-badge confidence-${event.confidence}`}>{event.confidence}</span>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
     </article>
   );
 }
@@ -1550,6 +1644,62 @@ function PlayerIntelligencePanel({ players, explanation, freshness, selectedPlay
   );
 }
 
+interface ValheimCharacterIntelligencePanelProps {
+  characters: ValheimCharacterEntry[];
+  onSelectCharacter: (character: ValheimCharacterEntry) => void;
+}
+
+function ValheimCharacterIntelligencePanel({ characters, onSelectCharacter }: ValheimCharacterIntelligencePanelProps) {
+  return (
+    <article className="card valheim-character-card">
+      <div className="panel-title-row">
+        <div>
+          <span className="summary-label">Valheim Characters</span>
+          <h2>Character Intelligence</h2>
+          <p className="subtle">Characters are based on trusted session and identity observations for this realm.</p>
+        </div>
+      </div>
+
+      {characters.length === 0 ? (
+        <p className="empty-line">This realm has not recorded enough character history yet.</p>
+      ) : null}
+
+      <ul className="valheim-character-list">
+        {characters.map((character) => (
+          <li key={character.id} className="valheim-character-row">
+            <div className="valheim-character-main">
+              <div className="valheim-character-title">
+                <button type="button" className="inline-player-link" onClick={() => onSelectCharacter(character)}>
+                  {character.name}
+                </button>
+                <span className={`state-pill state-${character.isOnline ? 'online' : 'offline'}`}>
+                  {character.isOnline ? 'online' : 'offline'}
+                </span>
+                <span className={`confidence-badge confidence-${character.identityConfidence === 'unknown' ? 'low' : character.identityConfidence}`}>
+                  {character.identityConfidence}
+                </span>
+                {character.importedCharacter ? (
+                  <span className="imported-character-badge">{character.importedCharacter.label}</span>
+                ) : null}
+              </div>
+              <div className="valheim-character-meta">
+                <span>First seen {character.firstSeenAt ? formatTimestamp(character.firstSeenAt) : 'unknown'}</span>
+                <span>Last seen {character.lastSeenAt ? formatTimestamp(character.lastSeenAt) : 'unknown'}</span>
+                <span>{character.sessionCount} session{character.sessionCount === 1 ? '' : 's'}</span>
+                <span>{formatDurationFromSeconds(character.totalTrackedSeconds)} tracked</span>
+              </div>
+              <p className="subtle">{character.identityExplanation}</p>
+              {character.importedCharacter ? (
+                <p className="subtle">Evidence: {character.importedCharacter.evidence}</p>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 interface PlayerDetailPanelProps {
   detail: PlayerDetailResponse | null;
   loading: boolean;
@@ -1935,7 +2085,7 @@ interface PalworldBaseSignalHistoryEntry {
   baseSignal: number;
 }
 
-type DashboardTab = 'overview' | 'operator' | 'highlights' | 'players' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
+type DashboardTab = 'overview' | 'operator' | 'highlights' | 'players' | 'characters' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
 type WorkspaceView = 'overview' | 'valheim' | 'palworld';
 
 const apiBaseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
@@ -2056,6 +2206,207 @@ function getLatestActivityLabel(summary: ServerSummary | undefined): string {
     ?? summary.serverAliveRhythm.summary;
 
   return latestActivity || 'No recent activity yet';
+}
+
+function readGameField(fields: Record<string, unknown> | undefined, keys: string[]): unknown {
+  if (!fields) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(fields, key)) {
+      return fields[key];
+    }
+  }
+
+  return undefined;
+}
+
+function isTruthyField(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    return ['true', 'yes', 'imported', 'external', 'existing_progression'].includes(value.trim().toLowerCase());
+  }
+
+  return false;
+}
+
+function getImportedCharacterSignal(player: PlayerIntelligenceRecord): ImportedCharacterSignal | null {
+  const gameFields = player.gameFields;
+  const explicitImportFlag = readGameField(gameFields, [
+    'importedCharacter',
+    'imported_character',
+    'appearsImported',
+    'appears_imported',
+    'existingProgression',
+    'existing_progression'
+  ]);
+  const progressionSource = readGameField(gameFields, ['progressionSource', 'progression_source', 'characterSource', 'character_source']);
+  const evidence = readGameField(gameFields, ['importEvidence', 'import_evidence', 'progressionEvidence', 'progression_evidence']);
+
+  /*
+   * Imported Character Detection V1 is deliberately conservative.
+   * The dashboard only surfaces this owner-awareness indicator when trusted
+   * upstream data already exposes an explicit import/progression flag or source.
+   * It does not infer imports from playtime, session count, names, or activity
+   * patterns because those would be guesses without character progression data.
+   */
+  if (isTruthyField(explicitImportFlag) || isTruthyField(progressionSource)) {
+    return {
+      detected: true,
+      label: 'Imported character detected',
+      confidence: explicitImportFlag === true ? 'high' : 'medium',
+      evidence: typeof evidence === 'string' && evidence.trim() !== ''
+        ? evidence
+        : 'Trusted character metadata marks this player as entering with existing progression.'
+    };
+  }
+
+  return null;
+}
+
+function buildValheimCharacters(summary: ServerSummary | null): ValheimCharacterEntry[] {
+  if (!summary) {
+    return [];
+  }
+
+  return summary.playerIntelligence
+    .map((player) => ({
+      id: player.playerId,
+      name: player.displayName,
+      isOnline: player.isOnline,
+      firstSeenAt: player.firstSeenAt,
+      lastSeenAt: player.lastSeenAt,
+      sessionCount: player.sessionCount,
+      totalTrackedSeconds: player.totalTrackedSeconds,
+      identityConfidence: player.identityConfidence,
+      identityExplanation: player.identityExplanation,
+      importedCharacter: getImportedCharacterSignal(player)
+    }))
+    .sort((left, right) => {
+      if (Number(right.isOnline) !== Number(left.isOnline)) {
+        return Number(right.isOnline) - Number(left.isOnline);
+      }
+
+      if (right.lastSeenAt !== left.lastSeenAt) {
+        return (right.lastSeenAt ?? '').localeCompare(left.lastSeenAt ?? '');
+      }
+
+      return right.totalTrackedSeconds - left.totalTrackedSeconds;
+    });
+}
+
+function buildValheimChronicle(summary: ServerSummary | null, characters: ValheimCharacterEntry[]): WorldChronicleEvent[] {
+  if (!summary) {
+    return [];
+  }
+
+  const events = new Map<string, WorldChronicleEvent>();
+  const addEvent = (event: WorldChronicleEvent): void => {
+    events.set(event.id, event);
+  };
+
+  for (const player of summary.playerEngagement.returningPlayers.slice(0, 6)) {
+    if (!player.lastSeenAt) {
+      continue;
+    }
+
+    addEvent({
+      id: `return:${player.playerId}:${player.lastSeenAt}`,
+      kind: 'return',
+      occurredAt: player.lastSeenAt,
+      title: `${player.displayName} returned to the realm.`,
+      detail: player.reason,
+      actorName: player.displayName,
+      confidence: player.confidence === 'unknown' ? 'low' : player.confidence,
+      sourceLabel: 'Player Intelligence'
+    });
+  }
+
+  for (const player of summary.knownPlayers.slice(0, 12)) {
+    addEvent({
+      id: `arrival:${player.normalizedPlayerKey}:${player.firstSeenAt}`,
+      kind: 'arrival',
+      occurredAt: player.firstSeenAt,
+      title: `${player.displayName} entered the realm.`,
+      detail: player.observationCount > 1
+        ? `${player.observationCount} trusted observations have been recorded.`
+        : 'First trusted identity observation for this world.',
+      actorName: player.displayName,
+      confidence: player.confidence,
+      sourceLabel: 'Known Players'
+    });
+  }
+
+  for (const event of summary.recentEvents) {
+    if (event.eventType === 'PLAYER_JOIN') {
+      const playerName = event.playerName ?? 'A new adventurer';
+      addEvent({
+        id: `join:${event.id ?? event.occurredAt}:${playerName}`,
+        kind: 'join',
+        occurredAt: event.occurredAt,
+        title: `${playerName} joined the world.`,
+        detail: event.raw?.valheimCurrentPlayerCount !== undefined
+          ? `${event.raw.valheimCurrentPlayerCount} player${event.raw.valheimCurrentPlayerCount === 1 ? '' : 's'} online after this arrival.`
+          : undefined,
+        actorName: playerName,
+        confidence: event.platformId ? 'high' : 'medium',
+        sourceLabel: 'Trusted event'
+      });
+    }
+
+    if (event.eventType === 'PLAYER_LEAVE') {
+      const playerName = event.playerName ?? 'An adventurer';
+      addEvent({
+        id: `leave:${event.id ?? event.occurredAt}:${playerName}`,
+        kind: 'leave',
+        occurredAt: event.occurredAt,
+        title: `${playerName} left the world.`,
+        detail: typeof event.raw?.sessionDurationSeconds === 'number'
+          ? `Session lasted ${formatDurationFromSeconds(event.raw.sessionDurationSeconds)}.`
+          : undefined,
+        actorName: playerName,
+        confidence: event.platformId ? 'high' : 'medium',
+        sourceLabel: 'Trusted event'
+      });
+    }
+
+    if (event.eventType === 'SERVER_RESTARTING' || event.eventType === 'SERVER_ONLINE') {
+      addEvent({
+        id: `server:${event.eventType}:${event.id ?? event.occurredAt}`,
+        kind: 'restart',
+        occurredAt: event.occurredAt,
+        title: event.eventType === 'SERVER_RESTARTING' ? 'The world began restarting.' : 'The world came online.',
+        detail: event.message,
+        confidence: 'high',
+        sourceLabel: 'Server event'
+      });
+    }
+  }
+
+  for (const character of characters) {
+    if (!character.importedCharacter || !character.lastSeenAt) {
+      continue;
+    }
+
+    addEvent({
+      id: `imported:${character.id}:${character.lastSeenAt}`,
+      kind: 'imported_character',
+      occurredAt: character.lastSeenAt,
+      title: `${character.name} appears to have entered this realm with existing progression.`,
+      detail: character.importedCharacter.evidence,
+      actorName: character.name,
+      confidence: character.importedCharacter.confidence,
+      sourceLabel: 'Character metadata'
+    });
+  }
+
+  return [...events.values()]
+    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+    .slice(0, 14);
 }
 
 function App() {
@@ -2572,6 +2923,7 @@ function App() {
               displayName: player.displayName,
               normalizedPlayerKey: normalizePlayerKey(player.normalizedPlayerKey),
               confidence: player.confidence,
+              firstSeenAt: player.firstSeenAt,
               lastSeenAt: player.lastSeenAt,
               observationCount: player.observationCount
             })),
@@ -4354,16 +4706,6 @@ function App() {
     };
   }, [palworldGuilds]);
 
-  const palworldWorldCapacitySummary = useMemo(() => {
-    return {
-      likelyRealGuilds: palworldGuildSummary.likelyRealGuilds,
-      activeGuilds: palworldGuildSummary.activeGuildsTwoPlus,
-      estimatedBases: palworldBaseCapacity?.estimatedBases ?? null,
-      remainingBaseSlots: palworldBaseCapacity?.remainingCapacity ?? null,
-      pressureStatus: palworldBaseCapacity?.statusLabel ?? 'Unknown'
-    };
-  }, [palworldBaseCapacity, palworldGuildSummary]);
-
   useEffect(() => {
     if (!selectedServer || selectedServer.game !== 'palworld') {
       return;
@@ -4454,7 +4796,8 @@ function App() {
     return [
       { key: 'overview', label: 'Community' },
       { key: 'players', label: 'Players' },
-      { key: 'activity', label: 'World' },
+      { key: 'characters', label: 'Characters' },
+      { key: 'activity', label: 'World History' },
       { key: 'ops', label: 'Operations' }
     ] satisfies Array<{ key: DashboardTab; label: string }>;
   }, [selectedServer?.game]);
@@ -4578,10 +4921,6 @@ function App() {
       pushHighlight(`${selectedServerSummary?.activePlayers ?? 0} active sessions detected`);
     }
 
-    if (items.length === 0) {
-      items.push('Highlights engine coming next');
-    }
-
     return items.slice(0, 5);
   }, [selectedServerSummary, selectedWarningSummary]);
 
@@ -4591,22 +4930,15 @@ function App() {
       .slice(0, 5);
   }, [selectedServerSummary]);
 
-  const valheimWorldCapacitySummary = useMemo(() => {
-    return {
-      likelyRealGuilds: selectedServerSummary?.knownPlayerCount ?? 0,
-      activeGuilds: selectedServerSummary?.activePlayers ?? 0,
-      estimatedBases: null,
-      remainingBaseSlots: null,
-      pressureStatus: selectedWarningSummary.length > 0 ? 'Watch' : 'Stable'
-    };
-  }, [selectedServerSummary, selectedWarningSummary]);
-
-  const activeWorldCapacitySummary = selectedServer?.game === 'palworld'
-    ? palworldWorldCapacitySummary
-    : valheimWorldCapacitySummary;
   const activeHighlights = selectedServer?.game === 'palworld'
     ? palworldOverviewHighlights
     : valheimOverviewHighlights;
+  const valheimCharacters = useMemo(() => {
+    return selectedServer?.game === 'valheim' ? buildValheimCharacters(selectedServerSummary) : [];
+  }, [selectedServer?.game, selectedServerSummary]);
+  const valheimChronicleEvents = useMemo(() => {
+    return selectedServer?.game === 'valheim' ? buildValheimChronicle(selectedServerSummary, valheimCharacters) : [];
+  }, [selectedServer?.game, selectedServerSummary, valheimCharacters]);
   const palworldCommunityPulse = useMemo(() => {
     const onlinePlayers = palworldLatestPlayers.filter((player) => player.isOnline).length;
     const activeGuilds = palworldGuildSummary.activeGuildsTwoPlus;
@@ -5177,19 +5509,18 @@ function App() {
                   </section>
 
                   <section className="card-grid secondary-card-grid">
-                    <article className="card">
-                      <h2>World Capacity Summary</h2>
+                    <article className="card valheim-world-highlights-card">
+                      <h2>World Highlights</h2>
                       <ul className="list compact">
-                        <li><span>Likely Real Guilds</span><span>{activeWorldCapacitySummary.likelyRealGuilds}</span></li>
-                        <li><span>Active Guilds</span><span>{activeWorldCapacitySummary.activeGuilds}</span></li>
-                        <li><span>Estimated Bases</span><span>{activeWorldCapacitySummary.estimatedBases ?? 'N/A'}</span></li>
-                        <li><span>Remaining Base Slots</span><span>{activeWorldCapacitySummary.remainingBaseSlots ?? 'N/A'}</span></li>
-                        <li><span>Pressure Status</span><span>{activeWorldCapacitySummary.pressureStatus}</span></li>
+                        <li><span>Newest adventurer</span><span>{selectedServerSummary.playerIntelligenceSummary.mostRecentPlayer?.displayName ?? 'Not enough history yet'}</span></li>
+                        <li><span>Longest active player</span><span>{selectedServerSummary.playerIntelligenceSummary.longestSessionPlayer?.displayName ?? 'Not enough sessions yet'}</span></li>
+                        <li><span>Returning this week</span><span>{selectedServerSummary.playerIntelligenceSummary.returningPlayersThisWeek}</span></li>
+                        <li><span>New this week</span><span>{selectedServerSummary.playerIntelligenceSummary.newPlayersThisWeek}</span></li>
                       </ul>
                     </article>
 
                     <article className="card">
-                      <h2>Core Players</h2>
+                      <h2>Realm Regulars</h2>
                       <ul className="list review-list">
                         {valheimCorePlayers.length === 0 ? <li>This world has not recorded enough player history yet.</li> : null}
                         {valheimCorePlayers.map((player) => (
@@ -5312,8 +5643,64 @@ function App() {
                       </>
                     ) : null}
 
+                    {selectedDashboardTab === 'characters' ? (
+                      <>
+                        <ValheimCharacterIntelligencePanel
+                          characters={valheimCharacters}
+                          onSelectCharacter={(character) => {
+                            setSelectedPlayerIntelligenceId(character.id);
+                            setSelectedValheimPlayerLookupKey(normalizePlayerKey(character.name));
+                          }}
+                        />
+
+                        <article className="card">
+                          <h2>Character Evidence</h2>
+                          {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a character to inspect session and identity evidence for this realm.</p> : null}
+                          {selectedValheimPlayerProfile?.player ? (
+                            <div className="detail-grid">
+                              <div className="detail-block">
+                                <h3>Identity</h3>
+                                <ul className="list compact">
+                                  <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
+                                  <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
+                                  <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
+                                  <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
+                                  <li><span>Observations</span><span>{selectedValheimPlayerProfile.player.observationCount}</span></li>
+                                </ul>
+                              </div>
+                              <div className="detail-block">
+                                <h3>Recent Sessions</h3>
+                                <ul className="list compact">
+                                  <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                  {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
+                                  {selectedValheimPlayerProfile.recentSessions.slice(0, 5).map((session, index) => (
+                                    <li key={`${session.startedAt}:${index}`}>
+                                      <span>{formatTimestamp(session.startedAt)}</span>
+                                      <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          ) : null}
+                        </article>
+                      </>
+                    ) : null}
+
                     {selectedDashboardTab === 'activity' ? (
                       <>
+                        <WorldChroniclePanel title="Realm History" events={valheimChronicleEvents} />
+
+                        <article className="card valheim-world-highlights-card">
+                          <h2>Recent World Highlights</h2>
+                          <ul className="list review-list">
+                            {activeHighlights.length === 0 ? <li>This realm is still writing its story.</li> : null}
+                            {activeHighlights.map((item) => (
+                              <li key={item} className="review-row"><div className="review-main">{item}</div></li>
+                            ))}
+                          </ul>
+                        </article>
+
                         <SessionTimelinePanel timeline={selectedServerSummary.sessionTimeline} freshness={selectedServerSummary.dataFreshness} />
                         <ActivityLogPanel items={selectedServerSummary.activityLog} />
 
@@ -5958,6 +6345,39 @@ function formatTimestamp(value: string): string {
   }
 
   return date.toLocaleString();
+}
+
+function formatRelativeTime(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const elapsedMs = Date.now() - date.getTime();
+  const elapsedMinutes = Math.max(0, Math.floor(elapsedMs / 60_000));
+
+  if (elapsedMinutes < 1) {
+    return 'just now';
+  }
+
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes}m ago`;
+  }
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+
+  if (elapsedHours < 24) {
+    return `${elapsedHours}h ago`;
+  }
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+
+  if (elapsedDays < 14) {
+    return `${elapsedDays}d ago`;
+  }
+
+  return formatTimestamp(value);
 }
 
 function formatDurationFromSeconds(totalSeconds: number): string {
