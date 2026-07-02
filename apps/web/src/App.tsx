@@ -90,7 +90,7 @@ import {
   type PalworldTransitionMilestoneEvent,
   type PalworldUnifiedPlayerProfile
 } from '@gameops/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
 import {
@@ -675,17 +675,85 @@ interface WorldMemoryRelationshipPanelProps {
   emptyMessage?: string;
 }
 
+interface WorldMemoryFact {
+  label: string;
+  value: ReactNode;
+}
+
+interface WorldMemoryDrawerSectionProps {
+  title: string;
+  children: ReactNode;
+  quiet?: boolean;
+}
+
+function WorldMemoryDrawerSection({ title, children, quiet = false }: WorldMemoryDrawerSectionProps) {
+  return (
+    <section className={`player-drawer-sessions world-memory-drawer-section${quiet ? ' world-memory-drawer-section-quiet' : ''}`}>
+      <h3>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function WorldMemoryFactGrid({ facts }: { facts: WorldMemoryFact[] }) {
+  return (
+    <dl className="player-drawer-grid world-memory-fact-grid">
+      {facts.map((fact) => (
+        <div key={fact.label} className="world-memory-fact">
+          <dt>{fact.label}</dt>
+          <dd>{fact.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function WorldMemoryRecentChronicle({ events, emptyMessage }: { events: WorldChronicleEvent[]; emptyMessage?: string }) {
+  return (
+    <WorldMemoryDrawerSection title="Recent Chronicle">
+      <ul className="world-memory-chronicle-list">
+        {events.length === 0 ? <li>{emptyMessage ?? 'This memory has not appeared in the Chronicle yet.'}</li> : null}
+        {events.slice(0, 6).map((event) => (
+          <li key={event.id}>
+            <span>{event.title}</span>
+            <span>{formatRelativeTime(event.occurredAt)}</span>
+          </li>
+        ))}
+      </ul>
+    </WorldMemoryDrawerSection>
+  );
+}
+
+function WorldMemoryOperatorDetails({ record, relationshipCount }: { record: WorldMemoryRecord; relationshipCount: number }) {
+  return (
+    <details className="world-memory-operator-details">
+      <summary>Operator Details</summary>
+      <dl>
+        <dt>Source</dt>
+        <dd>{record.sourceLabel}</dd>
+        <dt>Memory ID</dt>
+        <dd><code>{record.id}</code></dd>
+        <dt>Server ID</dt>
+        <dd><code>{record.serverId}</code></dd>
+        <dt>Trusted links</dt>
+        <dd>{relationshipCount}</dd>
+        <dt>Chronicle references</dt>
+        <dd>{record.chronicleReferences.length}</dd>
+      </dl>
+    </details>
+  );
+}
+
 function WorldMemoryRelationshipPanel({
   detail,
   records,
-  title = 'Connected Memories',
-  emptyMessage = 'No connected memories are available yet.'
+  title = 'Related Memories',
+  emptyMessage = 'No related memories have been recorded yet.'
 }: WorldMemoryRelationshipPanelProps) {
   const { record, relationships, chronicleEvents } = detail;
 
   return (
-    <section className="player-drawer-sessions world-memory-relationships">
-      <h3>{title}</h3>
+    <WorldMemoryDrawerSection title={title}>
       <ul className="world-memory-relationship-list">
         {relationships.length === 0 ? <li>{emptyMessage}</li> : null}
         {relationships.map((relationship) => {
@@ -708,16 +776,22 @@ function WorldMemoryRelationshipPanel({
         <li>
           <span>
             <strong>{getChronicleReferenceSummary(chronicleEvents.length)}</strong>
-            <small>{chronicleEvents[0] ? `Last remembered event ${formatRelativeTime(chronicleEvents[0].occurredAt)}` : 'More memories will appear as this world writes its story.'}</small>
+            <small>{chronicleEvents[0] ? `Last Chronicle appearance ${formatRelativeTime(chronicleEvents[0].occurredAt)}` : 'This memory has not appeared in the Chronicle yet.'}</small>
           </span>
         </li>
       </ul>
-    </section>
+    </WorldMemoryDrawerSection>
   );
 }
 
 function WorldMemoryDetailDrawer({ detail, records, onClose }: WorldMemoryDetailDrawerProps) {
   const { record, relationships, chronicleEvents } = detail;
+  const facts: WorldMemoryFact[] = [
+    { label: 'Status', value: record.currentStatus },
+    { label: 'Confidence', value: <span className={`confidence-badge confidence-${record.confidence === 'unknown' ? 'low' : record.confidence}`}>{record.confidence}</span> },
+    { label: 'First seen', value: record.firstSeenAt ? formatTimestamp(record.firstSeenAt) : 'Not enough evidence' },
+    { label: 'Last activity', value: record.lastSeenAt ? formatTimestamp(record.lastSeenAt) : 'Not enough evidence' }
+  ];
 
   return (
     <div className="player-drawer-shell" role="presentation">
@@ -732,35 +806,13 @@ function WorldMemoryDetailDrawer({ detail, records, onClose }: WorldMemoryDetail
           <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
         </div>
 
-        <dl className="player-drawer-grid">
-          <dt>Status</dt>
-          <dd>{record.currentStatus}</dd>
-          <dt>Confidence</dt>
-          <dd><span className={`confidence-badge confidence-${record.confidence === 'unknown' ? 'low' : record.confidence}`}>{record.confidence}</span></dd>
-          <dt>First seen</dt>
-          <dd>{record.firstSeenAt ? formatTimestamp(record.firstSeenAt) : 'Not enough evidence'}</dd>
-          <dt>Last activity</dt>
-          <dd>{record.lastSeenAt ? formatTimestamp(record.lastSeenAt) : 'Not enough evidence'}</dd>
-          <dt>Source</dt>
-          <dd>{record.sourceLabel}</dd>
-          <dt>Relationships</dt>
-          <dd>{relationships.length}</dd>
-        </dl>
+        <WorldMemoryFactGrid facts={facts} />
 
         <WorldMemoryRelationshipPanel detail={detail} records={records} />
 
-        <section className="player-drawer-sessions">
-          <h3>Recent Chronicle</h3>
-          <ul>
-            {chronicleEvents.length === 0 ? <li>This memory does not have enough story history yet.</li> : null}
-            {chronicleEvents.map((event) => (
-              <li key={event.id}>
-                <span>{event.title}</span>
-                <span>{formatRelativeTime(event.occurredAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <WorldMemoryRecentChronicle events={chronicleEvents} />
+
+        <WorldMemoryOperatorDetails record={record} relationshipCount={relationships.length} />
       </aside>
     </div>
   );
@@ -2119,6 +2171,19 @@ function PlayerDetailDrawer({
   const lastSessionDurationSeconds = profile.lastSessionDurationSeconds ?? profile.recentSessions[0]?.durationSeconds;
   const recentSessions = profile.recentSessions.slice(0, 5);
   const playerDisplayName = getProfileDisplayName(profile);
+  const playerFacts: WorldMemoryFact[] = [
+    { label: 'Status', value: profile.isOnline ? 'Online' : 'Offline' },
+    { label: 'Level', value: profile.profile.level ?? 'N/A' },
+    { label: 'Save', value: formatSaveLinkLabel(profile.saveArtifact.present) },
+    { label: 'Last adventure', value: formatDurationMaybe(lastSessionDurationSeconds) },
+    { label: 'First seen', value: profile.profile.firstSeenAt ? formatTimestamp(profile.profile.firstSeenAt) : 'N/A' },
+    { label: 'Last seen', value: profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'N/A' },
+    { label: '7d playtime', value: formatDurationFromSeconds(profile.trackedSeconds7d) }
+  ];
+
+  if (profile.isOnline) {
+    playerFacts.splice(3, 0, { label: 'Current adventure', value: formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined) });
+  }
 
   return (
     <div className="player-drawer-shell" role="presentation">
@@ -2135,32 +2200,9 @@ function PlayerDetailDrawer({
           <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
         </div>
 
-        <dl className="player-drawer-grid">
-          <dt>Level</dt>
-          <dd>{profile.profile.level ?? 'N/A'}</dd>
-          <dt>Save</dt>
-          <dd>{formatSaveLinkLabel(profile.saveArtifact.present)}</dd>
-          {profile.isOnline ? (
-            <>
-              <dt>Current session</dt>
-              <dd>{formatDurationMaybe(profile.currentSessionDurationSeconds ?? undefined)}</dd>
-            </>
-          ) : null}
-          <dt>Last session</dt>
-          <dd>{formatDurationMaybe(lastSessionDurationSeconds)}</dd>
-          <dt>Last ended</dt>
-          <dd>{lastSessionEndedAt ? formatTimestamp(lastSessionEndedAt) : 'N/A'}</dd>
-          <dt>24h playtime</dt>
-          <dd>{formatDurationFromSeconds(profile.trackedSeconds24h)}</dd>
-          <dt>7d playtime</dt>
-          <dd>{formatDurationFromSeconds(profile.trackedSeconds7d)}</dd>
-          <dt>30d playtime</dt>
-          <dd>{formatDurationFromSeconds(profile.trackedSeconds30d)}</dd>
-          <dt>Last seen</dt>
-          <dd>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'N/A'}</dd>
-        </dl>
+        <WorldMemoryFactGrid facts={playerFacts} />
 
-        <section className="player-drawer-actions">
+        <section className="player-drawer-actions world-memory-drawer-section-quiet">
           <h3>Actions</h3>
           {profile.saveArtifact.present ? (
             <span className="player-drawer-action-status">Save linked</span>
@@ -2203,18 +2245,31 @@ function PlayerDetailDrawer({
           )}
         </section>
 
-        <section className="player-drawer-sessions">
-          <h3>Recent Adventures</h3>
+        <WorldMemoryDrawerSection title="Recent Adventures">
           <ul>
             {recentSessions.length === 0 ? <li className="empty-line">This player has not recorded enough adventure history yet.</li> : null}
             {recentSessions.map((session, index) => (
               <li key={`${session.startedAt}:${session.endedAt ?? 'open'}:${index}`}>
                 <span>{formatDurationMaybe(session.durationSeconds)}</span>
-                <span>{session.endedAt ? formatTimestamp(session.endedAt) : 'In progress'}</span>
+                <span>{session.endedAt ? formatTimestamp(session.endedAt) : 'Exploring now'}</span>
               </li>
             ))}
           </ul>
-        </section>
+        </WorldMemoryDrawerSection>
+
+        <details className="world-memory-operator-details">
+          <summary>Operator Details</summary>
+          <dl>
+            <dt>Last ended</dt>
+            <dd>{lastSessionEndedAt ? formatTimestamp(lastSessionEndedAt) : 'N/A'}</dd>
+            <dt>24h playtime</dt>
+            <dd>{formatDurationFromSeconds(profile.trackedSeconds24h)}</dd>
+            <dt>30d playtime</dt>
+            <dd>{formatDurationFromSeconds(profile.trackedSeconds30d)}</dd>
+            <dt>Save player ID</dt>
+            <dd><code>{profile.profile.playerId}</code></dd>
+          </dl>
+        </details>
       </aside>
     </div>
   );
@@ -2447,6 +2502,15 @@ function PalworldGuildDrawer({ guild, reviewed, memoryDetail, records, onClose, 
   const activeMembers = guild.members.filter((member) => member.daysSinceSeen !== null && member.daysSinceSeen <= 7);
   const chronicleEvents = memoryDetail?.chronicleEvents ?? [];
   const memberRelationships = memoryDetail?.relationships.filter((relationship) => relationship.type === 'guild_member') ?? [];
+  const guildFacts: WorldMemoryFact[] = [
+    { label: 'Members', value: guild.memberCount },
+    { label: 'Active members', value: activeMembers.length },
+    { label: 'Activity state', value: <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{getPalworldGuildActivityState(guild)}</span> },
+    { label: 'Confidence', value: <span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>{confidence.label}</span> },
+    { label: 'First seen', value: memoryDetail?.record.firstSeenAt ? formatTimestamp(memoryDetail.record.firstSeenAt) : 'Not enough evidence' },
+    { label: 'Last activity', value: guild.lastMemberSeenAt ? formatTimestamp(guild.lastMemberSeenAt) : 'Not enough evidence' },
+    { label: 'Base lifecycle', value: getPalworldBaseLifecycleState(guild).state }
+  ];
 
   return (
     <div className="player-drawer-shell" role="presentation">
@@ -2461,20 +2525,7 @@ function PalworldGuildDrawer({ guild, reviewed, memoryDetail, records, onClose, 
           <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
         </div>
 
-        <dl className="player-drawer-grid">
-          <dt>Members</dt>
-          <dd>{guild.memberCount}</dd>
-          <dt>Active players</dt>
-          <dd>{activeMembers.length}</dd>
-          <dt>Activity state</dt>
-          <dd><span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{getPalworldGuildActivityState(guild)}</span></dd>
-          <dt>Confidence</dt>
-          <dd><span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>{confidence.label}</span></dd>
-          <dt>Last activity</dt>
-          <dd>{guild.lastMemberSeenAt ? formatTimestamp(guild.lastMemberSeenAt) : 'Not enough evidence'}</dd>
-          <dt>Base lifecycle</dt>
-          <dd>{getPalworldBaseLifecycleState(guild).state}</dd>
-        </dl>
+        <WorldMemoryFactGrid facts={guildFacts} />
 
         <GuildActivityDetail
           guildName={guild.guildName}
@@ -2484,8 +2535,7 @@ function PalworldGuildDrawer({ guild, reviewed, memoryDetail, records, onClose, 
           onMarkReviewed={onMarkReviewed}
         />
 
-        <section className="player-drawer-sessions world-memory-relationships">
-          <h3>Guild Connections</h3>
+        <WorldMemoryDrawerSection title="Related Memories">
           <ul className="world-memory-relationship-list">
             <li>
               <span>
@@ -2511,25 +2561,18 @@ function PalworldGuildDrawer({ guild, reviewed, memoryDetail, records, onClose, 
             })}
             {memberRelationships.length > 6 ? <li>{memberRelationships.length - 6} more connected members.</li> : null}
           </ul>
-        </section>
+        </WorldMemoryDrawerSection>
 
-        <section className="player-drawer-sessions">
-          <h3>Recent Chronicle</h3>
-          <ul>
-            {chronicleEvents.length === 0 ? <li>This guild does not have enough matched activity for a timeline yet.</li> : null}
-            {chronicleEvents.map((event) => (
-              <li key={event.id}>
-                <span>{event.title}</span>
-                <span>{formatRelativeTime(event.occurredAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <WorldMemoryRecentChronicle
+          events={chronicleEvents}
+          emptyMessage="This guild has not appeared in the Chronicle yet."
+        />
 
-        <section className="player-drawer-sessions">
-          <h3>Base Lifecycle Relationship</h3>
+        <WorldMemoryDrawerSection title="Base Lifecycle" quiet>
           <p className="subtle">Base records are not available yet. Guild activity is being tracked so future base lifecycle monitoring can use member recency.</p>
-        </section>
+        </WorldMemoryDrawerSection>
+
+        {memoryDetail ? <WorldMemoryOperatorDetails record={memoryDetail.record} relationshipCount={memoryDetail.relationships.length} /> : null}
       </aside>
     </div>
   );
@@ -6027,8 +6070,8 @@ function App() {
                                 <WorldMemoryRelationshipPanel
                                   detail={selectedValheimCharacterMemoryDetail}
                                   records={selectedWorldMemory.records}
-                                  title="Player Connections"
-                                  emptyMessage="This player is not connected to other memories yet."
+                                  title="Related Memories"
+                                  emptyMessage="No related memories have been recorded for this player yet."
                                 />
                               ) : null}
                             </>
@@ -6037,8 +6080,8 @@ function App() {
                             <WorldMemoryRelationshipPanel
                               detail={selectedValheimCharacterMemoryDetail}
                               records={selectedWorldMemory.records}
-                              title="Player Connections"
-                              emptyMessage="This player is not connected to other memories yet."
+                              title="Related Memories"
+                              emptyMessage="No related memories have been recorded for this player yet."
                             />
                           ) : null}
                         </article>
@@ -6089,8 +6132,8 @@ function App() {
                                 <WorldMemoryRelationshipPanel
                                   detail={selectedValheimCharacterMemoryDetail}
                                   records={selectedWorldMemory.records}
-                                  title="Character Connections"
-                                  emptyMessage="This character is not connected to other memories yet."
+                                  title="Related Memories"
+                                  emptyMessage="No related memories have been recorded for this character yet."
                                 />
                               ) : null}
                             </>
@@ -6099,8 +6142,8 @@ function App() {
                             <WorldMemoryRelationshipPanel
                               detail={selectedValheimCharacterMemoryDetail}
                               records={selectedWorldMemory.records}
-                              title="Character Connections"
-                              emptyMessage="This character is not connected to other memories yet."
+                              title="Related Memories"
+                              emptyMessage="No related memories have been recorded for this character yet."
                             />
                           ) : null}
                         </article>

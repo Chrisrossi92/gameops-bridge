@@ -3087,6 +3087,19 @@
   gap: 0.42rem 0.8rem;
 }
 
+.world-memory-fact-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.world-memory-fact {
+  min-width: 0;
+  border: 1px solid #e5eaf2;
+  border-radius: 0.55rem;
+  padding: 0.46rem 0.52rem;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
 .player-drawer-grid dt {
   color: #64748b;
   font-size: 0.72rem;
@@ -3186,6 +3199,27 @@
   padding-top: 0.75rem;
 }
 
+.world-memory-drawer-section {
+  display: grid;
+  gap: 0.46rem;
+}
+
+.world-memory-drawer-section-quiet {
+  color: #64748b;
+}
+
+.world-memory-drawer-section-quiet h3 {
+  color: #64748b;
+}
+
+.world-memory-drawer-section p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
 .player-drawer-sessions h3 {
   margin: 0 0 0.45rem;
   color: #334155;
@@ -3218,6 +3252,49 @@
 .player-drawer-sessions li span:first-child {
   color: #0f172a;
   font-weight: 800;
+}
+
+.world-memory-operator-details {
+  border-top: 1px solid #e5eaf2;
+  padding-top: 0.65rem;
+  color: #64748b;
+}
+
+.world-memory-operator-details summary {
+  cursor: pointer;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.world-memory-operator-details dl {
+  margin: 0.55rem 0 0;
+  display: grid;
+  grid-template-columns: minmax(100px, 0.72fr) minmax(0, 1fr);
+  gap: 0.36rem 0.7rem;
+}
+
+.world-memory-operator-details dt {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.world-memory-operator-details dd {
+  margin: 0;
+  min-width: 0;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.world-memory-operator-details code {
+  font-size: 0.76rem;
 }
 
 .event-draft-preview {
