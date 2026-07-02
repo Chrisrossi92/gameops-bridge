@@ -84,6 +84,7 @@ import {
   type ServerAliveRhythmSummary,
   type ServerHealthSummary,
   type ServerSettingsCapabilitySummary,
+  type SessionRecord,
   type SessionTimelineItem,
   type SessionTimelineResponse,
   type PalworldRejectedIdentity,
@@ -680,6 +681,14 @@ interface WorldMemoryFact {
   value: ReactNode;
 }
 
+interface WorldMemoryTimelineItem {
+  id: string;
+  occurredAt: string;
+  title: string;
+  detail?: string;
+  tone?: 'story' | 'activity' | 'connection' | 'origin';
+}
+
 interface WorldMemoryDrawerSectionProps {
   title: string;
   children: ReactNode;
@@ -708,18 +717,202 @@ function WorldMemoryFactGrid({ facts }: { facts: WorldMemoryFact[] }) {
   );
 }
 
-function WorldMemoryRecentChronicle({ events, emptyMessage }: { events: WorldChronicleEvent[]; emptyMessage?: string }) {
+function getTimelineDayKey(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function getTimelineGroupLabel(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Earlier';
+  }
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDelta = Math.floor((today.getTime() - eventDay.getTime()) / (24 * 60 * 60 * 1000));
+
+  if (dayDelta === 0) {
+    return 'Today';
+  }
+
+  if (dayDelta === 1) {
+    return 'Yesterday';
+  }
+
+  if (dayDelta > 1 && dayDelta <= 7) {
+    return 'Last Week';
+  }
+
+  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+}
+
+function sortTimelineItems(items: WorldMemoryTimelineItem[]): WorldMemoryTimelineItem[] {
+  return [...items].sort((left, right) => {
+    const leftTime = Date.parse(left.occurredAt);
+    const rightTime = Date.parse(right.occurredAt);
+
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+      return left.title.localeCompare(right.title);
+    }
+
+    if (Number.isNaN(leftTime)) {
+      return 1;
+    }
+
+    if (Number.isNaN(rightTime)) {
+      return -1;
+    }
+
+    return rightTime - leftTime;
+  });
+}
+
+function dedupeTimelineItems(items: WorldMemoryTimelineItem[]): WorldMemoryTimelineItem[] {
+  const seen = new Set<string>();
+
+  return sortTimelineItems(items).filter((item) => {
+    const key = `${getTimelineDayKey(item.occurredAt)}:${item.title}:${item.detail ?? ''}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildMemoryTimeline(detail: WorldMemoryDetailModel): WorldMemoryTimelineItem[] {
+  const { record, chronicleEvents } = detail;
+  const items: WorldMemoryTimelineItem[] = chronicleEvents.map((event) => ({
+    id: `chronicle:${event.id}`,
+    occurredAt: event.occurredAt,
+    title: event.title,
+    detail: event.detail,
+    tone: 'story'
+  }));
+
+  if (record.lastSeenAt) {
+    items.push({
+      id: `last-seen:${record.id}`,
+      occurredAt: record.lastSeenAt,
+      title: record.type === 'guild' ? 'Last trusted guild activity' : 'Last remembered activity',
+      detail: getWorldMemorySearchContext(record),
+      tone: 'activity'
+    });
+  }
+
+  if (record.firstSeenAt && record.firstSeenAt !== record.lastSeenAt) {
+    items.push({
+      id: `first-seen:${record.id}`,
+      occurredAt: record.firstSeenAt,
+      title: record.type === 'guild' ? 'First remembered as a guild' : 'First remembered in this world',
+      detail: record.sourceLabel,
+      tone: 'origin'
+    });
+  }
+
+  return dedupeTimelineItems(items);
+}
+
+function buildSessionTimelineItems(sessions: SessionRecord[], emptySubject: string): WorldMemoryTimelineItem[] {
+  const items = sessions.map((session, index): WorldMemoryTimelineItem => {
+    const duration = session.durationSeconds !== undefined ? formatDurationFromSeconds(session.durationSeconds) : null;
+
+    return {
+      id: `session:${session.startedAt}:${session.endedAt ?? 'open'}:${index}`,
+      occurredAt: session.endedAt ?? session.startedAt,
+      title: session.endedAt
+        ? `Explored for ${duration ?? 'an unknown time'}`
+        : 'Started exploring',
+      detail: session.endedAt
+        ? `Adventure began ${formatTimestamp(session.startedAt)}`
+        : `${emptySubject} is exploring now`,
+      tone: 'activity'
+    };
+  });
+
+  return dedupeTimelineItems(items);
+}
+
+function buildPalworldGuildTimeline(
+  guild: PalworldGuildActivityEntry,
+  memoryDetail: WorldMemoryDetailModel | null
+): WorldMemoryTimelineItem[] {
+  const items = memoryDetail ? buildMemoryTimeline(memoryDetail) : [];
+
+  guild.members
+    .filter((member) => member.matched && member.lastSeenAt)
+    .slice(0, 8)
+    .forEach((member, index) => {
+      items.push({
+        id: `guild-member:${guild.guildName}:${member.memberName}:${index}`,
+        occurredAt: member.lastSeenAt as string,
+        title: `${member.memberName} returned to the guild`,
+        detail: member.daysSinceSeen !== null ? `${member.daysSinceSeen}d since last activity` : 'Trusted member activity',
+        tone: 'connection'
+      });
+    });
+
+  if (!memoryDetail && guild.lastMemberSeenAt) {
+    items.push({
+      id: `guild-last:${guild.guildName}`,
+      occurredAt: guild.lastMemberSeenAt,
+      title: 'Guild activity was remembered',
+      detail: guild.lastSeenMemberName ? `${guild.lastSeenMemberName} was the latest tracked member` : 'Trusted guild activity',
+      tone: 'activity'
+    });
+  }
+
+  return dedupeTimelineItems(items);
+}
+
+function WorldMemoryLivingTimeline({ items, emptyMessage = 'This story is just beginning.' }: { items: WorldMemoryTimelineItem[]; emptyMessage?: string }) {
+  const groupedItems = sortTimelineItems(items).reduce<Array<{ label: string; items: WorldMemoryTimelineItem[] }>>((groups, item) => {
+    const label = getTimelineGroupLabel(item.occurredAt);
+    const currentGroup = groups[groups.length - 1];
+
+    if (currentGroup?.label === label) {
+      currentGroup.items.push(item);
+    } else {
+      groups.push({ label, items: [item] });
+    }
+
+    return groups;
+  }, []);
+
   return (
-    <WorldMemoryDrawerSection title="Recent Chronicle">
-      <ul className="world-memory-chronicle-list">
-        {events.length === 0 ? <li>{emptyMessage ?? 'This memory has not appeared in the Chronicle yet.'}</li> : null}
-        {events.slice(0, 6).map((event) => (
-          <li key={event.id}>
-            <span>{event.title}</span>
-            <span>{formatRelativeTime(event.occurredAt)}</span>
-          </li>
-        ))}
-      </ul>
+    <WorldMemoryDrawerSection title="Living Timeline">
+      {groupedItems.length === 0 ? <p className="world-memory-timeline-empty">{emptyMessage}</p> : null}
+      {groupedItems.length > 0 ? (
+        <div className="world-memory-timeline" aria-label="Living timeline">
+          {groupedItems.map((group) => (
+            <div key={group.label} className="world-memory-timeline-group">
+              <h4>{group.label}</h4>
+              <ol>
+                {group.items.map((item) => (
+                  <li key={item.id} className={`world-memory-timeline-item world-memory-timeline-${item.tone ?? 'story'}`}>
+                    <span className="world-memory-timeline-marker" aria-hidden="true" />
+                    <div>
+                      <strong>{item.title}</strong>
+                      {item.detail ? <p>{item.detail}</p> : null}
+                      <time dateTime={item.occurredAt}>{formatRelativeTime(item.occurredAt)}</time>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </WorldMemoryDrawerSection>
   );
 }
@@ -785,7 +978,8 @@ function WorldMemoryRelationshipPanel({
 }
 
 function WorldMemoryDetailDrawer({ detail, records, onClose }: WorldMemoryDetailDrawerProps) {
-  const { record, relationships, chronicleEvents } = detail;
+  const { record, relationships } = detail;
+  const timelineItems = buildMemoryTimeline(detail);
   const facts: WorldMemoryFact[] = [
     { label: 'Status', value: record.currentStatus },
     { label: 'Confidence', value: <span className={`confidence-badge confidence-${record.confidence === 'unknown' ? 'low' : record.confidence}`}>{record.confidence}</span> },
@@ -808,9 +1002,9 @@ function WorldMemoryDetailDrawer({ detail, records, onClose }: WorldMemoryDetail
 
         <WorldMemoryFactGrid facts={facts} />
 
-        <WorldMemoryRelationshipPanel detail={detail} records={records} />
+        <WorldMemoryLivingTimeline items={timelineItems} />
 
-        <WorldMemoryRecentChronicle events={chronicleEvents} />
+        <WorldMemoryRelationshipPanel detail={detail} records={records} />
 
         <WorldMemoryOperatorDetails record={record} relationshipCount={relationships.length} />
       </aside>
@@ -2169,8 +2363,8 @@ function PlayerDetailDrawer({
 }: PlayerDetailDrawerProps) {
   const lastSessionEndedAt = profile.lastSessionEndedAt ?? profile.recentSessions[0]?.endedAt ?? null;
   const lastSessionDurationSeconds = profile.lastSessionDurationSeconds ?? profile.recentSessions[0]?.durationSeconds;
-  const recentSessions = profile.recentSessions.slice(0, 5);
   const playerDisplayName = getProfileDisplayName(profile);
+  const timelineItems = buildSessionTimelineItems(profile.recentSessions, playerDisplayName);
   const playerFacts: WorldMemoryFact[] = [
     { label: 'Status', value: profile.isOnline ? 'Online' : 'Offline' },
     { label: 'Level', value: profile.profile.level ?? 'N/A' },
@@ -2245,17 +2439,10 @@ function PlayerDetailDrawer({
           )}
         </section>
 
-        <WorldMemoryDrawerSection title="Recent Adventures">
-          <ul>
-            {recentSessions.length === 0 ? <li className="empty-line">This player has not recorded enough adventure history yet.</li> : null}
-            {recentSessions.map((session, index) => (
-              <li key={`${session.startedAt}:${session.endedAt ?? 'open'}:${index}`}>
-                <span>{formatDurationMaybe(session.durationSeconds)}</span>
-                <span>{session.endedAt ? formatTimestamp(session.endedAt) : 'Exploring now'}</span>
-              </li>
-            ))}
-          </ul>
-        </WorldMemoryDrawerSection>
+        <WorldMemoryLivingTimeline
+          items={timelineItems}
+          emptyMessage="More adventures will appear as this player explores."
+        />
 
         <details className="world-memory-operator-details">
           <summary>Operator Details</summary>
@@ -2500,8 +2687,8 @@ interface PalworldGuildDrawerProps {
 function PalworldGuildDrawer({ guild, reviewed, memoryDetail, records, onClose, onMarkReviewed }: PalworldGuildDrawerProps) {
   const confidence = getGuildConfidence(guild.members, guild.memberCount);
   const activeMembers = guild.members.filter((member) => member.daysSinceSeen !== null && member.daysSinceSeen <= 7);
-  const chronicleEvents = memoryDetail?.chronicleEvents ?? [];
   const memberRelationships = memoryDetail?.relationships.filter((relationship) => relationship.type === 'guild_member') ?? [];
+  const timelineItems = buildPalworldGuildTimeline(guild, memoryDetail);
   const guildFacts: WorldMemoryFact[] = [
     { label: 'Members', value: guild.memberCount },
     { label: 'Active members', value: activeMembers.length },
@@ -2563,9 +2750,9 @@ function PalworldGuildDrawer({ guild, reviewed, memoryDetail, records, onClose, 
           </ul>
         </WorldMemoryDrawerSection>
 
-        <WorldMemoryRecentChronicle
-          events={chronicleEvents}
-          emptyMessage="This guild has not appeared in the Chronicle yet."
+        <WorldMemoryLivingTimeline
+          items={timelineItems}
+          emptyMessage="This guild has only recently been remembered."
         />
 
         <WorldMemoryDrawerSection title="Base Lifecycle" quiet>
@@ -6067,6 +6254,12 @@ function App() {
                                 </div>
                               </div>
                               {selectedValheimCharacterMemoryDetail ? (
+                                <WorldMemoryLivingTimeline
+                                  items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
+                                  emptyMessage="This story is just beginning."
+                                />
+                              ) : null}
+                              {selectedValheimCharacterMemoryDetail ? (
                                 <WorldMemoryRelationshipPanel
                                   detail={selectedValheimCharacterMemoryDetail}
                                   records={selectedWorldMemory.records}
@@ -6077,12 +6270,18 @@ function App() {
                             </>
                           ) : null}
                           {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
-                            <WorldMemoryRelationshipPanel
-                              detail={selectedValheimCharacterMemoryDetail}
-                              records={selectedWorldMemory.records}
-                              title="Related Memories"
-                              emptyMessage="No related memories have been recorded for this player yet."
-                            />
+                            <>
+                              <WorldMemoryLivingTimeline
+                                items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
+                                emptyMessage="This story is just beginning."
+                              />
+                              <WorldMemoryRelationshipPanel
+                                detail={selectedValheimCharacterMemoryDetail}
+                                records={selectedWorldMemory.records}
+                                title="Related Memories"
+                                emptyMessage="No related memories have been recorded for this player yet."
+                              />
+                            </>
                           ) : null}
                         </article>
                       </>
@@ -6129,6 +6328,12 @@ function App() {
                                 </div>
                               </div>
                               {selectedValheimCharacterMemoryDetail ? (
+                                <WorldMemoryLivingTimeline
+                                  items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
+                                  emptyMessage="This story is just beginning."
+                                />
+                              ) : null}
+                              {selectedValheimCharacterMemoryDetail ? (
                                 <WorldMemoryRelationshipPanel
                                   detail={selectedValheimCharacterMemoryDetail}
                                   records={selectedWorldMemory.records}
@@ -6139,12 +6344,18 @@ function App() {
                             </>
                           ) : null}
                           {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
-                            <WorldMemoryRelationshipPanel
-                              detail={selectedValheimCharacterMemoryDetail}
-                              records={selectedWorldMemory.records}
-                              title="Related Memories"
-                              emptyMessage="No related memories have been recorded for this character yet."
-                            />
+                            <>
+                              <WorldMemoryLivingTimeline
+                                items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
+                                emptyMessage="This story is just beginning."
+                              />
+                              <WorldMemoryRelationshipPanel
+                                detail={selectedValheimCharacterMemoryDetail}
+                                records={selectedWorldMemory.records}
+                                title="Related Memories"
+                                emptyMessage="No related memories have been recorded for this character yet."
+                              />
+                            </>
                           ) : null}
                         </article>
                       </>

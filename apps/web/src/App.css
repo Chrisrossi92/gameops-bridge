@@ -3254,6 +3254,123 @@
   font-weight: 800;
 }
 
+.world-memory-timeline {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.world-memory-timeline::before {
+  content: "";
+  position: absolute;
+  top: 1.55rem;
+  bottom: 0.4rem;
+  left: 0.42rem;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.34), rgba(148, 163, 184, 0.14));
+}
+
+.world-memory-timeline-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.world-memory-timeline-group h4 {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.world-memory-timeline-group ol {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 1.05rem;
+  display: grid;
+  gap: 0.42rem;
+  list-style: none;
+}
+
+.world-memory-timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 0.28rem minmax(0, 1fr);
+  gap: 0.55rem;
+}
+
+.world-memory-timeline-marker {
+  position: relative;
+  z-index: 1;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.52rem;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #64748b;
+  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.18);
+}
+
+.world-memory-timeline-story .world-memory-timeline-marker {
+  background: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
+.world-memory-timeline-activity .world-memory-timeline-marker {
+  background: #d97706;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.16);
+}
+
+.world-memory-timeline-connection .world-memory-timeline-marker {
+  background: #0891b2;
+  box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.16);
+}
+
+.world-memory-timeline-origin .world-memory-timeline-marker {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.16);
+}
+
+.world-memory-timeline-item > div {
+  min-width: 0;
+  border: 1px solid #edf2f7;
+  border-radius: 0.62rem;
+  padding: 0.5rem 0.58rem;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.world-memory-timeline-item strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.86rem;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.world-memory-timeline-item p {
+  margin: 0.14rem 0 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.world-memory-timeline-item time {
+  display: inline-flex;
+  margin-top: 0.24rem;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.world-memory-timeline-empty {
+  border: 1px dashed #dbe4ee;
+  border-radius: 0.58rem;
+  padding: 0.65rem;
+  background: #fbfdff;
+}
+
 .world-memory-operator-details {
   border-top: 1px solid #e5eaf2;
   padding-top: 0.65rem;
