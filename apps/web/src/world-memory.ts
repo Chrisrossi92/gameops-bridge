@@ -137,6 +137,62 @@ export interface WorldMemoryRegistry {
   getDetail: (recordId: string) => WorldMemoryDetailModel | null;
 }
 
+export function searchWorldMemoryRecords(
+  records: WorldMemoryRecord[],
+  query: string,
+  game: WorldMemoryRecord['game']
+): WorldMemoryRecord[] {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  return records
+    .filter((record) => record.game === game)
+    .map((record) => {
+      const typeLabel = record.type.replace(/_/g, ' ');
+      const searchableText = [
+        record.displayName,
+        typeLabel,
+        record.currentStatus,
+        record.sourceLabel
+      ].join(' ').toLowerCase();
+      const name = record.displayName.toLowerCase();
+      const type = typeLabel.toLowerCase();
+
+      if (!searchableText.includes(normalizedQuery)) {
+        return null;
+      }
+
+      const score = name === normalizedQuery
+        ? 0
+        : name.startsWith(normalizedQuery)
+          ? 1
+          : type.includes(normalizedQuery)
+            ? 2
+            : 3;
+
+      return { record, score };
+    })
+    .filter((result): result is { record: WorldMemoryRecord; score: number } => result !== null)
+    .sort((left, right) => {
+      if (left.score !== right.score) {
+        return left.score - right.score;
+      }
+
+      const leftLastSeen = Date.parse(left.record.lastSeenAt ?? left.record.firstSeenAt ?? '');
+      const rightLastSeen = Date.parse(right.record.lastSeenAt ?? right.record.firstSeenAt ?? '');
+
+      if (!Number.isNaN(leftLastSeen) && !Number.isNaN(rightLastSeen) && leftLastSeen !== rightLastSeen) {
+        return rightLastSeen - leftLastSeen;
+      }
+
+      return left.record.displayName.localeCompare(right.record.displayName);
+    })
+    .map((result) => result.record);
+}
+
 interface MemoryKnownPlayer {
   displayName: string;
   normalizedPlayerKey: string;

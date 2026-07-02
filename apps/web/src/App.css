@@ -3488,6 +3488,150 @@
   font-size: 0.84rem;
 }
 
+.world-memory-search {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 0.65rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.82));
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.world-memory-search-valheim {
+  border-color: rgba(146, 64, 14, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(255, 250, 242, 0.94), rgba(255, 255, 255, 0.88));
+}
+
+.world-memory-search-palworld {
+  border-color: rgba(14, 165, 233, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(240, 249, 255, 0.94), rgba(255, 255, 255, 0.88));
+}
+
+.world-memory-search-field {
+  display: grid;
+  gap: 0.24rem;
+  min-width: 0;
+}
+
+.world-memory-search-field span,
+.world-memory-search-count {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.world-memory-search-field input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dbe4ee;
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.world-memory-search-field input:focus {
+  outline: none;
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.16);
+}
+
+.world-memory-search-count {
+  align-self: end;
+  padding-bottom: 0.62rem;
+  white-space: nowrap;
+}
+
+.world-memory-search-results {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.world-memory-search-empty {
+  margin: 0;
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.world-memory-search-result {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.55rem;
+  padding: 0.56rem 0.64rem;
+  background: rgba(255, 255, 255, 0.82);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  text-align: left;
+  font: inherit;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.world-memory-search-result:hover,
+.world-memory-search-result:focus-visible {
+  outline: none;
+  border-color: rgba(14, 116, 144, 0.28);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.world-memory-result-main,
+.world-memory-result-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.36rem 0.5rem;
+}
+
+.world-memory-result-main {
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.world-memory-result-main strong {
+  color: #0f172a;
+  font-size: 0.94rem;
+}
+
+.world-memory-result-main span,
+.world-memory-result-main small {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.world-memory-result-badges {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.world-memory-detail-drawer .player-drawer-sessions li {
+  align-items: flex-start;
+}
+
 .world-chronicle-card,
 .valheim-character-card {
   grid-column: 1 / -1;

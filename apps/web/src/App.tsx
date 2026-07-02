@@ -100,10 +100,14 @@ import {
   getPalworldGuildActivityState,
   getPalworldGuildIntelligenceFromMemory,
   getValheimCharactersFromMemory,
+  searchWorldMemoryRecords,
   type PalworldGuildIntelligence,
   type ValheimCharacterEntry,
   type WorldChronicleEvent,
-  type WorldChronicleEventKind
+  type WorldChronicleEventKind,
+  type WorldMemoryDetailModel,
+  type WorldMemoryRecord,
+  type WorldMemoryRecordType
 } from './world-memory.ts';
 import './App.css';
 
@@ -440,6 +444,209 @@ function WorldChroniclePanel({ title, events, emptyMessage = 'This realm is stil
         ))}
       </ol>
     </article>
+  );
+}
+
+interface WorldMemorySearchResult {
+  record: WorldMemoryRecord;
+  typeLabel: string;
+  context: string;
+  lastActivityLabel: string;
+}
+
+interface WorldMemorySearchProps {
+  game: ServerOption['game'];
+  query: string;
+  results: WorldMemorySearchResult[];
+  totalMemories: number;
+  onQueryChange: (value: string) => void;
+  onOpenResult: (record: WorldMemoryRecord) => void;
+}
+
+function getWorldMemoryTypeLabel(type: WorldMemoryRecordType): string {
+  switch (type) {
+    case 'person':
+      return 'Player';
+    case 'character':
+      return 'Character';
+    case 'guild':
+      return 'Guild';
+    case 'base':
+      return 'Base';
+    case 'world_event':
+      return 'World event';
+    case 'settlement':
+      return 'Settlement';
+    case 'boss':
+      return 'Boss';
+    case 'village':
+      return 'Village';
+    case 'clan':
+      return 'Clan';
+  }
+}
+
+function normalizeMemorySearchValue(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function getWorldMemorySearchContext(record: WorldMemoryRecord): string {
+  if (record.game === 'valheim' && record.type === 'character') {
+    const sessionCount = Number(record.metadata.sessionCount ?? 0);
+    return sessionCount > 0 ? `${sessionCount} adventure${sessionCount === 1 ? '' : 's'} remembered` : 'Character remembered from trusted realm activity';
+  }
+
+  if (record.game === 'palworld' && record.type === 'guild') {
+    const activeMemberCount = Number(record.metadata.activeMemberCount ?? 0);
+    return `${activeMemberCount} active member${activeMemberCount === 1 ? '' : 's'} remembered`;
+  }
+
+  if (record.game === 'palworld' && record.type === 'person') {
+    const member = record.metadata.member as PalworldGuildActivityMember | undefined;
+    return member?.matched ? 'Matched from guild member activity' : 'Remembered from trusted Palworld activity';
+  }
+
+  return record.sourceLabel;
+}
+
+function getWorldMemoryLastActivityLabel(record: WorldMemoryRecord): string {
+  const lastSeenAt = record.lastSeenAt ?? record.chronicleReferences[0]?.occurredAt ?? null;
+
+  if (!lastSeenAt) {
+    return 'Last activity unknown';
+  }
+
+  return `Last activity ${formatRelativeTime(lastSeenAt)}`;
+}
+
+function getWorldMemoryStatusTone(record: WorldMemoryRecord): string {
+  switch (record.currentStatus) {
+    case 'online':
+    case 'active':
+      return 'active';
+    case 'offline':
+    case 'quiet':
+      return 'offline';
+    case 'watch':
+    case 'risk':
+      return 'warning';
+    case 'unknown':
+      return 'unknown';
+  }
+}
+
+function buildWorldMemorySearchResults(records: WorldMemoryRecord[], query: string, game: ServerOption['game']): WorldMemorySearchResult[] {
+  return searchWorldMemoryRecords(records, query, game)
+    .map((record) => {
+      const typeLabel = getWorldMemoryTypeLabel(record.type);
+
+      return {
+        record,
+        typeLabel,
+        context: getWorldMemorySearchContext(record),
+        lastActivityLabel: getWorldMemoryLastActivityLabel(record)
+      };
+    })
+    .slice(0, 8);
+}
+
+function WorldMemorySearch({ game, query, results, totalMemories, onQueryChange, onOpenResult }: WorldMemorySearchProps) {
+  const placeholder = game === 'palworld'
+    ? 'Search players, guilds, and this archipelago...'
+    : "Search this realm's memory...";
+  const hasQuery = normalizeMemorySearchValue(query).length > 0;
+
+  return (
+    <section className={`world-memory-search world-memory-search-${game}`} aria-label="World memory search">
+      <label className="world-memory-search-field">
+        <span>World Memory</span>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder={placeholder}
+          aria-label={placeholder}
+        />
+      </label>
+      <div className="world-memory-search-count">{totalMemories} remembered</div>
+
+      {hasQuery ? (
+        <div className="world-memory-search-results" role="list">
+          {results.length === 0 ? <p className="world-memory-search-empty">No memories found in this world.</p> : null}
+          {results.map(({ record, typeLabel, context, lastActivityLabel }) => (
+            <button
+              key={record.id}
+              type="button"
+              className="world-memory-search-result"
+              onClick={() => onOpenResult(record)}
+            >
+              <span className="world-memory-result-main">
+                <strong>{record.displayName}</strong>
+                <span>{typeLabel} · {lastActivityLabel}</span>
+                <small>{context}</small>
+              </span>
+              <span className="world-memory-result-badges">
+                <span className={`state-pill state-${getWorldMemoryStatusTone(record)}`}>{record.currentStatus}</span>
+                <span className={`confidence-badge confidence-${record.confidence === 'unknown' ? 'low' : record.confidence}`}>{record.confidence}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+interface WorldMemoryDetailDrawerProps {
+  detail: WorldMemoryDetailModel;
+  onClose: () => void;
+}
+
+function WorldMemoryDetailDrawer({ detail, onClose }: WorldMemoryDetailDrawerProps) {
+  const { record, relationships, chronicleEvents } = detail;
+
+  return (
+    <div className="player-drawer-shell" role="presentation">
+      <button type="button" className="player-drawer-backdrop" aria-label="Close memory details" onClick={onClose} />
+      <aside className="player-drawer world-memory-detail-drawer" aria-label="Memory details">
+        <div className="player-drawer-header">
+          <div>
+            <span className="summary-label">{getWorldMemoryTypeLabel(record.type)}</span>
+            <h2>{record.displayName}</h2>
+            <p>{getWorldMemorySearchContext(record)}</p>
+          </div>
+          <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
+        </div>
+
+        <dl className="player-drawer-grid">
+          <dt>Status</dt>
+          <dd>{record.currentStatus}</dd>
+          <dt>Confidence</dt>
+          <dd><span className={`confidence-badge confidence-${record.confidence === 'unknown' ? 'low' : record.confidence}`}>{record.confidence}</span></dd>
+          <dt>First seen</dt>
+          <dd>{record.firstSeenAt ? formatTimestamp(record.firstSeenAt) : 'Not enough evidence'}</dd>
+          <dt>Last activity</dt>
+          <dd>{record.lastSeenAt ? formatTimestamp(record.lastSeenAt) : 'Not enough evidence'}</dd>
+          <dt>Source</dt>
+          <dd>{record.sourceLabel}</dd>
+          <dt>Relationships</dt>
+          <dd>{relationships.length}</dd>
+        </dl>
+
+        <section className="player-drawer-sessions">
+          <h3>Chronicle References</h3>
+          <ul>
+            {chronicleEvents.length === 0 ? <li>This memory does not have enough story history yet.</li> : null}
+            {chronicleEvents.map((event) => (
+              <li key={event.id}>
+                <span>{event.title}</span>
+                <span>{formatRelativeTime(event.occurredAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </aside>
+    </div>
   );
 }
 
@@ -2415,6 +2622,8 @@ function App() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [selectedDashboardTab, setSelectedDashboardTab] = useState<DashboardTab>('overview');
+  const [worldMemorySearchQuery, setWorldMemorySearchQuery] = useState('');
+  const [selectedMemoryDetail, setSelectedMemoryDetail] = useState<WorldMemoryDetailModel | null>(null);
   const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<PalworldPlayerProfileSessionSummary | null>(null);
   const [drawerSavePlayerSaveId, setDrawerSavePlayerSaveId] = useState('');
   const [drawerSavePlayerFileName, setDrawerSavePlayerFileName] = useState('');
@@ -2468,6 +2677,8 @@ function App() {
     setPalworldManualLinkSuccess(null);
     setDetailError(null);
     setSelectedPlayerProfile(null);
+    setWorldMemorySearchQuery('');
+    setSelectedMemoryDetail(null);
     setSelectedDashboardTab('overview');
   }, [selectedServerId]);
 
@@ -2506,7 +2717,7 @@ function App() {
   }, [selectedEventTemplateDraft]);
 
   useEffect(() => {
-    if (!selectedPlayerProfile && !selectedEngagementDetail && !observedSettingsOpen && !selectedEventTemplateDraft && !expandedGuildActivityName) {
+    if (!selectedPlayerProfile && !selectedEngagementDetail && !observedSettingsOpen && !selectedEventTemplateDraft && !expandedGuildActivityName && !selectedMemoryDetail) {
       return;
     }
 
@@ -2527,6 +2738,7 @@ function App() {
         setEventDraftManualChecklist(null);
         setEventDraftManualChecklistError(null);
         setExpandedGuildActivityName(null);
+        setSelectedMemoryDetail(null);
       }
     }
 
@@ -2535,7 +2747,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [expandedGuildActivityName, observedSettingsOpen, selectedEngagementDetail, selectedEventTemplateDraft, selectedPlayerProfile]);
+  }, [expandedGuildActivityName, observedSettingsOpen, selectedEngagementDetail, selectedEventTemplateDraft, selectedMemoryDetail, selectedPlayerProfile]);
 
   useEffect(() => {
     let isMounted = true;
@@ -4877,6 +5089,20 @@ function App() {
   const palworldChronicleEvents = useMemo(() => {
     return selectedServer?.game === 'palworld' ? selectedWorldMemory.chronicleEvents.slice(0, 14) : [];
   }, [selectedServer?.game, selectedWorldMemory]);
+  const searchableWorldMemoryRecords = useMemo(() => {
+    if (!selectedServer) {
+      return [];
+    }
+
+    return selectedWorldMemory.records.filter((record) => record.game === selectedServer.game);
+  }, [selectedServer, selectedWorldMemory]);
+  const worldMemorySearchResults = useMemo(() => {
+    if (!selectedServer) {
+      return [];
+    }
+
+    return buildWorldMemorySearchResults(selectedWorldMemory.records, worldMemorySearchQuery, selectedServer.game);
+  }, [selectedServer, selectedWorldMemory, worldMemorySearchQuery]);
   const selectedPalworldGuildMemoryDetail = useMemo(() => {
     if (!selectedPalworldGuild) {
       return null;
@@ -4885,6 +5111,35 @@ function App() {
     const guildMemory = palworldGuildIntelligence.find((entry) => entry.guild.guildName === selectedPalworldGuild.guildName);
     return guildMemory ? selectedWorldMemory.getDetail(guildMemory.memoryRecordId) : null;
   }, [palworldGuildIntelligence, selectedPalworldGuild, selectedWorldMemory]);
+  function openWorldMemoryRecord(record: WorldMemoryRecord): void {
+    setSelectedMemoryDetail(null);
+
+    if (record.game === 'valheim' && record.type === 'character') {
+      setSelectedDashboardTab('characters');
+      setSelectedPlayerIntelligenceId(String(record.metadata.playerId ?? record.id));
+      setSelectedValheimPlayerLookupKey(normalizePlayerKey(record.displayName));
+      return;
+    }
+
+    if (record.game === 'palworld' && record.type === 'guild') {
+      setSelectedDashboardTab('guilds');
+      setExpandedGuildActivityName(record.displayName);
+      return;
+    }
+
+    if (record.game === 'palworld' && record.type === 'person') {
+      const normalizedRecordName = normalizePlayerKey(record.displayName);
+      const matchedProfile = playerProfiles.find((profile) => normalizePlayerKey(getProfileDisplayName(profile)) === normalizedRecordName);
+
+      if (matchedProfile) {
+        setSelectedDashboardTab('players');
+        setSelectedPlayerProfile(matchedProfile);
+        return;
+      }
+    }
+
+    setSelectedMemoryDetail(selectedWorldMemory.getDetail(record.id));
+  }
   const palworldCommunityPulse = useMemo(() => {
     const onlinePlayers = palworldLatestPlayers.filter((player) => player.isOnline).length;
     const activeGuilds = palworldGuildSummary.activeGuildsTwoPlus;
@@ -5231,6 +5486,15 @@ function App() {
                 <strong>{selectedServerSummary.dataFreshness.status}</strong>
               </div>
             </section>
+
+            <WorldMemorySearch
+              game={selectedServer.game}
+              query={worldMemorySearchQuery}
+              results={worldMemorySearchResults}
+              totalMemories={searchableWorldMemoryRecords.length}
+              onQueryChange={setWorldMemorySearchQuery}
+              onOpenResult={openWorldMemoryRecord}
+            />
 
             {selectedDashboardTab === 'overview' ? (
               <WorldChroniclePanel
@@ -6242,6 +6506,12 @@ function App() {
           chronicleEvents={selectedPalworldGuildMemoryDetail?.chronicleEvents ?? []}
           onClose={() => setExpandedGuildActivityName(null)}
           onMarkReviewed={() => markGuildReviewedAndAdvance(selectedPalworldGuild.guildName)}
+        />
+      ) : null}
+      {selectedMemoryDetail ? (
+        <WorldMemoryDetailDrawer
+          detail={selectedMemoryDetail}
+          onClose={() => setSelectedMemoryDetail(null)}
         />
       ) : null}
       {selectedEngagementDetail ? (
