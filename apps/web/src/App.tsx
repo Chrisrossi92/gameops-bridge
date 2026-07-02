@@ -179,7 +179,16 @@ interface PalworldPlayerListEntry {
 
 type PalworldReviewAction = 'approve' | 'reject';
 
-type WorldChronicleEventKind = 'arrival' | 'return' | 'join' | 'leave' | 'restart' | 'imported_character';
+type WorldChronicleEventKind =
+  | 'arrival'
+  | 'return'
+  | 'join'
+  | 'leave'
+  | 'restart'
+  | 'imported_character'
+  | 'guild_active'
+  | 'guild_quiet'
+  | 'base_lifecycle';
 
 interface WorldChronicleEvent {
   id: string;
@@ -210,6 +219,15 @@ interface ValheimCharacterEntry {
   identityConfidence: PlayerIntelligenceRecord['identityConfidence'];
   identityExplanation: string;
   importedCharacter: ImportedCharacterSignal | null;
+}
+
+interface PalworldGuildIntelligence {
+  guild: PalworldGuildActivityEntry;
+  confidence: GuildConfidence;
+  activeMemberCount: number;
+  activityState: string;
+  lifecycleState: string;
+  lifecycleDetail: string;
 }
 
 interface PalworldGuildHint {
@@ -413,6 +431,12 @@ function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
       return 'Restart';
     case 'imported_character':
       return 'Character';
+    case 'guild_active':
+      return 'Guild active';
+    case 'guild_quiet':
+      return 'Guild quiet';
+    case 'base_lifecycle':
+      return 'Base lifecycle';
   }
 }
 
@@ -1910,9 +1934,8 @@ function PlayerDetailDrawer({
 
 interface GuildRiskRowProps {
   guild: PalworldGuildActivityEntry;
-  expanded: boolean;
   reviewed: boolean;
-  onToggle: () => void;
+  onOpen: () => void;
   onMarkReviewed: () => void;
 }
 
@@ -1968,7 +1991,7 @@ function getGuildConfidence(members: PalworldGuildActivityMember[], memberCountF
   };
 }
 
-function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: GuildRiskRowProps) {
+function GuildRiskRow({ guild, reviewed, onOpen, onMarkReviewed }: GuildRiskRowProps) {
   const riskText = guild.daysInactive !== null
     ? `${guild.daysInactive}d inactive`
     : guild.daysUntilPalboxRisk !== null
@@ -1982,8 +2005,8 @@ function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: G
   const confidence = getGuildConfidence(guild.members, guild.memberCount);
 
   return (
-    <li className={`guild-activity-row ${expanded ? 'guild-activity-row-expanded' : ''}`}>
-      <button type="button" className="guild-activity-toggle" onClick={onToggle}>
+    <li className="guild-activity-row">
+      <button type="button" className="guild-activity-toggle" onClick={onOpen}>
         <div className="homepage-player-main">
           <div className="homepage-player-title">
             <span className="homepage-player-name">{guild.guildName}</span>
@@ -2000,17 +2023,13 @@ function GuildRiskRow({ guild, expanded, reviewed, onToggle, onMarkReviewed }: G
             {riskText ? <span>{riskText}</span> : null}
           </div>
         </div>
-        <span className="homepage-player-detail-button" aria-hidden="true">{expanded ? 'Hide' : 'Details'}</span>
+        <span className="homepage-player-detail-button" aria-hidden="true">Details</span>
       </button>
-      {expanded ? (
-        <GuildActivityDetail
-          guildName={guild.guildName}
-          members={guild.members}
-          memberCount={guild.memberCount}
-          reviewed={reviewed}
-          onMarkReviewed={onMarkReviewed}
-        />
-      ) : null}
+      {reviewed ? null : (
+        <button type="button" className="guild-row-review-button" onClick={onMarkReviewed}>
+          Mark Reviewed
+        </button>
+      )}
     </li>
   );
 }
@@ -2076,6 +2095,174 @@ function GuildActivityDetail({ guildName, members, memberCount, reviewed, onMark
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+interface PalworldGuildIntelligencePanelProps {
+  guilds: PalworldGuildIntelligence[];
+  selectedGuildName: string | null;
+  reviewedGuildNames: Set<string>;
+  onOpenGuild: (guildName: string) => void;
+}
+
+function PalworldGuildIntelligencePanel({ guilds, selectedGuildName, reviewedGuildNames, onOpenGuild }: PalworldGuildIntelligencePanelProps) {
+  return (
+    <article className="card palworld-guild-intelligence-card">
+      <div className="command-panel-heading">
+        <div>
+          <span className="summary-label">Guild Intelligence</span>
+          <h2>Guilds Shaping This World</h2>
+          <p className="subtle">Guild activity is based on matched save data and tracked player activity for this server.</p>
+        </div>
+        <span className="state-pill state-online">{guilds.length} guilds</span>
+      </div>
+
+      {guilds.length === 0 ? (
+        <p className="empty-line">This archipelago is still building its history. Guild activity will appear as players establish themselves.</p>
+      ) : null}
+
+      <ul className="palworld-guild-grid">
+        {guilds.map(({ guild, confidence, activeMemberCount, activityState, lifecycleState, lifecycleDetail }) => (
+          <li key={guild.guildName} className={`palworld-guild-card ${selectedGuildName === guild.guildName ? 'selected' : ''}`}>
+            <button type="button" onClick={() => onOpenGuild(guild.guildName)}>
+              <div className="palworld-guild-card-top">
+                <strong>{guild.guildName}</strong>
+                <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{activityState}</span>
+              </div>
+              <div className="palworld-guild-card-stats">
+                <span><strong>{guild.memberCount}</strong> members</span>
+                <span><strong>{activeMemberCount}</strong> active</span>
+                <span>{guild.lastMemberSeenAt ? formatRelativeTime(guild.lastMemberSeenAt) : 'No activity yet'}</span>
+              </div>
+              <div className="palworld-guild-card-meta">
+                <span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>{confidence.label}</span>
+                <span>{lifecycleState}</span>
+                {reviewedGuildNames.has(guild.guildName) ? <span>Reviewed</span> : null}
+              </div>
+              <p>{lifecycleDetail}</p>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+interface PalworldBaseLifecyclePanelProps {
+  guilds: PalworldGuildIntelligence[];
+  hasBaseTelemetry: boolean;
+  baseCapacity: { estimatedBases: number; usagePercent: number; remainingCapacity: number; statusLabel: string; summary: string } | null;
+  baseTrend: { direction: string; indicator: string; recentValues: number[] };
+}
+
+function PalworldBaseLifecyclePanel({ guilds, hasBaseTelemetry, baseCapacity, baseTrend }: PalworldBaseLifecyclePanelProps) {
+  const guildsWithActivity = guilds.filter((entry) => entry.guild.lastMemberSeenAt !== null);
+  const lifecycleGuilds = guilds.filter((entry) => entry.guild.riskLevel !== 'unknown');
+  const watchGuilds = guilds.filter((entry) => entry.guild.riskLevel === 'watch' || entry.guild.riskLevel === 'risk' || entry.guild.riskLevel === 'expired');
+
+  return (
+    <article className="card palworld-base-lifecycle-card">
+      <div className="command-panel-heading">
+        <div>
+          <span className="summary-label">Base Lifecycle</span>
+          <h2>30-Day Base Deletion Window</h2>
+          <p className="subtle">Lifecycle state is tied to observed guild activity. Base ownership is not shown until trusted base-to-guild evidence exists.</p>
+        </div>
+      </div>
+      <div className="detail-grid">
+        <section className="detail-block">
+          <h3>Guild Activity Coverage</h3>
+          <ul className="list compact">
+            <li><span>Guilds with activity</span><span>{guildsWithActivity.length} / {guilds.length}</span></li>
+            <li><span>Lifecycle-ready guilds</span><span>{lifecycleGuilds.length}</span></li>
+            <li><span>Needs attention</span><span>{watchGuilds.length}</span></li>
+          </ul>
+        </section>
+        <section className="detail-block">
+          <h3>Base Signal</h3>
+          {hasBaseTelemetry && baseCapacity ? (
+            <ul className="list compact">
+              <li><span>Estimated bases</span><span>{baseCapacity.estimatedBases} / 240</span></li>
+              <li><span>Usage</span><span>{baseCapacity.usagePercent}%</span></li>
+              <li><span>Remaining slots</span><span>{baseCapacity.remainingCapacity}</span></li>
+              <li><span>Trend</span><span>{baseTrend.indicator} {baseTrend.direction}</span></li>
+            </ul>
+          ) : (
+            <p className="subtle">Base capacity telemetry is not available yet. Guild lifecycle can still use member activity, but base ownership remains unconfirmed.</p>
+          )}
+        </section>
+      </div>
+    </article>
+  );
+}
+
+interface PalworldGuildDrawerProps {
+  guild: PalworldGuildActivityEntry;
+  reviewed: boolean;
+  chronicleEvents: WorldChronicleEvent[];
+  onClose: () => void;
+  onMarkReviewed: () => void;
+}
+
+function PalworldGuildDrawer({ guild, reviewed, chronicleEvents, onClose, onMarkReviewed }: PalworldGuildDrawerProps) {
+  const confidence = getGuildConfidence(guild.members, guild.memberCount);
+  const activeMembers = guild.members.filter((member) => member.daysSinceSeen !== null && member.daysSinceSeen <= 7);
+
+  return (
+    <div className="player-drawer-shell" role="presentation">
+      <button type="button" className="player-drawer-backdrop" aria-label="Close guild details" onClick={onClose} />
+      <aside className="player-drawer palworld-guild-drawer" aria-label="Guild details">
+        <div className="player-drawer-header">
+          <div>
+            <span className="summary-label">Guild Detail</span>
+            <h2>{guild.guildName}</h2>
+            <p>{guild.lastMemberSeenAt ? `Last activity ${formatRelativeTime(guild.lastMemberSeenAt)}` : 'No matched guild activity yet'}</p>
+          </div>
+          <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
+        </div>
+
+        <dl className="player-drawer-grid">
+          <dt>Members</dt>
+          <dd>{guild.memberCount}</dd>
+          <dt>Active players</dt>
+          <dd>{activeMembers.length}</dd>
+          <dt>Activity state</dt>
+          <dd><span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{getPalworldGuildActivityState(guild)}</span></dd>
+          <dt>Confidence</dt>
+          <dd><span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>{confidence.label}</span></dd>
+          <dt>Last activity</dt>
+          <dd>{guild.lastMemberSeenAt ? formatTimestamp(guild.lastMemberSeenAt) : 'Not enough evidence'}</dd>
+          <dt>Base lifecycle</dt>
+          <dd>{getPalworldBaseLifecycleState(guild).state}</dd>
+        </dl>
+
+        <GuildActivityDetail
+          guildName={guild.guildName}
+          members={guild.members}
+          memberCount={guild.memberCount}
+          reviewed={reviewed}
+          onMarkReviewed={onMarkReviewed}
+        />
+
+        <section className="player-drawer-sessions">
+          <h3>Guild Timeline</h3>
+          <ul>
+            {chronicleEvents.length === 0 ? <li>This guild does not have enough matched activity for a timeline yet.</li> : null}
+            {chronicleEvents.map((event) => (
+              <li key={event.id}>
+                <span>{event.title}</span>
+                <span>{formatRelativeTime(event.occurredAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="player-drawer-sessions">
+          <h3>Future Base Information</h3>
+          <p className="subtle">Base owner guild and exact base lifecycle will appear when trusted base-to-guild evidence is available.</p>
+        </section>
+      </aside>
     </div>
   );
 }
@@ -2409,6 +2596,135 @@ function buildValheimChronicle(summary: ServerSummary | null, characters: Valhei
     .slice(0, 14);
 }
 
+function getPalworldGuildActivityState(guild: PalworldGuildActivityEntry): string {
+  switch (guild.riskLevel) {
+    case 'active':
+      return 'Alive';
+    case 'watch':
+      return 'Quiet';
+    case 'risk':
+      return 'Monitoring';
+    case 'expired':
+      return 'Near inactivity threshold';
+    case 'unknown':
+      return 'Activity unknown';
+  }
+}
+
+function getPalworldBaseLifecycleState(guild: PalworldGuildActivityEntry): { state: string; detail: string } {
+  if (guild.daysInactive === null || guild.daysUntilPalboxRisk === null) {
+    return {
+      state: 'Evidence needed',
+      detail: 'Base lifecycle cannot be estimated until this guild has matched member activity.'
+    };
+  }
+
+  if (guild.riskLevel === 'expired') {
+    return {
+      state: 'Near inactivity threshold',
+      detail: `No matched member activity for ${guild.daysInactive} days. The server uses a 30-day base deletion setting.`
+    };
+  }
+
+  if (guild.riskLevel === 'risk') {
+    return {
+      state: 'Monitoring',
+      detail: `${guild.daysUntilPalboxRisk} days remain before the 30-day inactivity window is reached.`
+    };
+  }
+
+  if (guild.riskLevel === 'watch') {
+    return {
+      state: 'Quiet',
+      detail: `${guild.daysInactive} days since matched member activity. Keep watching this guild.`
+    };
+  }
+
+  return {
+    state: 'Healthy',
+    detail: `Matched member activity was seen ${guild.daysInactive} days ago.`
+  };
+}
+
+function buildPalworldGuildIntelligence(guilds: PalworldGuildActivityEntry[]): PalworldGuildIntelligence[] {
+  const riskRank: Record<GuildRiskLevel, number> = {
+    expired: 0,
+    risk: 1,
+    watch: 2,
+    active: 3,
+    unknown: 4
+  };
+
+  return [...guilds]
+    .map((guild) => {
+      const confidence = getGuildConfidence(guild.members, guild.memberCount);
+      const activeMemberCount = guild.members.filter((member) => member.daysSinceSeen !== null && member.daysSinceSeen <= 7).length;
+      const lifecycle = getPalworldBaseLifecycleState(guild);
+
+      return {
+        guild,
+        confidence,
+        activeMemberCount,
+        activityState: getPalworldGuildActivityState(guild),
+        lifecycleState: lifecycle.state,
+        lifecycleDetail: lifecycle.detail
+      };
+    })
+    .sort((left, right) => {
+      const riskDelta = riskRank[left.guild.riskLevel] - riskRank[right.guild.riskLevel];
+
+      if (riskDelta !== 0) {
+        return riskDelta;
+      }
+
+      if (right.activeMemberCount !== left.activeMemberCount) {
+        return right.activeMemberCount - left.activeMemberCount;
+      }
+
+      return (right.guild.lastMemberSeenAt ?? '').localeCompare(left.guild.lastMemberSeenAt ?? '');
+    });
+}
+
+function buildPalworldChronicle(guilds: PalworldGuildActivityEntry[]): WorldChronicleEvent[] {
+  const events = new Map<string, WorldChronicleEvent>();
+  const addEvent = (event: WorldChronicleEvent): void => {
+    events.set(event.id, event);
+  };
+
+  for (const guild of guilds) {
+    if (guild.lastMemberSeenAt) {
+      addEvent({
+        id: `guild-active:${guild.guildName}:${guild.lastMemberSeenAt}`,
+        kind: 'guild_active',
+        occurredAt: guild.lastMemberSeenAt,
+        title: `${guild.guildName} showed activity.`,
+        detail: guild.lastSeenMemberName ? `${guild.lastSeenMemberName} was the most recently seen member.` : undefined,
+        actorName: guild.guildName,
+        confidence: getGuildConfidence(guild.members, guild.memberCount).tone === 'high' ? 'high' : 'medium',
+        sourceLabel: 'Guild activity'
+      });
+    }
+
+    if (guild.lastMemberSeenAt && (guild.riskLevel === 'watch' || guild.riskLevel === 'risk' || guild.riskLevel === 'expired')) {
+      const lifecycle = getPalworldBaseLifecycleState(guild);
+      addEvent({
+        id: `base-lifecycle:${guild.guildName}:${guild.riskLevel}:${guild.lastMemberSeenAt}`,
+        kind: guild.riskLevel === 'watch' ? 'guild_quiet' : 'base_lifecycle',
+        occurredAt: guild.lastMemberSeenAt,
+        title: `${guild.guildName} is ${lifecycle.state.toLowerCase()}.`,
+        detail: lifecycle.detail,
+        actorName: guild.guildName,
+        confidence: 'medium',
+        sourceLabel: '30-day base lifecycle'
+      });
+    }
+  }
+
+  return [...events.values()]
+    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+    .slice(0, 14);
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [serverOptions, setServerOptions] = useState<ServerOption[]>([]);
@@ -2607,7 +2923,7 @@ function App() {
   }, [selectedEventTemplateDraft]);
 
   useEffect(() => {
-    if (!selectedPlayerProfile && !selectedEngagementDetail && !observedSettingsOpen && !selectedEventTemplateDraft) {
+    if (!selectedPlayerProfile && !selectedEngagementDetail && !observedSettingsOpen && !selectedEventTemplateDraft && !expandedGuildActivityName) {
       return;
     }
 
@@ -2627,6 +2943,7 @@ function App() {
         setEventDraftConfigDiffError(null);
         setEventDraftManualChecklist(null);
         setEventDraftManualChecklistError(null);
+        setExpandedGuildActivityName(null);
       }
     }
 
@@ -2635,7 +2952,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [observedSettingsOpen, selectedEngagementDetail, selectedEventTemplateDraft, selectedPlayerProfile]);
+  }, [expandedGuildActivityName, observedSettingsOpen, selectedEngagementDetail, selectedEventTemplateDraft, selectedPlayerProfile]);
 
   useEffect(() => {
     let isMounted = true;
@@ -4493,6 +4810,22 @@ function App() {
     return focusedGuild ? [focusedGuild] : [];
   }, [expandedGuildActivityName, guildActivityFilterOptions.filteredGuildActivity, guildFocusMode]);
 
+  const palworldGuildIntelligence = useMemo(() => {
+    return buildPalworldGuildIntelligence(guildActivity);
+  }, [guildActivity]);
+
+  const palworldChronicleEvents = useMemo(() => {
+    return buildPalworldChronicle(guildActivity);
+  }, [guildActivity]);
+
+  const selectedPalworldGuild = useMemo(() => {
+    if (!expandedGuildActivityName) {
+      return null;
+    }
+
+    return guildActivity.find((guild) => guild.guildName === expandedGuildActivityName) ?? null;
+  }, [expandedGuildActivityName, guildActivity]);
+
   function markGuildReviewedAndAdvance(guildName: string): void {
     setReviewedGuildNames((current) => new Set(current).add(guildName));
 
@@ -4836,28 +5169,31 @@ function App() {
       items.push(normalized);
     };
 
-    if (hasPalworldBaseTelemetry && palworldBaseCapacity) {
-      pushHighlight(`Base pressure ${palworldBaseCapacity.statusLabel.toLowerCase()} at ${palworldBaseCapacity.usagePercent}%`);
-      pushHighlight(`${palworldBaseCapacity.estimatedBases} / 240 bases, ${palworldBaseCapacity.remainingCapacity} slots left`);
+    const largestGuild = [...guildActivity].sort((left, right) => right.memberCount - left.memberCount)[0];
+    const recentlyActiveGuild = [...guildActivity]
+      .filter((guild) => guild.lastMemberSeenAt)
+      .sort((left, right) => (right.lastMemberSeenAt ?? '').localeCompare(left.lastMemberSeenAt ?? ''))[0];
+    const activeTodayCount = guildActivity.filter((guild) => guild.daysInactive === 0).length;
+
+    if (largestGuild) {
+      pushHighlight(`Largest guild: ${largestGuild.guildName} with ${largestGuild.memberCount} members`);
+    }
+
+    if (recentlyActiveGuild?.lastMemberSeenAt) {
+      pushHighlight(`Recently active guild: ${recentlyActiveGuild.guildName}`);
+    }
+
+    if (activeTodayCount > 0) {
+      pushHighlight(`${activeTodayCount} guild${activeTodayCount === 1 ? '' : 's'} active today`);
     }
 
     if (palworldBaseCapacityAlerts?.growthAlert) {
       pushHighlight(palworldBaseCapacityAlerts.growthAlert);
-    } else if (palworldBaseSignalTrend.direction === 'increasing') {
-      pushHighlight(`Base trend ${palworldBaseSignalTrend.indicator} increasing`);
     }
 
-    if (palworldGuildSummary.activeGuildsThreePlus > 0) {
-      pushHighlight(`${palworldGuildSummary.activeGuildsThreePlus} guilds have 3+ active members`);
-    } else if (palworldGuildSummary.activeGuildsTwoPlus > 0) {
-      pushHighlight(`${palworldGuildSummary.activeGuildsTwoPlus} guilds have 2+ active members`);
-    } else if (palworldGuildSummary.likelyRealGuilds > 0) {
-      pushHighlight(`${palworldGuildSummary.likelyRealGuilds} likely real guilds detected`);
-    }
-
-    if (palworldCorePlayers[0]) {
-      const player = palworldCorePlayers[0];
-      pushHighlight(`Core player: ${player.playerName ?? player.accountName ?? player.playerId}`);
+    if (hasPalworldBaseTelemetry && palworldBaseCapacity) {
+      pushHighlight(`Base pressure ${palworldBaseCapacity.statusLabel.toLowerCase()} at ${palworldBaseCapacity.usagePercent}%`);
+      pushHighlight(`${palworldBaseCapacity.estimatedBases} / 240 bases, ${palworldBaseCapacity.remainingCapacity} slots left`);
     }
 
     if (palworldMilestoneFeed[0]) {
@@ -4871,20 +5207,15 @@ function App() {
     }
 
     if (items.length === 0) {
-      items.push('Highlights engine coming next');
+      items.push('This archipelago is still building its history.');
     }
 
     return items.slice(0, 5);
   }, [
+    guildActivity,
     hasPalworldBaseTelemetry,
     palworldBaseCapacity,
     palworldBaseCapacityAlerts,
-    palworldBaseSignalTrend.direction,
-    palworldBaseSignalTrend.indicator,
-    palworldCorePlayers,
-    palworldGuildSummary.activeGuildsThreePlus,
-    palworldGuildSummary.activeGuildsTwoPlus,
-    palworldGuildSummary.likelyRealGuilds,
     palworldMilestoneFeed,
     palworldTransitionEvents
   ]);
@@ -5441,9 +5772,8 @@ function App() {
                           <GuildRiskRow
                             key={guild.guildName}
                             guild={guild}
-                            expanded={expandedGuildActivityName === guild.guildName}
                             reviewed={reviewedGuildNames.has(guild.guildName)}
-                            onToggle={() => setExpandedGuildActivityName((current) => current === guild.guildName ? null : guild.guildName)}
+                            onOpen={() => setExpandedGuildActivityName(guild.guildName)}
                             onMarkReviewed={() => markGuildReviewedAndAdvance(guild.guildName)}
                           />
                         ))}
@@ -5800,14 +6130,17 @@ function App() {
                   <>
                     {selectedDashboardTab === 'highlights' ? (
                       <>
-                        <article className="card">
-                          <h2>Highlights</h2>
+                        <article className="card palworld-world-highlights-card">
+                          <h2>World Highlights</h2>
                           <ul className="list review-list">
+                            {activeHighlights.length === 0 ? <li>This archipelago is still building its history.</li> : null}
                             {activeHighlights.map((item) => (
                               <li key={item} className="review-row"><div className="review-main">{item}</div></li>
                             ))}
                           </ul>
                         </article>
+
+                        <WorldChroniclePanel title="Guild Chronicle" events={palworldChronicleEvents} />
 
                         <article className="card">
                           <h2>Current Milestone Feed</h2>
@@ -5977,69 +6310,83 @@ function App() {
                     ) : null}
 
                     {selectedDashboardTab === 'guilds' ? (
-                      <article className="card guild-activity-card">
-                        <div className="command-panel-heading">
-                          <div>
-                            <h2>Guild Activity</h2>
-                            <p className="subtle">Existing parsed guild hints for this Palworld server. Sprint 6C will deepen guild activity and 30-day base deletion risk tracking.</p>
+                      <>
+                        <PalworldGuildIntelligencePanel
+                          guilds={palworldGuildIntelligence}
+                          selectedGuildName={expandedGuildActivityName}
+                          reviewedGuildNames={reviewedGuildNames}
+                          onOpenGuild={setExpandedGuildActivityName}
+                        />
+
+                        <PalworldBaseLifecyclePanel
+                          guilds={palworldGuildIntelligence}
+                          hasBaseTelemetry={hasPalworldBaseTelemetry}
+                          baseCapacity={palworldBaseCapacity}
+                          baseTrend={palworldBaseSignalTrend}
+                        />
+
+                        <WorldChroniclePanel title="Guild Chronicle" events={palworldChronicleEvents} />
+
+                        <article className="card guild-activity-card">
+                          <div className="command-panel-heading">
+                            <div>
+                              <h2>Guild Review</h2>
+                              <p className="subtle">Filter guilds by lifecycle and confidence while preserving the Palworld server scope.</p>
+                            </div>
+                            <div className="guild-activity-heading-actions">
+                              {reviewedGuildNames.size > 0 ? (
+                                <button type="button" onClick={() => setReviewedGuildNames(new Set())}>
+                                  Clear Reviewed
+                                </button>
+                              ) : null}
+                              <span className="state-pill state-warning">{guildActivity.length} guilds</span>
+                            </div>
                           </div>
-                          <div className="guild-activity-heading-actions">
-                            {reviewedGuildNames.size > 0 ? (
-                              <button type="button" onClick={() => setReviewedGuildNames(new Set())}>
-                                Clear Reviewed
-                              </button>
-                            ) : null}
-                            <span className="state-pill state-warning">{guildActivity.length} guilds</span>
-                          </div>
-                        </div>
-                        {palworldGuildsError ? <p className="error">{palworldGuildsError}</p> : null}
-                        {!palworldGuildsError ? (
-                          <div className="detail-block">
-                            <ul className="list compact">
-                              <li><span>Total Guild Hints</span><span>{palworldGuildSummary.totalGuildHints}</span></li>
-                              <li><span>Likely Real Guilds</span><span>{palworldGuildSummary.likelyRealGuilds}</span></li>
-                              <li><span>Active Guilds (2+)</span><span>{palworldGuildSummary.activeGuildsTwoPlus}</span></li>
-                              <li><span>Active Guilds (3+)</span><span>{palworldGuildSummary.activeGuildsThreePlus}</span></li>
-                            </ul>
-                          </div>
-                        ) : null}
-                        <div className="guild-activity-filter-row" aria-label="Guild activity filters">
-                          <button
-                            type="button"
-                            className={guildFocusMode ? 'selected' : ''}
-                            onClick={() => setGuildFocusMode((current) => !current)}
-                          >
-                            <span>Focus Mode</span>
-                          </button>
-                          {guildActivityFilterOptions.options.map((filter) => (
+                          {palworldGuildsError ? <p className="error">{palworldGuildsError}</p> : null}
+                          {!palworldGuildsError ? (
+                            <div className="detail-block">
+                              <ul className="list compact">
+                                <li><span>Total Guild Hints</span><span>{palworldGuildSummary.totalGuildHints}</span></li>
+                                <li><span>Likely Real Guilds</span><span>{palworldGuildSummary.likelyRealGuilds}</span></li>
+                                <li><span>Guilds active today</span><span>{guildActivity.filter((guild) => guild.daysInactive === 0).length}</span></li>
+                                <li><span>Reviewed</span><span>{guildActivityProgress.reviewedCount} / {guildActivityProgress.totalCount}</span></li>
+                              </ul>
+                            </div>
+                          ) : null}
+                          <div className="guild-activity-filter-row" aria-label="Guild activity filters">
                             <button
-                              key={filter.value}
                               type="button"
-                              className={guildActivityFilter === filter.value ? 'selected' : ''}
-                              onClick={() => setGuildActivityFilter(filter.value)}
+                              className={guildFocusMode ? 'selected' : ''}
+                              onClick={() => setGuildFocusMode((current) => !current)}
                             >
-                              <span>{filter.label}</span>
-                              <small>{filter.count}</small>
+                              <span>Focus Mode</span>
                             </button>
-                          ))}
-                        </div>
-                        <div className="guild-activity-progress">
-                          Reviewed: {guildActivityProgress.reviewedCount} / {guildActivityProgress.totalCount} {guildActivityProgress.labelSuffix}
-                        </div>
-                        <ul className="list review-list guild-activity-list">
-                          {!palworldGuildsError && visibleGuildActivity.length === 0 ? <li className="empty-line">Guild tracking will appear as activity is collected and matched to save data.</li> : null}
-                          {visibleGuildActivity.map((guild) => (
-                            <GuildRiskRow
-                              key={`all-guild:${guild.guildName}`}
-                              guild={guild}
-                              expanded={guildFocusMode || expandedGuildActivityName === guild.guildName}
-                              reviewed={reviewedGuildNames.has(guild.guildName)}
-                              onToggle={() => setExpandedGuildActivityName((current) => current === guild.guildName ? null : guild.guildName)}
-                              onMarkReviewed={() => markGuildReviewedAndAdvance(guild.guildName)}
-                            />
-                          ))}
-                        </ul>
-                      </article>
+                            {guildActivityFilterOptions.options.map((filter) => (
+                              <button
+                                key={filter.value}
+                                type="button"
+                                className={guildActivityFilter === filter.value ? 'selected' : ''}
+                                onClick={() => setGuildActivityFilter(filter.value)}
+                              >
+                                <span>{filter.label}</span>
+                                <small>{filter.count}</small>
+                              </button>
+                            ))}
+                          </div>
+                          <ul className="list review-list guild-activity-list">
+                            {!palworldGuildsError && visibleGuildActivity.length === 0 ? <li className="empty-line">Guild activity will appear as players establish themselves.</li> : null}
+                            {visibleGuildActivity.map((guild) => (
+                              <GuildRiskRow
+                                key={`all-guild:${guild.guildName}`}
+                                guild={guild}
+                                reviewed={reviewedGuildNames.has(guild.guildName)}
+                                onOpen={() => setExpandedGuildActivityName(guild.guildName)}
+                                onMarkReviewed={() => markGuildReviewedAndAdvance(guild.guildName)}
+                              />
+                            ))}
+                          </ul>
+                        </article>
+                      </>
                     ) : null}
 
                     {selectedDashboardTab === 'activity' ? (
@@ -6252,6 +6599,15 @@ function App() {
           onSavePlayerFileNameChange={setDrawerSavePlayerFileName}
           onNotesChange={setDrawerLinkNotes}
           onSubmit={() => void submitDrawerManualLink(selectedPlayerProfile)}
+        />
+      ) : null}
+      {selectedPalworldGuild ? (
+        <PalworldGuildDrawer
+          guild={selectedPalworldGuild}
+          reviewed={reviewedGuildNames.has(selectedPalworldGuild.guildName)}
+          chronicleEvents={palworldChronicleEvents.filter((event) => event.actorName === selectedPalworldGuild.guildName)}
+          onClose={() => setExpandedGuildActivityName(null)}
+          onMarkReviewed={() => markGuildReviewedAndAdvance(selectedPalworldGuild.guildName)}
         />
       ) : null}
       {selectedEngagementDetail ? (

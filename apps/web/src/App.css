@@ -2476,6 +2476,123 @@
   grid-column: 1 / -1;
 }
 
+.palworld-guild-intelligence-card,
+.palworld-base-lifecycle-card,
+.palworld-world-highlights-card {
+  grid-column: 1 / -1;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 36%),
+    linear-gradient(180deg, #f8fdff 0%, #ffffff 68%);
+  border-color: rgba(56, 189, 248, 0.22);
+}
+
+.palworld-guild-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.7rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.palworld-guild-card {
+  min-width: 0;
+}
+
+.palworld-guild-card button {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(125, 211, 252, 0.34);
+  border-radius: 0.58rem;
+  padding: 0.7rem 0.78rem;
+  background: rgba(255, 255, 255, 0.78);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  display: grid;
+  gap: 0.48rem;
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.055);
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.palworld-guild-card button:hover,
+.palworld-guild-card.selected button {
+  border-color: rgba(14, 165, 233, 0.5);
+  box-shadow: 0 14px 30px rgba(14, 165, 233, 0.11);
+  transform: translateY(-1px);
+}
+
+.palworld-guild-card button:focus-visible {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.16);
+}
+
+.palworld-guild-card-top,
+.palworld-guild-card-stats,
+.palworld-guild-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.36rem 0.5rem;
+}
+
+.palworld-guild-card-top {
+  justify-content: space-between;
+}
+
+.palworld-guild-card-top strong {
+  color: #0f172a;
+  font-size: 0.98rem;
+}
+
+.palworld-guild-card-stats,
+.palworld-guild-card-meta {
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.palworld-guild-card-stats span,
+.palworld-guild-card-meta > span:not(.guild-confidence-pill) {
+  border-radius: 999px;
+  border: 1px solid rgba(226, 232, 240, 0.86);
+  background: rgba(248, 250, 252, 0.76);
+  padding: 0.13rem 0.42rem;
+}
+
+.palworld-guild-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.guild-row-review-button {
+  margin: 0 0.58rem 0.52rem;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  padding: 0.18rem 0.48rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.guild-row-review-button:hover {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.palworld-guild-drawer .guild-activity-detail {
+  border: 1px solid #e5eaf2;
+  border-radius: 0.55rem;
+  background: #fbfdff;
+  padding: 0.58rem;
+}
+
 .guild-activity-list {
   margin-top: 0.65rem;
 }
@@ -3445,6 +3562,21 @@
 .world-chronicle-imported_character .world-chronicle-marker {
   background: #92400e;
   box-shadow: 0 0 0 4px rgba(146, 64, 14, 0.16);
+}
+
+.world-chronicle-guild_active .world-chronicle-marker {
+  background: #0ea5e9;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);
+}
+
+.world-chronicle-guild_quiet .world-chronicle-marker {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16);
+}
+
+.world-chronicle-base_lifecycle .world-chronicle-marker {
+  background: #7c3aed;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.14);
 }
 
 .world-chronicle-main {
