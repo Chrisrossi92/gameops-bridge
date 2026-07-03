@@ -62,6 +62,111 @@ export const recentEventsResponseSchema = z.object({
 });
 export type RecentEventsResponse = z.infer<typeof recentEventsResponseSchema>;
 
+export const worldEventTypeSchema = z.enum([
+  'boss_defeated',
+  'settlement_founded',
+  'trader_discovered',
+  'portal_network_expanded',
+  'guild_created',
+  'base_abandoned',
+  'expedition_launched',
+  'world_state_changed',
+  'community_milestone',
+  'custom'
+]);
+export type WorldEventType = z.infer<typeof worldEventTypeSchema>;
+
+export const worldEventConfidenceSchema = z.enum(['unknown', 'low', 'medium', 'high']);
+export type WorldEventConfidence = z.infer<typeof worldEventConfidenceSchema>;
+
+export const worldEventSignificanceSchema = z.enum(['minor', 'normal', 'major', 'historic']);
+export type WorldEventSignificance = z.infer<typeof worldEventSignificanceSchema>;
+
+export const worldEventSourceKindSchema = z.enum([
+  'session_engine',
+  'world_memory',
+  'collector',
+  'chronicle',
+  'manual_operator_entry',
+  'discord_integration',
+  'ai_consumer',
+  'system'
+]);
+export type WorldEventSourceKind = z.infer<typeof worldEventSourceKindSchema>;
+
+export const worldEventSourceSchema = z.object({
+  kind: worldEventSourceKindSchema,
+  label: z.string().min(1),
+  referenceId: z.string().min(1).optional()
+});
+export type WorldEventSource = z.infer<typeof worldEventSourceSchema>;
+
+export const worldEventEvidenceTypeSchema = z.enum([
+  'log_truth_event',
+  'session',
+  'memory_record',
+  'chronicle_entry',
+  'operator_note',
+  'external_reference'
+]);
+export type WorldEventEvidenceType = z.infer<typeof worldEventEvidenceTypeSchema>;
+
+export const worldEventEvidenceReferenceSchema = z.object({
+  id: z.string().min(1),
+  type: worldEventEvidenceTypeSchema,
+  label: z.string().min(1),
+  sourceLabel: z.string().min(1),
+  observedAt: z.string().datetime().optional(),
+  uri: z.string().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).default({})
+});
+export type WorldEventEvidenceReference = z.infer<typeof worldEventEvidenceReferenceSchema>;
+
+export const worldEventRelationshipTypeSchema = z.enum([
+  'caused_by',
+  'followed_by',
+  'related_to',
+  'same_subject',
+  'same_location',
+  'supersedes'
+]);
+export type WorldEventRelationshipType = z.infer<typeof worldEventRelationshipTypeSchema>;
+
+export const worldEventRelationshipSchema = z.object({
+  eventId: z.string().min(1),
+  relationshipType: worldEventRelationshipTypeSchema,
+  confidence: worldEventConfidenceSchema.default('medium'),
+  sourceLabel: z.string().min(1)
+});
+export type WorldEventRelationship = z.infer<typeof worldEventRelationshipSchema>;
+
+export const worldEventSchema = z.object({
+  id: z.string().min(1),
+  worldId: z.string().min(1),
+  eventType: worldEventTypeSchema,
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  occurredAt: z.string().datetime(),
+  discoveredAt: z.string().datetime(),
+  confidence: worldEventConfidenceSchema,
+  significance: worldEventSignificanceSchema.default('normal'),
+  source: worldEventSourceSchema,
+  evidence: z.array(worldEventEvidenceReferenceSchema).default([]),
+  relatedEvents: z.array(worldEventRelationshipSchema).default([]),
+  relatedMemories: z.array(z.string().min(1)).default([]),
+  relatedPlayers: z.array(z.string().min(1)).default([]),
+  relatedGuilds: z.array(z.string().min(1)).default([]),
+  relatedCharacters: z.array(z.string().min(1)).default([]),
+  metadata: z.record(z.string(), z.unknown()).default({})
+});
+export type WorldEvent = z.infer<typeof worldEventSchema>;
+
+export const worldEventsResponseSchema = z.object({
+  worldId: z.string().min(1),
+  events: z.array(worldEventSchema)
+});
+export type WorldEventsResponse = z.infer<typeof worldEventsResponseSchema>;
+
 export const identityConfidenceSchema = z.enum(['low', 'medium', 'high']);
 export type IdentityConfidence = z.infer<typeof identityConfidenceSchema>;
 

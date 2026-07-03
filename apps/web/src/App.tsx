@@ -94,6 +94,8 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
+import { WorldEventRenderer } from './world-event-renderer.tsx';
+import { createWorldEventRegistry, worldEventPreviewEvents } from './world-events.ts';
 import {
   createWorldMemoryRegistry,
   getGuildConfidence,
@@ -5467,6 +5469,16 @@ function App() {
   const palworldChronicleEvents = useMemo(() => {
     return selectedServer?.game === 'palworld' ? selectedWorldMemory.chronicleEvents.slice(0, 14) : [];
   }, [selectedServer?.game, selectedWorldMemory]);
+  const selectedWorldEventPreview = useMemo(() => {
+    if (!selectedServer) {
+      return [];
+    }
+
+    const previewWorldId = selectedServer.game === 'palworld'
+      ? 'preview-palworld-world'
+      : 'preview-valheim-world';
+    return createWorldEventRegistry(previewWorldId, worldEventPreviewEvents).events;
+  }, [selectedServer]);
   const searchableWorldMemoryRecords = useMemo(() => {
     if (!selectedServer) {
       return [];
@@ -5899,6 +5911,10 @@ function App() {
                   ? 'The archipelago has not recorded enough guild history yet. More memories will appear as players explore.'
                   : 'This realm is still writing its story. More memories will appear as players explore.'}
               />
+            ) : null}
+
+            {selectedDashboardTab === 'overview' ? (
+              <WorldEventRenderer events={selectedWorldEventPreview} />
             ) : null}
 
             {selectedDashboardTab === 'ops' ? (

@@ -3985,6 +3985,87 @@
   color: #475569;
 }
 
+.world-event-preview-card {
+  grid-column: 1 / -1;
+  margin-bottom: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.11), transparent 34%),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 68%);
+  border-color: rgba(14, 116, 144, 0.16);
+}
+
+.world-event-preview-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.world-event-preview-heading h2 {
+  margin: 0.12rem 0 0;
+  font-size: 1.08rem;
+}
+
+.world-event-preview-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-event-preview-row {
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 0.5rem;
+  padding: 0.58rem 0.65rem;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.world-event-preview-main {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.world-event-preview-title,
+.world-event-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.36rem 0.55rem;
+}
+
+.world-event-preview-title strong {
+  color: #1f2937;
+}
+
+.world-event-preview-main p {
+  margin: 0;
+  color: #475569;
+}
+
+.world-event-preview-meta {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.world-event-significance {
+  border-radius: 999px;
+  padding: 0.16rem 0.42rem;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  background: #f8fafc;
+  color: #475569;
+}
+
+.world-event-significance-major,
+.world-event-significance-historic {
+  border-color: rgba(180, 83, 9, 0.24);
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .world-chronicle-meta,
 .valheim-character-meta {
   color: #64748b;
