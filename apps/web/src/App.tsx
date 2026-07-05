@@ -89,12 +89,13 @@ import {
   type SessionTimelineResponse,
   type PalworldRejectedIdentity,
   type PalworldTransitionMilestoneEvent,
-  type PalworldUnifiedPlayerProfile
+  type PalworldUnifiedPlayerProfile,
+  type WorldEvent
 } from '@gameops/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
-import { WorldEventRenderer } from './world-event-renderer.tsx';
+import { WorldEventDetailDrawer, WorldEventRenderer } from './world-event-renderer.tsx';
 import { createWorldEventRegistry, worldEventPreviewEvents, worldEventsToChronicleEntries } from './world-events.ts';
 import {
   createWorldMemoryRegistry,
@@ -386,6 +387,7 @@ interface WorldChroniclePanelProps {
   events: WorldChronicleEvent[];
   emptyMessage?: string;
   compact?: boolean;
+  onOpenWorldEvent?: (worldEventId: string) => void;
 }
 
 function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
@@ -413,7 +415,11 @@ function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
   }
 }
 
-function WorldChroniclePanel({ title, events, emptyMessage = 'This realm is still writing its story. More adventures will appear as players explore.', compact = false }: WorldChroniclePanelProps) {
+function getChronicleWorldEventId(event: WorldChronicleEvent): string | null {
+  return event.id.startsWith('world-event:') ? event.id.slice('world-event:'.length) : null;
+}
+
+function WorldChroniclePanel({ title, events, emptyMessage = 'This realm is still writing its story. More adventures will appear as players explore.', compact = false, onOpenWorldEvent }: WorldChroniclePanelProps) {
   const visibleEvents = compact ? events.slice(0, 5) : events;
 
   return (
@@ -431,23 +437,38 @@ function WorldChroniclePanel({ title, events, emptyMessage = 'This realm is stil
       ) : null}
 
       <ol className="world-chronicle-list">
-        {visibleEvents.map((event) => (
-          <li key={event.id} className={`world-chronicle-row world-chronicle-${event.kind}`}>
-            <div className="world-chronicle-marker" aria-hidden="true" />
-            <div className="world-chronicle-main">
-              <div className="world-chronicle-title-row">
-                <span className="source-badge">{getChronicleKindLabel(event.kind)}</span>
-                <strong>{event.title}</strong>
-              </div>
-              {event.detail ? <p>{event.detail}</p> : null}
-              <div className="world-chronicle-meta">
-                <span>{formatRelativeTime(event.occurredAt)}</span>
-                <span>{event.sourceLabel}</span>
-                <span className={`confidence-badge confidence-${event.confidence}`}>{event.confidence}</span>
-              </div>
-            </div>
-          </li>
-        ))}
+        {visibleEvents.map((event) => {
+          const worldEventId = getChronicleWorldEventId(event);
+          const canOpenWorldEvent = Boolean(worldEventId && onOpenWorldEvent);
+
+          return (
+            <li key={event.id} className={`world-chronicle-row world-chronicle-${event.kind}`}>
+              <div className="world-chronicle-marker" aria-hidden="true" />
+              <button
+                type="button"
+                className="world-chronicle-row-button"
+                disabled={!canOpenWorldEvent}
+                onClick={() => {
+                  if (worldEventId) {
+                    onOpenWorldEvent?.(worldEventId);
+                  }
+                }}
+              >
+                <div className="world-chronicle-title-row">
+                  <span className="source-badge">{getChronicleKindLabel(event.kind)}</span>
+                  <strong>{event.title}</strong>
+                </div>
+                {event.detail ? <p>{event.detail}</p> : null}
+                <div className="world-chronicle-meta">
+                  <span>{formatRelativeTime(event.occurredAt)}</span>
+                  <span>{event.sourceLabel}</span>
+                  <span className={`confidence-badge confidence-${event.confidence}`}>{event.confidence}</span>
+                  {canOpenWorldEvent ? <span>Inspect evidence</span> : null}
+                </div>
+              </button>
+            </li>
+          );
+        })}
       </ol>
     </article>
   );
@@ -3006,6 +3027,7 @@ function App() {
   const [selectedDashboardTab, setSelectedDashboardTab] = useState<DashboardTab>('overview');
   const [worldMemorySearchQuery, setWorldMemorySearchQuery] = useState('');
   const [selectedMemoryDetail, setSelectedMemoryDetail] = useState<WorldMemoryDetailModel | null>(null);
+  const [selectedWorldEventDetail, setSelectedWorldEventDetail] = useState<WorldEvent | null>(null);
   const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<PalworldPlayerProfileSessionSummary | null>(null);
   const [drawerSavePlayerSaveId, setDrawerSavePlayerSaveId] = useState('');
   const [drawerSavePlayerFileName, setDrawerSavePlayerFileName] = useState('');
@@ -3061,6 +3083,7 @@ function App() {
     setSelectedPlayerProfile(null);
     setWorldMemorySearchQuery('');
     setSelectedMemoryDetail(null);
+    setSelectedWorldEventDetail(null);
     setSelectedDashboardTab('overview');
   }, [selectedServerId]);
 
@@ -3099,7 +3122,7 @@ function App() {
   }, [selectedEventTemplateDraft]);
 
   useEffect(() => {
-    if (!selectedPlayerProfile && !selectedEngagementDetail && !observedSettingsOpen && !selectedEventTemplateDraft && !expandedGuildActivityName && !selectedMemoryDetail) {
+    if (!selectedPlayerProfile && !selectedEngagementDetail && !observedSettingsOpen && !selectedEventTemplateDraft && !expandedGuildActivityName && !selectedMemoryDetail && !selectedWorldEventDetail) {
       return;
     }
 
@@ -3121,6 +3144,7 @@ function App() {
         setEventDraftManualChecklistError(null);
         setExpandedGuildActivityName(null);
         setSelectedMemoryDetail(null);
+        setSelectedWorldEventDetail(null);
       }
     }
 
@@ -3129,7 +3153,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [expandedGuildActivityName, observedSettingsOpen, selectedEngagementDetail, selectedEventTemplateDraft, selectedMemoryDetail, selectedPlayerProfile]);
+  }, [expandedGuildActivityName, observedSettingsOpen, selectedEngagementDetail, selectedEventTemplateDraft, selectedMemoryDetail, selectedPlayerProfile, selectedWorldEventDetail]);
 
   useEffect(() => {
     let isMounted = true;
@@ -5475,6 +5499,14 @@ function App() {
   const selectedWorldEventChronicleEntries = useMemo(() => {
     return worldEventsToChronicleEntries(selectedWorldEventPreview);
   }, [selectedWorldEventPreview]);
+  function openWorldEventDetail(worldEventId: string): void {
+    const worldEvent = selectedWorldEventPreview.find((event) => event.id === worldEventId);
+
+    if (worldEvent) {
+      setSelectedWorldEventDetail(worldEvent);
+    }
+  }
+
   const valheimChronicleEvents = useMemo(() => {
     if (selectedServer?.game !== 'valheim') {
       return [];
@@ -5924,6 +5956,7 @@ function App() {
                 title={selectedServer.game === 'palworld' ? 'Archipelago Chronicle' : 'Realm Chronicle'}
                 events={selectedServer.game === 'palworld' ? palworldChronicleEvents : valheimChronicleEvents}
                 compact
+                onOpenWorldEvent={openWorldEventDetail}
                 emptyMessage={selectedServer.game === 'palworld'
                   ? 'The archipelago has not recorded enough guild history yet. More memories will appear as players explore.'
                   : 'This realm is still writing its story. More memories will appear as players explore.'}
@@ -5931,7 +5964,7 @@ function App() {
             ) : null}
 
             {selectedDashboardTab === 'overview' ? (
-              <WorldEventRenderer events={selectedWorldEventPreview} />
+              <WorldEventRenderer events={selectedWorldEventPreview} onSelect={setSelectedWorldEventDetail} />
             ) : null}
 
             {selectedDashboardTab === 'ops' ? (
@@ -7001,6 +7034,12 @@ function App() {
           detail={selectedMemoryDetail}
           records={selectedWorldMemory.records}
           onClose={() => setSelectedMemoryDetail(null)}
+        />
+      ) : null}
+      {selectedWorldEventDetail ? (
+        <WorldEventDetailDrawer
+          event={selectedWorldEventDetail}
+          onClose={() => setSelectedWorldEventDetail(null)}
         />
       ) : null}
       {selectedEngagementDetail ? (

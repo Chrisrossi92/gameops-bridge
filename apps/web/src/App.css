@@ -3916,6 +3916,37 @@
   transform: translateY(-1px);
 }
 
+.world-chronicle-row-button,
+.world-event-preview-button {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.world-chronicle-row-button:not(:disabled),
+.world-event-preview-button:not(:disabled) {
+  cursor: pointer;
+}
+
+.world-chronicle-row-button:disabled,
+.world-event-preview-button:disabled {
+  cursor: default;
+}
+
+.world-chronicle-row-button:focus-visible,
+.world-event-preview-button:focus-visible {
+  outline: 3px solid rgba(14, 116, 144, 0.18);
+  outline-offset: 3px;
+  border-radius: 0.42rem;
+}
+
 .world-chronicle-marker {
   width: 0.62rem;
   height: 0.62rem;
@@ -4045,7 +4076,8 @@
   color: #1f2937;
 }
 
-.world-event-preview-main p {
+.world-event-preview-main p,
+.world-event-preview-button p {
   margin: 0;
   color: #475569;
 }
@@ -4069,6 +4101,19 @@
   border-color: rgba(180, 83, 9, 0.24);
   background: #fff7ed;
   color: #9a3412;
+}
+
+.world-event-detail-drawer {
+  width: min(480px, 100vw);
+}
+
+.world-event-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.world-event-detail-section p {
+  margin: 0;
 }
 
 .world-chronicle-meta,
