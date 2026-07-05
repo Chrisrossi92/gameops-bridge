@@ -66,6 +66,7 @@ export type WorldChronicleEventKind =
   | 'leave'
   | 'restart'
   | 'imported_character'
+  | 'world_event'
   | 'guild_active'
   | 'guild_quiet'
   | 'base_lifecycle';

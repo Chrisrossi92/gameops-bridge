@@ -3945,6 +3945,11 @@
   box-shadow: 0 0 0 4px rgba(146, 64, 14, 0.16);
 }
 
+.world-chronicle-world_event .world-chronicle-marker {
+  background: #0f766e;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.14);
+}
+
 .world-chronicle-guild_active .world-chronicle-marker {
   background: #0ea5e9;
   box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);

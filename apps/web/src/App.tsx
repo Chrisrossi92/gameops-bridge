@@ -95,7 +95,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
 import { WorldEventRenderer } from './world-event-renderer.tsx';
-import { createWorldEventRegistry, worldEventPreviewEvents } from './world-events.ts';
+import { createWorldEventRegistry, worldEventPreviewEvents, worldEventsToChronicleEntries } from './world-events.ts';
 import {
   createWorldMemoryRegistry,
   getGuildConfidence,
@@ -402,6 +402,8 @@ function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
       return 'Restart';
     case 'imported_character':
       return 'Character';
+    case 'world_event':
+      return 'World event';
     case 'guild_active':
       return 'Guild active';
     case 'guild_quiet':
@@ -5460,15 +5462,6 @@ function App() {
   const valheimCharacters = useMemo(() => {
     return selectedServer?.game === 'valheim' ? getValheimCharactersFromMemory(selectedWorldMemory) : [];
   }, [selectedServer?.game, selectedWorldMemory]);
-  const valheimChronicleEvents = useMemo(() => {
-    return selectedServer?.game === 'valheim' ? selectedWorldMemory.chronicleEvents.slice(0, 14) : [];
-  }, [selectedServer?.game, selectedWorldMemory]);
-  const palworldGuildIntelligence = useMemo(() => {
-    return selectedServer?.game === 'palworld' ? getPalworldGuildIntelligenceFromMemory(selectedWorldMemory) : [];
-  }, [selectedServer?.game, selectedWorldMemory]);
-  const palworldChronicleEvents = useMemo(() => {
-    return selectedServer?.game === 'palworld' ? selectedWorldMemory.chronicleEvents.slice(0, 14) : [];
-  }, [selectedServer?.game, selectedWorldMemory]);
   const selectedWorldEventPreview = useMemo(() => {
     if (!selectedServer) {
       return [];
@@ -5479,6 +5472,30 @@ function App() {
       : 'preview-valheim-world';
     return createWorldEventRegistry(previewWorldId, worldEventPreviewEvents).events;
   }, [selectedServer]);
+  const selectedWorldEventChronicleEntries = useMemo(() => {
+    return worldEventsToChronicleEntries(selectedWorldEventPreview);
+  }, [selectedWorldEventPreview]);
+  const valheimChronicleEvents = useMemo(() => {
+    if (selectedServer?.game !== 'valheim') {
+      return [];
+    }
+
+    return [...selectedWorldMemory.chronicleEvents, ...selectedWorldEventChronicleEntries]
+      .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+      .slice(0, 14);
+  }, [selectedServer?.game, selectedWorldEventChronicleEntries, selectedWorldMemory]);
+  const palworldGuildIntelligence = useMemo(() => {
+    return selectedServer?.game === 'palworld' ? getPalworldGuildIntelligenceFromMemory(selectedWorldMemory) : [];
+  }, [selectedServer?.game, selectedWorldMemory]);
+  const palworldChronicleEvents = useMemo(() => {
+    if (selectedServer?.game !== 'palworld') {
+      return [];
+    }
+
+    return [...selectedWorldMemory.chronicleEvents, ...selectedWorldEventChronicleEntries]
+      .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+      .slice(0, 14);
+  }, [selectedServer?.game, selectedWorldEventChronicleEntries, selectedWorldMemory]);
   const searchableWorldMemoryRecords = useMemo(() => {
     if (!selectedServer) {
       return [];

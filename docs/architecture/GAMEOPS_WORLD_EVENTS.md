@@ -79,6 +79,12 @@ The web foundation includes a `WorldEventRegistry` that:
 
 The registry does not generate events. Future adapters can feed it trusted events from World Memory, Chronicle, manual operator entry, or other sources.
 
+## Chronicle Integration
+
+Chronicle may adapt trusted World Events into readable Chronicle entries. That adapter must preserve the World Event id, source, confidence, occurred and discovered timestamps, related memories, and evidence references.
+
+Chronicle integration must not create new World Events or invent missing history. It can render trusted events, sort them with existing Chronicle entries, and expose evidence in owner-friendly language.
+
 ## UI Foundation
 
 The current UI scope is an internal preview renderer only. It demonstrates the contract, source attribution, evidence counts, timestamps, confidence, and significance without adding navigation, notifications, analytics, collector behavior, telemetry changes, or AI.

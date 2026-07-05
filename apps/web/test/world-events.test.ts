@@ -96,6 +96,7 @@ test('world event chronicle mapping preserves source, confidence, timing, memori
 
   assert.equal(chronicleEntry.id, 'world-event:iron-wolves-founded');
   assert.equal(chronicleEntry.worldEventId, 'iron-wolves-founded');
+  assert.equal(chronicleEntry.kind, 'guild_active');
   assert.equal(chronicleEntry.title, 'Iron Wolves guild was founded.');
   assert.equal(chronicleEntry.detail, 'The Iron Wolves guild was founded from trusted world memory evidence.');
   assert.equal(chronicleEntry.occurredAt, '2026-07-01T18:15:00.000Z');
@@ -132,6 +133,7 @@ test('world events map to chronicle entries without inventing summaries and stay
   ]);
 
   assert.deepEqual(chronicleEntries.map((entry) => entry.worldEventId), ['newer', 'older']);
+  assert.deepEqual(chronicleEntries.map((entry) => entry.kind), ['world_event', 'world_event']);
   assert.equal(chronicleEntries[0].detail, 'A major world event was recorded.');
   assert.equal(chronicleEntries[1].detail, 'A new settlement was established.');
 });

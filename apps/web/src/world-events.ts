@@ -85,7 +85,7 @@ function getWorldEventChronicleKind(eventType: WorldEventType): WorldChronicleEv
     case 'world_state_changed':
     case 'community_milestone':
     case 'custom':
-      return 'imported_character';
+      return 'world_event';
   }
 }
 
