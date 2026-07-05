@@ -5,6 +5,7 @@ import type {
   WorldEventSourceKind,
   WorldEventType
 } from '@gameops/shared';
+import type { WorldChronicleEvent, WorldChronicleEventKind } from './world-memory.ts';
 
 export const WORLD_EVENT_TYPE_LABELS: Record<WorldEventType, string> = {
   boss_defeated: 'Boss defeated',
@@ -43,6 +44,19 @@ export interface WorldEventRegistry {
   getEventsForCharacter: (characterId: string) => WorldEvent[];
 }
 
+export interface WorldEventChronicleEntry extends WorldChronicleEvent {
+  worldEventId: string;
+  discoveredAt: string;
+  significance: WorldEventSignificance;
+  sourceKind: WorldEventSourceKind;
+  evidenceCount: number;
+  evidenceLabels: string[];
+  relatedMemories: string[];
+  relatedPlayers: string[];
+  relatedGuilds: string[];
+  relatedCharacters: string[];
+}
+
 function compareWorldEvents(left: WorldEvent, right: WorldEvent): number {
   const occurredDelta = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
 
@@ -51,6 +65,52 @@ function compareWorldEvents(left: WorldEvent, right: WorldEvent): number {
   }
 
   return Date.parse(right.discoveredAt) - Date.parse(left.discoveredAt);
+}
+
+function toChronicleConfidence(confidence: WorldEventConfidence): WorldChronicleEvent['confidence'] {
+  return confidence === 'unknown' ? 'low' : confidence;
+}
+
+function getWorldEventChronicleKind(eventType: WorldEventType): WorldChronicleEventKind {
+  switch (eventType) {
+    case 'guild_created':
+      return 'guild_active';
+    case 'base_abandoned':
+      return 'base_lifecycle';
+    case 'boss_defeated':
+    case 'settlement_founded':
+    case 'trader_discovered':
+    case 'portal_network_expanded':
+    case 'expedition_launched':
+    case 'world_state_changed':
+    case 'community_milestone':
+    case 'custom':
+      return 'imported_character';
+  }
+}
+
+function getWorldEventChronicleTitle(event: WorldEvent): string {
+  switch (event.eventType) {
+    case 'boss_defeated':
+      return `${event.title} was recorded in the world's history.`;
+    case 'settlement_founded':
+      return `${event.title} was established.`;
+    case 'trader_discovered':
+      return `${event.title} was discovered.`;
+    case 'portal_network_expanded':
+      return `${event.title} expanded the realm's travel network.`;
+    case 'guild_created':
+      return `${event.title} was founded.`;
+    case 'base_abandoned':
+      return `${event.title} appears abandoned.`;
+    case 'expedition_launched':
+      return `${event.title} began.`;
+    case 'community_milestone':
+      return `${event.title} became a community milestone.`;
+    case 'world_state_changed':
+    case 'custom':
+      return event.title;
+  }
 }
 
 export function createWorldEventRegistry(worldId: string, events: WorldEvent[]): WorldEventRegistry {
@@ -98,12 +158,45 @@ export function getWorldEventConfidenceLabel(confidence: WorldEventConfidence): 
   return confidence === 'unknown' ? 'unknown confidence' : `${confidence} confidence`;
 }
 
+export function worldEventToChronicleEntry(event: WorldEvent): WorldEventChronicleEntry {
+  const sourceLabel = event.source.label || getWorldEventSourceLabel(event.source.kind);
+  const evidenceLabels = event.evidence.map((evidence) => evidence.label || evidence.sourceLabel || evidence.type);
+
+  return {
+    id: `world-event:${event.id}`,
+    kind: getWorldEventChronicleKind(event.eventType),
+    occurredAt: event.occurredAt,
+    title: getWorldEventChronicleTitle(event),
+    detail: event.summary,
+    actorName: event.relatedGuilds[0] ?? event.relatedPlayers[0] ?? event.relatedCharacters[0],
+    memoryRecordId: event.relatedMemories[0],
+    confidence: toChronicleConfidence(event.confidence),
+    sourceLabel,
+    worldEventId: event.id,
+    discoveredAt: event.discoveredAt,
+    significance: event.significance,
+    sourceKind: event.source.kind,
+    evidenceCount: event.evidence.length,
+    evidenceLabels,
+    relatedMemories: event.relatedMemories,
+    relatedPlayers: event.relatedPlayers,
+    relatedGuilds: event.relatedGuilds,
+    relatedCharacters: event.relatedCharacters
+  };
+}
+
+export function worldEventsToChronicleEntries(events: WorldEvent[]): WorldEventChronicleEntry[] {
+  return events
+    .map(worldEventToChronicleEntry)
+    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt));
+}
+
 export const worldEventPreviewEvents: WorldEvent[] = [{
   id: 'preview:valheim:elder-defeated',
   worldId: 'preview-valheim-world',
   eventType: 'boss_defeated',
   title: 'Elder defeated',
-  summary: 'A major progression event recorded with source attribution and evidence references.',
+  summary: 'A major world event was recorded with source attribution and evidence references.',
   occurredAt: '2026-07-01T20:30:00.000Z',
   discoveredAt: '2026-07-01T20:31:00.000Z',
   confidence: 'medium',
@@ -132,8 +225,8 @@ export const worldEventPreviewEvents: WorldEvent[] = [{
   id: 'preview:palworld:guild-created',
   worldId: 'preview-palworld-world',
   eventType: 'guild_created',
-  title: 'New guild created',
-  summary: 'A community-level world event that can later connect to guild, player, and memory records.',
+  title: 'Iron Wolves guild',
+  summary: 'The Iron Wolves guild was founded from trusted world memory evidence.',
   occurredAt: '2026-07-01T18:15:00.000Z',
   discoveredAt: '2026-07-01T18:16:00.000Z',
   confidence: 'medium',
