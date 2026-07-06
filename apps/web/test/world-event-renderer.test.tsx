@@ -150,6 +150,9 @@ test('world event detail drawer preserves trust, evidence, and related history',
   );
 
   assert.match(html, /Why this is shown/);
+  assert.match(html, /World History \/ Chronicle/);
+  assert.match(html, /Back to World History/);
+  assert.match(html, /Opened from World History/);
   assert.match(html, /Evidence/);
   assert.match(html, /Operator note/);
   assert.match(html, /Manual Operator Entry/);
@@ -188,6 +191,29 @@ test('world event detail drawer displays connected history with owner-friendly l
   assert.match(html, /Guild reference: guild:iron-wolves/);
   assert.match(html, /Character reference: character:chris/);
   assert.match(html, /Related event: Portal network expanded/);
+});
+
+test('world event detail drawer keeps unresolved related event references quiet', () => {
+  const html = renderToStaticMarkup(
+    <WorldEventDetailDrawer
+      event={event({
+        relatedEvents: [{
+          eventId: 'event:missing',
+          relationshipType: 'related_to',
+          confidence: 'low',
+          sourceLabel: 'World Memory'
+        }],
+        relatedMemories: [],
+        relatedPlayers: [],
+        relatedGuilds: [],
+        relatedCharacters: []
+      })}
+      relatedEvents={[]}
+      onClose={() => undefined}
+    />
+  );
+
+  assert.match(html, /Related event reference: event:missing/);
 });
 
 test('world event relationship summary names missing relationships clearly', () => {
@@ -230,7 +256,7 @@ test('world event relationship summary falls back to related event ids when titl
     />
   );
 
-  assert.match(html, /Related event: event:missing/);
+  assert.match(html, /Related event reference: event:missing/);
 });
 
 test('world event detail drawer names missing evidence clearly', () => {

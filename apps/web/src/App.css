@@ -4133,6 +4133,27 @@
   margin: 0;
 }
 
+.world-event-origin-note {
+  background: rgba(240, 249, 255, 0.72);
+}
+
+.world-event-reference-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.28rem;
+}
+
+.world-event-reference-pill {
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.9);
+  color: #475569;
+  padding: 0.12rem 0.42rem;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
 .world-chronicle-meta,
 .valheim-character-meta {
   color: #64748b;

@@ -49,6 +49,24 @@ function getRelatedEventTitle(relatedEventId: string, relatedEvents: WorldEvent[
   return relatedEvents.find((candidate) => candidate.id === relatedEventId)?.title ?? relatedEventId;
 }
 
+function isFriendlyRelatedEventTitle(relatedEventId: string, relatedEvents: WorldEvent[]): boolean {
+  return relatedEvents.some((candidate) => candidate.id === relatedEventId);
+}
+
+function renderReferenceList(values: string[], label: string, emptyText: string) {
+  if (values.length === 0) {
+    return emptyText;
+  }
+
+  return (
+    <span className="world-event-reference-list">
+      {values.map((value) => (
+        <span key={value} className="world-event-reference-pill">{label}: {value}</span>
+      ))}
+    </span>
+  );
+}
+
 interface WorldEventRelationshipSummaryProps {
   event: WorldEvent;
   relatedEvents?: WorldEvent[];
@@ -73,23 +91,33 @@ export function WorldEventRelationshipSummary({ event, relatedEvents = [] }: Wor
       <ul>
         <li>
           <span>Related memories</span>
-          <span>{event.relatedMemories.length > 0 ? event.relatedMemories.map((memoryId) => `Memory reference: ${memoryId}`).join(', ') : 'No related memories recorded yet.'}</span>
+          <span>{renderReferenceList(event.relatedMemories, 'Memory reference', 'No related memories recorded yet.')}</span>
         </li>
         <li>
           <span>Related people</span>
-          <span>{event.relatedPlayers.length > 0 ? event.relatedPlayers.map((playerId) => `Player reference: ${playerId}`).join(', ') : 'No related people recorded yet.'}</span>
+          <span>{renderReferenceList(event.relatedPlayers, 'Player reference', 'No related people recorded yet.')}</span>
         </li>
         <li>
           <span>Related guilds</span>
-          <span>{event.relatedGuilds.length > 0 ? event.relatedGuilds.map((guildId) => `Guild reference: ${guildId}`).join(', ') : 'No related guilds recorded yet.'}</span>
+          <span>{renderReferenceList(event.relatedGuilds, 'Guild reference', 'No related guilds recorded yet.')}</span>
         </li>
         <li>
           <span>Related characters</span>
-          <span>{event.relatedCharacters.length > 0 ? event.relatedCharacters.map((characterId) => `Character reference: ${characterId}`).join(', ') : 'No related characters recorded yet.'}</span>
+          <span>{renderReferenceList(event.relatedCharacters, 'Character reference', 'No related characters recorded yet.')}</span>
         </li>
         <li>
           <span>Related events</span>
-          <span>{relatedEventIds.length > 0 ? relatedEventIds.map((eventId) => `Related event: ${getRelatedEventTitle(eventId, relatedEvents)}`).join(', ') : 'No related events recorded yet.'}</span>
+          <span>
+            {relatedEventIds.length > 0 ? (
+              <span className="world-event-reference-list">
+                {relatedEventIds.map((eventId) => (
+                  <span key={eventId} className="world-event-reference-pill">
+                    {isFriendlyRelatedEventTitle(eventId, relatedEvents) ? 'Related event' : 'Related event reference'}: {getRelatedEventTitle(eventId, relatedEvents)}
+                  </span>
+                ))}
+              </span>
+            ) : 'No related events recorded yet.'}
+          </span>
         </li>
       </ul>
     </section>
@@ -111,12 +139,17 @@ export function WorldEventDetailDrawer({ event, relatedEvents = [], onClose }: W
       <aside className="player-drawer world-event-detail-drawer" aria-label="World event details">
         <div className="player-drawer-header">
           <div>
-            <span className="summary-label">Why this is shown</span>
+            <span className="summary-label">World History / Chronicle</span>
             <h2>{event.title}</h2>
             <p>{event.summary}</p>
           </div>
-          <button type="button" className="player-drawer-close" onClick={onClose}>Close</button>
+          <button type="button" className="player-drawer-close" onClick={onClose}>Back to World History</button>
         </div>
+
+        <section className="player-drawer-actions world-event-detail-section world-event-origin-note">
+          <h3>Why this is shown</h3>
+          <p className="subtle">Opened from World History. This trusted event keeps its Chronicle and World Memory evidence attached.</p>
+        </section>
 
         <dl className="player-drawer-grid world-event-detail-grid">
           <div className="world-memory-fact">
