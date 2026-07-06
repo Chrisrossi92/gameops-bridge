@@ -111,6 +111,8 @@ Relevance is a presentation rule, not a truth rule. The full trusted event set s
 
 World History is the first timeline consumer of trusted World Events. It presents selected events as readable history for the currently selected world, ordered by world time and backed by the same source, confidence, timestamp, evidence, and connected-history inspection used by Chronicle integration.
 
+Timeline presentation may group events with owner-language headings such as Today, Yesterday, This week, and Earlier history. Grouping is deterministic readability only; it must not change event truth, relevance selection, source attribution, or evidence availability.
+
 The timeline may reuse relevance selection to keep routine events quiet, but it must not invent events, fabricate summaries, or replace trusted records with seeded previews. Preview events remain development fallbacks only and must not mask real Chronicle or World Memory records.
 
 World History is a product surface over World Events, not a new event source. It does not add AI summaries, collector behavior, notifications, Discord posting, manual creation, or telemetry changes.

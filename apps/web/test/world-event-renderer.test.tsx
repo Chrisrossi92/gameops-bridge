@@ -3,7 +3,11 @@ import test from 'node:test';
 import type { WorldEvent } from '@gameops/shared';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { selectChronicleWorldEvents } from '../src/world-events.ts';
+import {
+  groupWorldHistoryTimelineEntries,
+  selectChronicleWorldEvents,
+  worldEventsToChronicleEntries
+} from '../src/world-events.ts';
 import {
   WorldEventDetailDrawer,
   WorldEventRelationshipSummary,
@@ -34,14 +38,60 @@ function event(overrides: Partial<WorldEvent> = {}): WorldEvent {
 }
 
 test('world history timeline uses trusted history language and exposes evidence inspection', () => {
-  const html = renderToStaticMarkup(<WorldHistoryTimeline events={[event()]} onSelect={() => undefined} />);
+  const html = renderToStaticMarkup(
+    <WorldHistoryTimeline
+      events={[event()]}
+      now={new Date('2026-07-01T18:00:00.000Z')}
+      onSelect={() => undefined}
+    />
+  );
 
   assert.match(html, /World History/);
   assert.match(html, /Trusted events from Chronicle and World Memory/);
+  assert.match(html, /Today/);
   assert.match(html, /A new settlement was established/);
   assert.match(html, /World Memory/);
   assert.match(html, /0 evidence/);
   assert.match(html, /Inspect evidence/);
+});
+
+test('world history timeline groups entries by readable time periods', () => {
+  const now = new Date('2026-07-07T12:00:00.000Z');
+  const entries = worldEventsToChronicleEntries([
+    event({ id: 'today', title: 'Today event', occurredAt: '2026-07-07T10:00:00.000Z' }),
+    event({ id: 'yesterday', title: 'Yesterday event', occurredAt: '2026-07-06T10:00:00.000Z' }),
+    event({ id: 'this-week', title: 'This week event', occurredAt: '2026-07-03T10:00:00.000Z' }),
+    event({ id: 'earlier', title: 'Earlier event', occurredAt: '2026-06-20T10:00:00.000Z' })
+  ]);
+
+  const groups = groupWorldHistoryTimelineEntries(entries, now);
+
+  assert.deepEqual(groups.map((group) => group.label), ['Today', 'Yesterday', 'This week', 'Earlier history']);
+  assert.deepEqual(groups.map((group) => group.entries.map((entry) => entry.worldEventId)), [
+    ['today'],
+    ['yesterday'],
+    ['this-week'],
+    ['earlier']
+  ]);
+});
+
+test('world history timeline grouping preserves stable order and does not mutate entries', () => {
+  const now = new Date('2026-07-07T12:00:00.000Z');
+  const entries = worldEventsToChronicleEntries([
+    event({ id: 'today-older', title: 'Today older event', occurredAt: '2026-07-07T10:00:00.000Z' }),
+    event({ id: 'today-newer', title: 'Today newer event', occurredAt: '2026-07-07T11:00:00.000Z' }),
+    event({ id: 'week', title: 'This week event', occurredAt: '2026-07-03T10:00:00.000Z' })
+  ]);
+  const snapshot = structuredClone(entries);
+
+  const groups = groupWorldHistoryTimelineEntries(entries, now);
+
+  assert.deepEqual(groups[0]?.entries.map((entry) => entry.worldEventId), ['today-newer', 'today-older']);
+  assert.deepEqual(entries, snapshot);
+});
+
+test('world history timeline grouping handles empty input', () => {
+  assert.deepEqual(groupWorldHistoryTimelineEntries([], new Date('2026-07-07T12:00:00.000Z')), []);
 });
 
 test('world history timeline orders selected rows by occurred time without mutating input', () => {
@@ -49,7 +99,7 @@ test('world history timeline orders selected rows by occurred time without mutat
   const newer = event({ id: 'newer', title: 'Newer world event', occurredAt: '2026-07-01T12:00:00.000Z' });
   const events = [older, newer];
   const snapshot = structuredClone(events);
-  const html = renderToStaticMarkup(<WorldHistoryTimeline events={events} />);
+  const html = renderToStaticMarkup(<WorldHistoryTimeline events={events} now={new Date('2026-07-01T18:00:00.000Z')} />);
 
   assert.ok(html.indexOf('Newer world event') < html.indexOf('Older world event'));
   assert.deepEqual(events, snapshot);

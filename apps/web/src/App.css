@@ -4051,6 +4051,23 @@
   list-style: none;
 }
 
+.world-history-group-list {
+  display: grid;
+  gap: 0.78rem;
+}
+
+.world-history-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.world-history-group h3 {
+  margin: 0;
+  color: #334155;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
 .world-event-preview-row {
   border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: 0.5rem;

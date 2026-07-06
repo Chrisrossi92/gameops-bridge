@@ -77,6 +77,11 @@ export interface SelectedWorldEvents {
   totalEvents: number;
 }
 
+export interface WorldHistoryTimelineGroup {
+  label: 'Today' | 'Yesterday' | 'This week' | 'Earlier history';
+  entries: WorldEventChronicleEntry[];
+}
+
 function compareWorldEvents(left: WorldEvent, right: WorldEvent): number {
   const occurredDelta = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
 
@@ -527,6 +532,51 @@ export function worldEventsToChronicleEntries(events: WorldEvent[]): WorldEventC
   return events
     .map(worldEventToChronicleEntry)
     .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt));
+}
+
+function getUtcDayStart(value: Date): number {
+  return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+}
+
+function getTimelineGroupLabel(occurredAt: string, now: Date): WorldHistoryTimelineGroup['label'] {
+  const occurredDay = getUtcDayStart(new Date(occurredAt));
+  const today = getUtcDayStart(now);
+  const dayDelta = Math.floor((today - occurredDay) / 86_400_000);
+
+  if (dayDelta <= 0) {
+    return 'Today';
+  }
+
+  if (dayDelta === 1) {
+    return 'Yesterday';
+  }
+
+  if (dayDelta <= 6) {
+    return 'This week';
+  }
+
+  return 'Earlier history';
+}
+
+export function groupWorldHistoryTimelineEntries(
+  entries: WorldEventChronicleEntry[],
+  now = new Date()
+): WorldHistoryTimelineGroup[] {
+  const groups: WorldHistoryTimelineGroup[] = [];
+
+  for (const entry of entries) {
+    const label = getTimelineGroupLabel(entry.occurredAt, now);
+    let group = groups.find((candidate) => candidate.label === label);
+
+    if (!group) {
+      group = { label, entries: [] };
+      groups.push(group);
+    }
+
+    group.entries.push(entry);
+  }
+
+  return groups;
 }
 
 export const worldEventPreviewEvents: WorldEvent[] = [{
