@@ -2590,6 +2590,96 @@
   padding: 0.75rem;
 }
 
+.palworld-activity-confidence-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.activity-confidence-overall {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0.75rem;
+  align-items: start;
+  border: 1px solid #dbeafe;
+  border-radius: 0.55rem;
+  background: #f8fbff;
+  padding: 0.78rem;
+}
+
+.activity-confidence-overall strong {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 1.5rem;
+}
+
+.activity-confidence-overall p {
+  margin: 0.28rem 0 0;
+  color: #475569;
+}
+
+.activity-confidence-overall ul,
+.activity-confidence-area ul {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-confidence-overall li,
+.activity-confidence-area li {
+  position: relative;
+  padding-left: 1rem;
+  color: #334155;
+}
+
+.activity-confidence-overall li::before,
+.activity-confidence-area li::before {
+  content: "+";
+  position: absolute;
+  left: 0;
+  color: #15803d;
+  font-weight: 700;
+}
+
+.activity-confidence-overall li.missing-evidence::before,
+.activity-confidence-area li.missing-evidence::before {
+  content: "!";
+  color: #b45309;
+}
+
+.activity-confidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 0.72rem;
+}
+
+.activity-confidence-area {
+  display: grid;
+  gap: 0.52rem;
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.55rem;
+  padding: 0.72rem;
+  background: #ffffff;
+}
+
+.activity-confidence-area-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.activity-confidence-area h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.activity-confidence-area p {
+  margin: 0;
+}
+
 .palworld-control-capability-card {
   display: grid;
   gap: 0.85rem;
@@ -4791,6 +4881,10 @@
     justify-items: start;
     min-width: 0;
     text-align: left;
+  }
+
+  .activity-confidence-overall {
+    grid-template-columns: 1fr;
   }
 
   .command-subsection-save-rail {

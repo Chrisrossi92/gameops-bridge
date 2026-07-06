@@ -96,6 +96,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
 import {
+  buildPalworldActivityConfidenceReport,
+  type PalworldActivityConfidenceArea,
+  type PalworldActivityConfidenceLevel
+} from './palworld-activity-confidence.ts';
+import {
   buildPalworldControlCapabilitySections,
   type PalworldControlCapability,
   type PalworldControlCapabilityConfidence,
@@ -1382,6 +1387,16 @@ interface SettingsCapabilityPanelProps {
   onOpenObservedSettings: () => void;
 }
 
+interface PalworldActivityConfidencePanelProps {
+  summary: ServerSummary;
+  guildActivity: PalworldGuildActivityEntry[];
+  milestoneFeed: PalworldMilestoneFeedEntry[];
+  transitionEvents: PalworldTransitionMilestoneEvent[];
+  chronicleEvents: WorldChronicleEvent[];
+  worldHistoryUsesPreview: boolean;
+  hasBaseTelemetry: boolean;
+}
+
 function formatCapabilityState(state: ServerSettingsCapabilitySummary['canReadSettings']): string {
   if (state === 'yes') {
     return 'yes';
@@ -1418,6 +1433,111 @@ function formatCandidateWritePath(path: ServerSettingsCapabilitySummary['candida
     case 'rcon':
       return 'RCON after persistence proof';
   }
+}
+
+function formatActivityConfidence(level: PalworldActivityConfidenceLevel): string {
+  if (level === 'high') {
+    return 'High';
+  }
+
+  if (level === 'medium') {
+    return 'Medium';
+  }
+
+  if (level === 'low') {
+    return 'Low';
+  }
+
+  return 'Unknown';
+}
+
+function getActivityConfidenceTone(level: PalworldActivityConfidenceLevel): string {
+  return level === 'unknown' ? 'unknown' : level;
+}
+
+function renderConfidenceEvidence(area: PalworldActivityConfidenceArea): ReactNode {
+  const supporting = area.supportingEvidence.slice(0, 3);
+  const missing = area.missingEvidence.slice(0, 3);
+
+  return (
+    <ul>
+      {supporting.map((item) => (
+        <li key={`support:${area.name}:${item}`}><span>{item}</span></li>
+      ))}
+      {missing.map((item) => (
+        <li key={`missing:${area.name}:${item}`} className="missing-evidence"><span>{item}</span></li>
+      ))}
+      {supporting.length === 0 && missing.length === 0 ? (
+        <li><span>No evidence loaded yet.</span></li>
+      ) : null}
+    </ul>
+  );
+}
+
+function PalworldActivityConfidencePanel({
+  summary,
+  guildActivity,
+  milestoneFeed,
+  transitionEvents,
+  chronicleEvents,
+  worldHistoryUsesPreview,
+  hasBaseTelemetry
+}: PalworldActivityConfidencePanelProps) {
+  const report = buildPalworldActivityConfidenceReport({
+    operationalStatus: summary.operationalStatus,
+    dataFreshness: summary.dataFreshness,
+    serverHealth: summary.serverHealth,
+    settingsCapabilities: summary.settingsCapabilities,
+    observedSettings: summary.observedSettings,
+    latestPlayers: summary.palworldLatestPlayers,
+    sessionTimeline: summary.sessionTimeline,
+    guildActivity,
+    hasBaseTelemetry,
+    recentMetrics: summary.palworldRecentMetrics,
+    chronicleEvents,
+    worldHistoryUsesPreview,
+    milestoneFeed,
+    transitionEvents
+  });
+
+  return (
+    <article className="card palworld-activity-confidence-card">
+      <div className="panel-title-row">
+        <div>
+          <span className="summary-label">Activity Confidence</span>
+          <h2>Operations Confidence</h2>
+          <p className="subtle">How much GameOps trusts the Palworld activity and operations view right now.</p>
+        </div>
+        <span className={`confidence-badge confidence-${getActivityConfidenceTone(report.overall.confidence)}`}>
+          {formatActivityConfidence(report.overall.confidence)}
+        </span>
+      </div>
+
+      <section className="activity-confidence-overall" aria-label="Overall Operations Confidence">
+        <div>
+          <span className="summary-label">Overall Operations Confidence</span>
+          <strong>{formatActivityConfidence(report.overall.confidence)}</strong>
+          <p>{report.overall.operatorNote}</p>
+        </div>
+        {renderConfidenceEvidence(report.overall)}
+      </section>
+
+      <div className="activity-confidence-grid">
+        {report.areas.map((area) => (
+          <section className="activity-confidence-area" key={area.name}>
+            <div className="activity-confidence-area-heading">
+              <h3>{area.name}</h3>
+              <span className={`confidence-badge confidence-${getActivityConfidenceTone(area.confidence)}`}>
+                {formatActivityConfidence(area.confidence)}
+              </span>
+            </div>
+            {renderConfidenceEvidence(area)}
+            <p className="subtle">{area.operatorNote}</p>
+          </section>
+        ))}
+      </div>
+    </article>
+  );
 }
 
 function formatRuntimeAlignment(configAudit: PalworldConfigAudit | null, runtimeAudit: PalworldRuntimeAudit | null): string {
@@ -7749,6 +7869,15 @@ function App() {
 
                     {selectedDashboardTab === 'ops' ? (
                       <>
+                        <PalworldActivityConfidencePanel
+                          summary={selectedServerSummary}
+                          guildActivity={guildActivity}
+                          milestoneFeed={palworldMilestoneFeed}
+                          transitionEvents={palworldTransitionEvents}
+                          chronicleEvents={palworldChronicleEvents}
+                          worldHistoryUsesPreview={selectedWorldEventsArePreviewFallback}
+                          hasBaseTelemetry={hasPalworldBaseTelemetry}
+                        />
                         <SettingsCapabilityPanel
                           capabilities={selectedServerSummary.settingsCapabilities}
                           observedSettings={selectedServerSummary.observedSettings}
