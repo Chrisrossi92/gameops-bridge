@@ -4,6 +4,7 @@ import React from 'react';
 import {
   getWorldEventRelevanceLabel,
   getWorldEventConfidenceLabel,
+  getWorldHistoryState,
   getWorldEventSourceLabel,
   getWorldEventTypeLabel,
   groupWorldHistoryTimelineEntries,
@@ -16,6 +17,7 @@ interface WorldEventRendererProps {
   title?: string;
   description?: string;
   emptyMessage?: string;
+  previewFallback?: boolean;
   now?: Date;
   totalEventCount?: number;
   onSelect?: (event: WorldEvent) => void;
@@ -231,12 +233,14 @@ export function WorldHistoryTimeline({
   title = 'World History',
   description = 'Trusted events from Chronicle and World Memory.',
   emptyMessage = 'This world does not have enough trusted history yet.',
+  previewFallback = false,
   now,
   totalEventCount = events.length,
   onSelect
 }: WorldEventRendererProps) {
   const chronicleEntries = worldEventsToChronicleEntries(events);
   const timelineGroups = groupWorldHistoryTimelineEntries(chronicleEntries, now);
+  const historyState = getWorldHistoryState(events, previewFallback);
 
   if (chronicleEntries.length === 0) {
     return (
@@ -248,7 +252,11 @@ export function WorldHistoryTimeline({
             <p className="subtle">{description}</p>
           </div>
         </div>
-        <p className="subtle">{emptyMessage}</p>
+        <div className={`world-history-state-note world-history-state-${historyState.kind}`}>
+          <strong>{historyState.title}</strong>
+          <p>{emptyMessage}</p>
+          <p>{historyState.detail}</p>
+        </div>
       </article>
     );
   }
@@ -263,6 +271,13 @@ export function WorldHistoryTimeline({
         </div>
         <span className="source-badge">showing {chronicleEntries.length} of {totalEventCount} trusted events</span>
       </div>
+
+      {historyState.kind !== 'active' ? (
+        <div className={`world-history-state-note world-history-state-${historyState.kind}`}>
+          <strong>{historyState.title}</strong>
+          <p>{historyState.detail}</p>
+        </div>
+      ) : null}
 
       <div className="world-history-group-list">
         {timelineGroups.map((group) => (

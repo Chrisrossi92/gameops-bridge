@@ -6030,6 +6030,7 @@ function App() {
                 description={selectedWorldEventsArePreviewFallback
                   ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
                   : 'Trusted events from Chronicle and World Memory. Showing the most meaningful history first.'}
+                previewFallback={selectedWorldEventsArePreviewFallback}
                 onSelect={setSelectedWorldEventDetail}
               />
             ) : null}

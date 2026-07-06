@@ -82,6 +82,12 @@ export interface WorldHistoryTimelineGroup {
   entries: WorldEventChronicleEntry[];
 }
 
+export interface WorldHistoryState {
+  kind: 'empty' | 'preview' | 'quiet' | 'active';
+  title: string;
+  detail: string;
+}
+
 function compareWorldEvents(left: WorldEvent, right: WorldEvent): number {
   const occurredDelta = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
 
@@ -295,6 +301,44 @@ export function getWorldEventRelevanceLabel(event: WorldEvent): string {
   }
 
   return 'Quiet history';
+}
+
+export function getWorldHistoryState(events: WorldEvent[], previewFallback = false): WorldHistoryState {
+  if (previewFallback) {
+    return {
+      kind: 'preview',
+      title: 'Development preview',
+      detail: 'Preview events show how World History will look. They are replaced whenever trusted Chronicle or World Memory records exist.'
+    };
+  }
+
+  if (events.length === 0) {
+    return {
+      kind: 'empty',
+      title: 'No trusted history yet',
+      detail: 'World History appears after trusted Chronicle or World Memory records exist.'
+    };
+  }
+
+  const onlyQuietHistory = events.every((event) => (
+    getWorldEventRelevanceLabel(event) === 'Quiet history'
+    || event.confidence === 'low'
+    || event.confidence === 'unknown'
+  ));
+
+  if (onlyQuietHistory) {
+    return {
+      kind: 'quiet',
+      title: 'Only quiet history is available right now',
+      detail: 'Routine returns, restarts, or thin records are kept visible, but major history needs stronger evidence.'
+    };
+  }
+
+  return {
+    kind: 'active',
+    title: 'Trusted history is available',
+    detail: 'Showing trusted events from Chronicle and World Memory.'
+  };
 }
 
 export function selectChronicleWorldEvents(

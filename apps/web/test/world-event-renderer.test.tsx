@@ -4,6 +4,7 @@ import type { WorldEvent } from '@gameops/shared';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  getWorldHistoryState,
   groupWorldHistoryTimelineEntries,
   selectChronicleWorldEvents,
   worldEventsToChronicleEntries
@@ -122,7 +123,53 @@ test('world history timeline can render relevance-controlled selected events', (
 test('world history timeline shows an owner-friendly empty state', () => {
   const html = renderToStaticMarkup(<WorldHistoryTimeline events={[]} />);
 
+  assert.match(html, /No trusted history yet/);
   assert.match(html, /This world does not have enough trusted history yet/);
+  assert.match(html, /World History appears after trusted Chronicle or World Memory records exist/);
+});
+
+test('world history timeline explains quiet low-data history without hiding rows', () => {
+  const html = renderToStaticMarkup(
+    <WorldHistoryTimeline
+      events={[event({
+        id: 'quiet',
+        title: 'Quiet return',
+        significance: 'minor',
+        confidence: 'low',
+        metadata: { sourceChronicleKind: 'return' }
+      })]}
+      now={new Date('2026-07-01T18:00:00.000Z')}
+      onSelect={() => undefined}
+    />
+  );
+
+  assert.match(html, /Only quiet history is available right now/);
+  assert.match(html, /Routine returns, restarts, or thin records are kept visible/);
+  assert.match(html, /Quiet return/);
+  assert.match(html, /Inspect evidence/);
+});
+
+test('world history timeline labels preview fallback clearly', () => {
+  const html = renderToStaticMarkup(
+    <WorldHistoryTimeline
+      events={[event({ id: 'preview', metadata: { previewOnly: true } })]}
+      previewFallback
+      now={new Date('2026-07-01T18:00:00.000Z')}
+    />
+  );
+
+  assert.match(html, /Development preview/);
+  assert.match(html, /Preview events show how World History will look/);
+});
+
+test('world history state reports active trusted events instead of preview when real records exist', () => {
+  assert.deepEqual(getWorldHistoryState([], false), {
+    kind: 'empty',
+    title: 'No trusted history yet',
+    detail: 'World History appears after trusted Chronicle or World Memory records exist.'
+  });
+  assert.equal(getWorldHistoryState([event({ significance: 'major', confidence: 'high' })], false).kind, 'active');
+  assert.equal(getWorldHistoryState([event({ metadata: { previewOnly: true } })], true).kind, 'preview');
 });
 
 test('world event renderer remains a compatibility wrapper for the timeline', () => {
