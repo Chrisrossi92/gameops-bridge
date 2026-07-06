@@ -684,7 +684,7 @@ test('all event template drafts are disabled previews', async () => {
     assert.equal(catalog.drafts.length > 0, true);
     assert.equal(catalog.drafts.every((draft) => draft.status === 'draft_only'), true);
     assert.equal(catalog.drafts.every((draft) => draft.canApply === false), true);
-    assert.equal(catalog.drafts.every((draft) => /read-only drafts|Apply support/.test(draft.reasonApplyDisabled)), true);
+    assert.equal(catalog.drafts.every((draft) => /read-only drafts|Server change support/.test(draft.reasonApplyDisabled)), true);
   });
 });
 
@@ -832,7 +832,7 @@ test('event template draft canApply remains false after customization', async ()
 
     assert.equal(draft?.status, 'draft_only');
     assert.equal(draft?.canApply, false);
-    assert.match(draft?.reasonApplyDisabled ?? '', /No write path/);
+    assert.match(draft?.reasonApplyDisabled ?? '', /No safe server-change method/);
   });
 });
 

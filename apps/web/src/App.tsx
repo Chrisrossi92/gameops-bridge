@@ -1663,16 +1663,112 @@ interface BoostPresetPanelProps {
   observedSettings: ObservedSettingsResponse | null;
   capabilities: ServerSettingsCapabilitySummary;
   runtimeAudit: PalworldRuntimeAudit | null;
+  backupReadiness: PalworldBackupReadiness | null;
 }
 
-function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit }: BoostPresetPanelProps) {
+function getConfigSourcePathForPlan(input: {
+  observedSettings: ObservedSettingsResponse | null;
+  runtimeAudit: PalworldRuntimeAudit | null;
+  backupReadiness: PalworldBackupReadiness | null;
+  capabilities: ServerSettingsCapabilitySummary;
+}): string {
+  return input.backupReadiness?.activeRuntimeConfigPath
+    ?? input.runtimeAudit?.inferredActiveConfigPath
+    ?? input.runtimeAudit?.selectedConfigAuditPath
+    ?? input.capabilities.readSource
+    ?? input.observedSettings?.source
+    ?? 'unknown';
+}
+
+function formatRestartRequirementForPlan(state: ServerSettingsCapabilitySummary['requiresRestart']): string {
+  if (state === 'yes') {
+    return 'yes';
+  }
+
+  if (state === 'no') {
+    return 'no';
+  }
+
+  return 'unknown';
+}
+
+function buildBoostPresetChecklistText(input: {
+  preset: BoostPresetPreview;
+  capabilities: ServerSettingsCapabilitySummary;
+  runtimeAudit: PalworldRuntimeAudit | null;
+  configSourcePath: string;
+}): string {
+  const settingLines = input.preset.settingPreviews.length > 0
+    ? input.preset.settingPreviews.map((preview) => (
+      `- ${preview.setting.key}: ${formatObservedSettingValue(preview.setting.value)} -> ${preview.canPreviewValue ? formatObservedSettingValue(preview.proposedValue) : 'cannot preview'}`
+    ))
+    : ['- No readable settings matched this preset.'];
+  const missingLines = [...input.preset.missingTargets, ...input.preset.unsupportedTargets];
+
+  return [
+    `Draft apply plan: ${input.preset.definition.name}`,
+    `Server: ${input.capabilities.serverName ?? input.capabilities.serverId}`,
+    `Config source/path: ${input.configSourcePath}`,
+    `Restart required: ${formatRestartRequirementForPlan(input.capabilities.requiresRestart)}`,
+    '',
+    'Proposed changes:',
+    ...settingLines,
+    '',
+    'Manual verification:',
+    '- Confirm every current value against the live server before a future change workflow exists.',
+    '- Confirm whether Palworld needs a restart for these settings.',
+    '- Confirm backup and rollback before changing anything.',
+    input.runtimeAudit?.pathsMatch
+      ? '- Active config path matches the selected file.'
+      : '- Active config path needs owner verification.',
+    ...missingLines.map((line) => `- ${line}`),
+    '',
+    'Rollback/removal plan:',
+    ...input.preset.settingPreviews.map((preview) => (
+      `- Return ${preview.setting.key} to ${formatObservedSettingValue(preview.setting.value)}.`
+    )),
+    '',
+    'No changes have been made by GameOps.'
+  ].join('\n');
+}
+
+function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit, backupReadiness }: BoostPresetPanelProps) {
   const presetPreviews = buildBoostPresetPreviews(observedSettings);
   const firstPreviewablePreset = presetPreviews.find((preset) => preset.settingPreviews.length > 0) ?? presetPreviews[0] ?? null;
   const [selectedPresetId, setSelectedPresetId] = useState(firstPreviewablePreset?.definition.id ?? BOOST_PRESET_DEFINITIONS[0]?.id ?? '');
+  const [applyPlanOpen, setApplyPlanOpen] = useState(false);
+  const [reviewedPresetIds, setReviewedPresetIds] = useState<Set<string>>(() => new Set());
+  const [checklistCopyState, setChecklistCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const selectedPreset = presetPreviews.find((preset) => preset.definition.id === selectedPresetId) ?? firstPreviewablePreset;
   const readableSettingsCount = observedSettings?.available
     ? observedSettings.groups.reduce((sum, group) => sum + group.settings.length, 0)
     : 0;
+  const configSourcePath = getConfigSourcePathForPlan({ observedSettings, runtimeAudit, backupReadiness, capabilities });
+  const selectedPresetReviewed = selectedPreset ? reviewedPresetIds.has(selectedPreset.definition.id) : false;
+  const checklistText = selectedPreset
+    ? buildBoostPresetChecklistText({ preset: selectedPreset, capabilities, runtimeAudit, configSourcePath })
+    : '';
+
+  async function copyChecklist(): Promise<void> {
+    if (!checklistText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(checklistText);
+      setChecklistCopyState('copied');
+    } catch {
+      setChecklistCopyState('failed');
+    }
+  }
+
+  function markSelectedPresetReviewed(): void {
+    if (!selectedPreset) {
+      return;
+    }
+
+    setReviewedPresetIds((current) => new Set([...current, selectedPreset.definition.id]));
+  }
 
   return (
     <article className="card boost-preset-card">
@@ -1692,7 +1788,11 @@ function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit }: Boos
               key={preset.definition.id}
               type="button"
               className={preset.definition.id === selectedPreset?.definition.id ? 'selected' : ''}
-              onClick={() => setSelectedPresetId(preset.definition.id)}
+              onClick={() => {
+                setSelectedPresetId(preset.definition.id);
+                setApplyPlanOpen(false);
+                setChecklistCopyState('idle');
+              }}
             >
               <span>{preset.definition.name}</span>
               <small>{preset.settingPreviews.length > 0 ? `${preset.settingPreviews.length} readable settings` : 'missing settings'}</small>
@@ -1756,7 +1856,7 @@ function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit }: Boos
                 <h3>Needs manual verification</h3>
                 <ul>
                   <li><span>Confirm whether each setting applies live or needs a Palworld restart.</span></li>
-                  <li><span>Confirm backup and rollback before Phase 10C adds any apply workflow.</span></li>
+                  <li><span>Confirm backup and rollback before any future change workflow.</span></li>
                   <li><span>{runtimeAudit?.pathsMatch ? 'Active config path matches the selected file.' : 'Active config path still needs owner verification.'}</span></li>
                   {selectedPreset.missingTargets.map((missing) => (
                     <li key={missing}><span>{missing}</span></li>
@@ -1772,6 +1872,117 @@ function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit }: Boos
                 <span>No restart controls are exposed.</span>
                 <span>Only actual readable settings are shown as affected settings.</span>
               </div>
+
+              <div className="settings-readiness-actions boost-plan-actions">
+                <button
+                  type="button"
+                  className="review-button approve-button"
+                  onClick={() => {
+                    setApplyPlanOpen((current) => !current);
+                    setChecklistCopyState('idle');
+                  }}
+                >
+                  {applyPlanOpen ? 'Hide draft plan' : 'Review apply plan'}
+                </button>
+                <span>Draft planning only. No changes have been made.</span>
+              </div>
+
+              {applyPlanOpen ? (
+                <section className="boost-apply-plan" aria-label="Draft apply plan">
+                  <div className="boost-preset-detail-heading">
+                    <div>
+                      <span className="summary-label">Draft apply plan</span>
+                      <h3>{selectedPreset.definition.name}</h3>
+                      <p className="subtle">This is the safest known plan for a future change workflow. It does not change Palworld.</p>
+                    </div>
+                    <span className={`confidence-badge confidence-${selectedPresetReviewed ? 'high' : 'medium'}`}>
+                      {selectedPresetReviewed ? 'reviewed locally' : 'needs review'}
+                    </span>
+                  </div>
+
+                  <div className="detail-grid settings-readiness-grid">
+                    <section className="detail-block">
+                      <h3>Plan summary</h3>
+                      <ul className="list compact">
+                        <li><span>Selected server</span><span>{capabilities.serverName ?? capabilities.serverId}</span></li>
+                        <li><span>Config source/path</span><span>{configSourcePath}</span></li>
+                        <li><span>Preset</span><span>{selectedPreset.definition.name}</span></li>
+                        <li><span>Restart required</span><span>{formatRestartRequirementForPlan(capabilities.requiresRestart)}</span></li>
+                        <li><span>Changes made</span><span>none</span></li>
+                      </ul>
+                    </section>
+
+                    <section className="detail-block">
+                      <h3>Manual verification checklist</h3>
+                      <ul className="list compact">
+                        <li><span>Confirm current values against the live server before any future change workflow.</span></li>
+                        <li><span>Confirm whether each setting applies live or needs restart.</span></li>
+                        <li><span>Confirm backup and restore steps before changing anything.</span></li>
+                        <li><span>{runtimeAudit?.pathsMatch ? 'Active config path matches the selected file.' : 'Active config path needs owner verification.'}</span></li>
+                      </ul>
+                    </section>
+
+                    <section className="detail-block">
+                      <h3>Safety warnings</h3>
+                      <ul className="list compact">
+                        <li><span>No config file has been changed.</span></li>
+                        <li><span>No server restart has been requested.</span></li>
+                        <li><span>No safe server-change method has been proven.</span></li>
+                        {selectedPreset.missingTargets.map((missing) => (
+                          <li key={missing}><span>{missing}</span></li>
+                        ))}
+                        {selectedPreset.unsupportedTargets.map((warning) => (
+                          <li key={warning}><span>{warning}</span></li>
+                        ))}
+                      </ul>
+                    </section>
+
+                    <section className="detail-block">
+                      <h3>Rollback or removal notes</h3>
+                      <ul className="list compact">
+                        {selectedPreset.settingPreviews.length === 0 ? <li>No rollback values can be planned until readable settings are available.</li> : null}
+                        {selectedPreset.settingPreviews.map((preview) => (
+                          <li key={`rollback:${preview.setting.key}:${preview.targetLabel}`}>
+                            <span>{preview.setting.label}</span>
+                            <span>return to {formatObservedSettingValue(preview.setting.value)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  </div>
+
+                  <section className="event-draft-preview">
+                    <h3>Exact proposed changes</h3>
+                    <ul>
+                      {selectedPreset.settingPreviews.length === 0 ? (
+                        <li><span>No readable settings matched this preset yet.</span></li>
+                      ) : null}
+                      {selectedPreset.settingPreviews.map((preview) => (
+                        <li key={`plan:${preview.setting.key}:${preview.targetLabel}`}>
+                          <span>{preview.setting.label}</span>
+                          <span>{formatObservedSettingValue(preview.setting.value)} {'->'} {preview.canPreviewValue ? formatObservedSettingValue(preview.proposedValue) : 'cannot preview'}</span>
+                          <span className={`confidence-badge confidence-${preview.canPreviewValue ? 'medium' : 'low'}`}>
+                            {preview.canPreviewValue ? 'draft change' : 'missing proposed value'}
+                          </span>
+                          <span className="subtle">Rollback would return to {formatObservedSettingValue(preview.setting.value)}.</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+
+                  <div className="settings-readiness-actions boost-plan-actions">
+                    <button type="button" className="review-button approve-button" onClick={() => void copyChecklist()}>
+                      Copy checklist
+                    </button>
+                    <button type="button" className="review-button reject-button" onClick={markSelectedPresetReviewed}>
+                      Mark reviewed
+                    </button>
+                    <span>
+                      {checklistCopyState === 'copied' ? 'Checklist copied.' : checklistCopyState === 'failed' ? 'Checklist copy failed.' : 'Local review state only.'}
+                    </span>
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : (
             <p className="subtle">No preset definitions are available.</p>
@@ -1937,7 +2148,7 @@ function SettingsCapabilityPanel({
         <section className="detail-block">
           <h3>Safety warnings</h3>
           <ul className="list compact">
-            {!needsManualVerification ? <li>Read-only checks are aligned. Apply controls are still intentionally unavailable.</li> : null}
+            {!needsManualVerification ? <li>Read-only checks are aligned. Server change controls are still intentionally unavailable.</li> : null}
             {[...capabilities.safetyNotes, ...(configAudit?.safetyWarnings ?? []), ...(runtimeAudit?.safetyWarnings ?? [])].slice(0, 5).map((warning) => (
               <li key={warning}><span>{warning}</span></li>
             ))}
@@ -2472,7 +2683,7 @@ function EventTemplateDraftEditDrawer({
                     <li key={warning}><span className="subtle">{warning}</span></li>
                   ))}
                 </ul>
-                <p className="subtle">{configDiffPreview.reasonApplyDisabled}</p>
+                <p className="subtle">No server changes are available from this preview.</p>
               </>
             ) : null}
           </section>
@@ -2504,7 +2715,7 @@ function EventTemplateDraftEditDrawer({
                   ))}
                 </ul>
                 <p className="subtle">{manualChecklist.ownerConfirmationText}</p>
-                <p className="subtle">{manualChecklist.reasonApplyDisabled}</p>
+                <p className="subtle">This checklist is planning-only. No server changes are available here.</p>
               </>
             ) : null}
           </section>
@@ -2541,8 +2752,8 @@ function EventTemplateDraftEditDrawer({
             ) : null}
           </section>
           <ul>
-            <li><span>Can apply</span><span>{draft.canApply ? 'yes' : 'no'}</span></li>
-            <li><span>{draft.reasonApplyDisabled}</span></li>
+            <li><span>Can change server</span><span>{draft.canApply ? 'yes' : 'no'}</span></li>
+            <li><span>No server changes are available from this dashboard draft.</span></li>
           </ul>
           <button type="button" className="review-button approve-button" onClick={onSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save dashboard draft'}
@@ -7426,6 +7637,7 @@ function App() {
                           observedSettings={selectedServerSummary.observedSettings}
                           capabilities={selectedServerSummary.settingsCapabilities}
                           runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
+                          backupReadiness={selectedServerSummary.palworldBackupReadiness}
                         />
                         <EventTemplateDraftPanel
                           catalog={selectedServerSummary.eventTemplateDrafts}

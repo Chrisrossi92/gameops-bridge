@@ -155,7 +155,7 @@ function getSafetyNote(input: { group: SupportedSettingGroup; sensitive: boolean
     return 'Unmapped setting. Read-only until GameOps understands the setting safely.';
   }
 
-  return 'Observed from Palworld REST. Read-only for now; write behavior is not implemented.';
+  return 'Observed from Palworld REST. Read-only for now; server changes are not implemented.';
 }
 
 function classifyChangeRisk(input: {
@@ -374,13 +374,13 @@ function buildTemplateDraft(input: {
     changePreviews: [],
     missingSettings: input.missingSettings,
     safetyNotes: [
-      'Preview only. GameOps cannot apply this template.',
+      'Preview only. GameOps cannot change the server from this template.',
       'Only owner-reviewed templates should ever become actions.',
-      'Setting writes, scheduling, and restart handling are not implemented.'
+      'Server changes, scheduling, and restart handling are not implemented.'
     ],
     requiresRestart: 'unknown',
     canApply: false,
-    reasonApplyDisabled: 'Event templates are read-only drafts. Apply support has not been built.'
+    reasonApplyDisabled: 'Event templates are read-only drafts. Server change support has not been built.'
   };
 }
 
@@ -449,7 +449,7 @@ function mergeDraftOverride(draft: EventTemplateDraft, override: EventTemplateDr
     updatedAt: override.updatedAt,
     status: 'draft_only',
     canApply: false,
-    reasonApplyDisabled: 'No write path has been proven. This is saved as a dashboard draft only.'
+    reasonApplyDisabled: 'No safe server-change method has been proven. This is saved as a dashboard draft only.'
   };
 }
 
@@ -540,7 +540,7 @@ const PALWORLD_WRITE_VALIDATION_STEPS = [
   'Test against a disposable Palworld server before touching a real world.',
   'Compare the observed settings snapshot before and after a manual change.',
   'Verify whether each setting applies live or only after a restart.',
-  'Prove restart detection and post-change health checks before enabling any apply flow.'
+  'Prove restart detection and post-change health checks before enabling any server-change flow.'
 ];
 
 const PALWORLD_ROLLBACK_REQUIREMENTS = [
@@ -551,7 +551,7 @@ const PALWORLD_ROLLBACK_REQUIREMENTS = [
 ];
 
 const PALWORLD_UNRESOLVED_WRITE_QUESTIONS = [
-  'Whether Palworld REST exposes a supported settings mutation endpoint for this server version.',
+  'Whether Palworld REST exposes a supported settings change endpoint for this server version.',
   'Whether REST settings changes, if supported, are live-editable or restart-required.',
   'Whether RCON can change persistent settings or only execute runtime admin commands.',
   'Which file is authoritative for settings on this host and whether editing it while running is safe.'
@@ -571,12 +571,12 @@ function unavailable(serverId: string): ServerSettingsCapabilitySummary {
     candidateWritePaths: ['manual'],
     requiresRestart: 'unknown',
     supportedSettingGroups: [],
-    validationSteps: ['Load a configured server before evaluating settings write paths.'],
+    validationSteps: ['Load a configured server before evaluating server-change readiness.'],
     rollbackRequirements: ['No rollback plan can be evaluated without a configured server.'],
     unresolvedQuestions: ['Which game, connector mode, and settings source should be audited.'],
     safetyNotes: [
       'GameOps could not load this server from the current config.',
-      'Settings mutation is not implemented.'
+      'Server changes are not implemented.'
     ],
     missingRequirements: ['configured server entry'],
     nextSafeStep: 'Add or fix the server in gameops.config.json, then run the connector until a settings snapshot appears.'
@@ -621,14 +621,14 @@ export function getServerSettingsCapabilitySummary(serverId: string): ServerSett
         snapshot
           ? 'Palworld REST settings have been observed and are available for read-only auditing.'
           : 'Palworld REST settings are configured as a readable source, but no settings snapshot has been stored yet.',
-        'GameOps does not currently implement settings writes.',
+        'GameOps does not currently implement server settings changes.',
         'Restart requirements are not verified by GameOps yet.'
       ],
       missingRequirements: snapshot
-        ? ['settings write implementation', 'restart policy', 'rollback plan']
-        : [...missingRequirements, 'settings snapshot', 'settings write implementation', 'restart policy'].filter(Boolean),
+        ? ['server settings change implementation', 'restart policy', 'rollback plan']
+        : [...missingRequirements, 'settings snapshot', 'server settings change implementation', 'restart policy'].filter(Boolean),
       nextSafeStep: snapshot
-        ? 'Map the observed settings keys into owner-approved read-only groups before designing any write workflow.'
+        ? 'Map the observed settings keys into owner-approved read-only groups before designing any server-change workflow.'
         : 'Run the Palworld REST connector until a settings snapshot is captured.'
     });
   }
@@ -647,15 +647,15 @@ export function getServerSettingsCapabilitySummary(serverId: string): ServerSett
       candidateWritePaths: ['manual'],
       requiresRestart: 'unknown',
       supportedSettingGroups: [],
-      validationSteps: ['Add a read-only settings parser before evaluating any write path.'],
+      validationSteps: ['Add a read-only settings parser before evaluating server-change readiness.'],
       rollbackRequirements: ['Identify and back up the authoritative settings source before any future change.'],
       unresolvedQuestions: ['Which Valheim settings source is authoritative for this host.'],
       safetyNotes: [
         'Valheim connector support currently focuses on activity logs, not server settings.',
-        'GameOps does not currently implement settings writes.',
+        'GameOps does not currently implement server settings changes.',
         'Manual review is required before changing Valheim server startup or world settings.'
       ],
-      missingRequirements: ['settings file path mapping', 'restart command', 'settings parser', 'settings write implementation'],
+      missingRequirements: ['settings file path mapping', 'restart command', 'settings parser', 'server settings change implementation'],
       nextSafeStep: 'Identify the authoritative Valheim settings source and add a read-only parser before considering changes.'
     });
   }
@@ -677,7 +677,7 @@ export function getServerSettingsCapabilitySummary(serverId: string): ServerSett
     supportedSettingGroups: [],
     validationSteps: server.game === 'palworld'
       ? PALWORLD_WRITE_VALIDATION_STEPS
-      : ['Add a read-only settings source before evaluating any write path.'],
+      : ['Add a read-only settings source before evaluating server-change readiness.'],
     rollbackRequirements: server.game === 'palworld'
       ? PALWORLD_ROLLBACK_REQUIREMENTS
       : ['Identify and back up the authoritative settings source before any future change.'],
@@ -686,9 +686,9 @@ export function getServerSettingsCapabilitySummary(serverId: string): ServerSett
       : ['Which settings source and connector mode should be used.'],
     safetyNotes: [
       'This connector mode does not currently expose server settings to GameOps.',
-      'GameOps does not currently implement settings writes.'
+      'GameOps does not currently implement server settings changes.'
     ],
-    missingRequirements: ['readable settings source', 'settings write implementation', 'restart policy'],
+    missingRequirements: ['readable settings source', 'server settings change implementation', 'restart policy'],
     nextSafeStep: 'Add a read-only settings source for this connector mode before designing settings changes.'
   });
 }
@@ -708,7 +708,7 @@ export function getObservedServerSettings(serverId: string): ObservedSettingsRes
       groups: [],
       safetyNotes: [
         'GameOps could not load this server from the current config.',
-        'Settings are read-only; writes are not implemented.'
+        'Settings are read-only; server changes are not implemented.'
       ],
       emptyState: 'No configured server was found for this settings request.'
     });
@@ -726,7 +726,7 @@ export function getObservedServerSettings(serverId: string): ObservedSettingsRes
       groups: [],
       safetyNotes: [
         'This server does not currently expose readable settings snapshots through Palworld REST.',
-        'Settings are read-only; writes are not implemented.'
+        'Settings are read-only; server changes are not implemented.'
       ],
       emptyState: 'Observed settings are unavailable for this game or connector mode.'
     });
@@ -746,7 +746,7 @@ export function getObservedServerSettings(serverId: string): ObservedSettingsRes
       groups: [],
       safetyNotes: [
         'Palworld REST settings are configured as a readable source, but no settings snapshot has been stored yet.',
-        'Settings are read-only; writes are not implemented.'
+        'Settings are read-only; server changes are not implemented.'
       ],
       emptyState: 'No Palworld settings snapshot has been observed yet.'
     });
@@ -796,8 +796,8 @@ export function getEventTemplateDraftCatalog(serverId: string): EventTemplateDra
       explanation: observed.emptyState ?? 'Observed settings are unavailable, so no event template drafts can be suggested.',
       drafts: [],
       safetyNotes: [
-        'Preview only. GameOps cannot apply templates.',
-        'No writes, scheduling, RCON, REST mutation, or restart handling is implemented.'
+        'Preview only. GameOps cannot change the server from templates.',
+        'Server changes, scheduling, RCON, REST changes, and restart handling are not implemented.'
       ]
     });
   }
@@ -818,7 +818,7 @@ export function getEventTemplateDraftCatalog(serverId: string): EventTemplateDra
     safetyNotes: [
       'Drafts are previews only.',
       'Unknown or unmapped settings are not used to create drafts.',
-      'Apply support has not been built.'
+      'Server change support has not been built.'
     ]
   });
 }

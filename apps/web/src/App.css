@@ -2577,6 +2577,19 @@
   margin: 0.15rem 0 0;
 }
 
+.boost-plan-actions {
+  margin-top: 0.1rem;
+}
+
+.boost-apply-plan {
+  display: grid;
+  gap: 0.72rem;
+  border: 1px solid #dbeafe;
+  border-radius: 0.55rem;
+  background: #f8fbff;
+  padding: 0.75rem;
+}
+
 .save-link-needed-main {
   min-width: 0;
   display: flex;
