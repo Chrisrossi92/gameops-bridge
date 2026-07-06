@@ -95,6 +95,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
+import {
+  buildPalworldControlCapabilitySections,
+  type PalworldControlCapability,
+  type PalworldControlCapabilityConfidence,
+  type PalworldControlCapabilityStatus
+} from './palworld-control-capabilities.ts';
 import { WorldEventDetailDrawer, WorldHistoryTimeline } from './world-event-renderer.tsx';
 import {
   createWorldEventRegistry,
@@ -2166,6 +2172,127 @@ function SettingsCapabilityPanel({
           View readable settings
         </button>
         <span>No apply, write, restart, or schedule controls are exposed.</span>
+      </div>
+    </article>
+  );
+}
+
+interface PalworldControlCapabilityPanelProps {
+  summary: ServerSummary;
+  guildActivity: PalworldGuildActivityEntry[];
+  milestoneFeed: PalworldMilestoneFeedEntry[];
+  transitionEvents: PalworldTransitionMilestoneEvent[];
+  hasBaseTelemetry: boolean;
+}
+
+function getControlCapabilityTone(status: PalworldControlCapabilityStatus): string {
+  if (status === 'verified') {
+    return 'high';
+  }
+
+  if (status === 'planned') {
+    return 'medium';
+  }
+
+  if (status === 'unsupported') {
+    return 'low';
+  }
+
+  return 'unknown';
+}
+
+function formatControlCapabilityStatus(status: PalworldControlCapabilityStatus): string {
+  if (status === 'verified') {
+    return 'verified';
+  }
+
+  if (status === 'unsupported') {
+    return 'unsupported';
+  }
+
+  if (status === 'planned') {
+    return 'planned';
+  }
+
+  return 'not verified yet';
+}
+
+function formatControlCapabilityConfidence(confidence: PalworldControlCapabilityConfidence): string {
+  return confidence === 'unknown' ? 'unknown' : confidence;
+}
+
+function PalworldControlCapabilityPanel({
+  summary,
+  guildActivity,
+  milestoneFeed,
+  transitionEvents,
+  hasBaseTelemetry
+}: PalworldControlCapabilityPanelProps) {
+  const sections = buildPalworldControlCapabilitySections({
+    serverName: summary.displayName,
+    serverState: summary.state,
+    serverHealth: summary.serverHealth,
+    settingsCapabilities: summary.settingsCapabilities,
+    observedSettings: summary.observedSettings,
+    runtimeAudit: summary.palworldRuntimeAudit,
+    latestPlayers: summary.palworldLatestPlayers,
+    sessionTimeline: summary.sessionTimeline,
+    guildActivity,
+    recentMetrics: summary.palworldRecentMetrics,
+    milestoneFeed,
+    transitionEvents,
+    hasBaseTelemetry
+  });
+  const capabilities = sections.flatMap((section) => section.capabilities);
+  const verifiedCount = capabilities.filter((capability) => capability.status === 'verified').length;
+  const plannedCount = capabilities.filter((capability) => capability.status === 'planned').length;
+  const unknownCount = capabilities.filter((capability) => capability.status === 'unknown').length;
+
+  return (
+    <article className="card palworld-control-capability-card">
+      <div className="panel-title-row">
+        <div>
+          <span className="summary-label">Live operations readiness</span>
+          <h2>Server Control Capability Map</h2>
+          <p className="subtle">Evidence-first view of what GameOps can read, what is planned, and what is not verified yet for {summary.displayName}.</p>
+        </div>
+        <div className="settings-readiness-badges" aria-label="Control capability summary">
+          <span className="confidence-badge confidence-high">{verifiedCount} verified</span>
+          <span className="confidence-badge confidence-medium">{plannedCount} planned</span>
+          <span className="confidence-badge confidence-unknown">{unknownCount} not verified yet</span>
+        </div>
+      </div>
+
+      <div className="control-capability-grid">
+        {sections.map((section) => (
+          <section className="control-capability-section" key={section.group}>
+            <h3>{section.group}</h3>
+            <ul>
+              {section.capabilities.map((capability: PalworldControlCapability) => (
+                <li key={`${capability.group}:${capability.name}`} className={`control-capability-row capability-${capability.status}`}>
+                  <div className="control-capability-main">
+                    <span>{capability.name}</span>
+                    <span className="subtle">{capability.evidenceSummary}</span>
+                    <span className="subtle">{capability.operatorNote}</span>
+                  </div>
+                  <div className="control-capability-meta">
+                    <span className={`confidence-badge confidence-${getControlCapabilityTone(capability.status)}`}>
+                      {formatControlCapabilityStatus(capability.status)}
+                    </span>
+                    <span>{formatControlCapabilityConfidence(capability.confidence)} confidence</span>
+                    <span>{capability.lastVerifiedAt ? formatTimestamp(capability.lastVerifiedAt) : 'Last verified: none'}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+
+      <div className="trust-warning-row">
+        <span>Discovery only. No server actions are available here.</span>
+        <span>Verified means GameOps has direct evidence.</span>
+        <span>Unknown means not verified yet.</span>
       </div>
     </article>
   );
@@ -7250,6 +7377,13 @@ function App() {
                           eventTemplateDrafts={selectedServerSummary.eventTemplateDrafts}
                           onOpenObservedSettings={() => setObservedSettingsOpen(true)}
                         />
+                        <PalworldControlCapabilityPanel
+                          summary={selectedServerSummary}
+                          guildActivity={guildActivity}
+                          milestoneFeed={palworldMilestoneFeed}
+                          transitionEvents={palworldTransitionEvents}
+                          hasBaseTelemetry={hasPalworldBaseTelemetry}
+                        />
                         {selectedServerSummary.palworldRuntimeAudit ? (
                           <PalworldRuntimeAuditPanel audit={selectedServerSummary.palworldRuntimeAudit} />
                         ) : null}
@@ -7623,6 +7757,13 @@ function App() {
                           backupReadiness={selectedServerSummary.palworldBackupReadiness}
                           eventTemplateDrafts={selectedServerSummary.eventTemplateDrafts}
                           onOpenObservedSettings={() => setObservedSettingsOpen(true)}
+                        />
+                        <PalworldControlCapabilityPanel
+                          summary={selectedServerSummary}
+                          guildActivity={guildActivity}
+                          milestoneFeed={palworldMilestoneFeed}
+                          transitionEvents={palworldTransitionEvents}
+                          hasBaseTelemetry={hasPalworldBaseTelemetry}
                         />
                         {selectedServerSummary.palworldRuntimeAudit ? (
                           <PalworldRuntimeAuditPanel audit={selectedServerSummary.palworldRuntimeAudit} />
