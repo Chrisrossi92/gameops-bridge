@@ -4056,6 +4056,39 @@
   gap: 0.78rem;
 }
 
+.world-history-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.world-history-filter-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #475569;
+  padding: 0.28rem 0.58rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.world-history-filter-button span:last-child {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.world-history-filter-active {
+  border-color: rgba(14, 116, 144, 0.26);
+  background: rgba(240, 249, 255, 0.9);
+  color: #0f766e;
+}
+
 .world-history-state-note {
   display: grid;
   gap: 0.2rem;

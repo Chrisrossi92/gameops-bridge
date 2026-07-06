@@ -88,6 +88,13 @@ export interface WorldHistoryState {
   detail: string;
 }
 
+export type WorldHistoryFilter = 'all' | 'meaningful' | 'quiet' | 'high-confidence';
+
+export interface WorldHistoryFilterCount {
+  filter: WorldHistoryFilter;
+  count: number;
+}
+
 function compareWorldEvents(left: WorldEvent, right: WorldEvent): number {
   const occurredDelta = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
 
@@ -339,6 +346,35 @@ export function getWorldHistoryState(events: WorldEvent[], previewFallback = fal
     title: 'Trusted history is available',
     detail: 'Showing trusted events from Chronicle and World Memory.'
   };
+}
+
+export function filterWorldHistoryEvents(events: WorldEvent[], filter: WorldHistoryFilter): WorldEvent[] {
+  switch (filter) {
+    case 'all':
+      return events.slice();
+    case 'meaningful':
+      return events.filter((event) => {
+        const relevanceLabel = getWorldEventRelevanceLabel(event);
+        return event.significance === 'major'
+          || event.significance === 'historic'
+          || relevanceLabel === 'Meaningful history'
+          || relevanceLabel === 'Major history'
+          || relevanceLabel === 'Historic history';
+      });
+    case 'quiet':
+      return events.filter((event) => getWorldEventRelevanceLabel(event) === 'Quiet history');
+    case 'high-confidence':
+      return events.filter((event) => event.confidence === 'high');
+  }
+}
+
+export function getWorldHistoryFilterCounts(events: WorldEvent[]): WorldHistoryFilterCount[] {
+  return [
+    { filter: 'all', count: filterWorldHistoryEvents(events, 'all').length },
+    { filter: 'meaningful', count: filterWorldHistoryEvents(events, 'meaningful').length },
+    { filter: 'quiet', count: filterWorldHistoryEvents(events, 'quiet').length },
+    { filter: 'high-confidence', count: filterWorldHistoryEvents(events, 'high-confidence').length }
+  ];
 }
 
 export function selectChronicleWorldEvents(

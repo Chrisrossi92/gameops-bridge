@@ -2,12 +2,15 @@
 import type { WorldEvent } from '@gameops/shared';
 import React from 'react';
 import {
+  filterWorldHistoryEvents,
   getWorldEventRelevanceLabel,
   getWorldEventConfidenceLabel,
+  getWorldHistoryFilterCounts,
   getWorldHistoryState,
   getWorldEventSourceLabel,
   getWorldEventTypeLabel,
   groupWorldHistoryTimelineEntries,
+  type WorldHistoryFilter,
   WORLD_EVENT_TYPE_LABELS,
   worldEventsToChronicleEntries
 } from './world-events.ts';
@@ -17,10 +20,31 @@ interface WorldEventRendererProps {
   title?: string;
   description?: string;
   emptyMessage?: string;
+  initialFilter?: WorldHistoryFilter;
   previewFallback?: boolean;
   now?: Date;
   totalEventCount?: number;
   onSelect?: (event: WorldEvent) => void;
+}
+
+const WORLD_HISTORY_FILTER_LABELS: Record<WorldHistoryFilter, string> = {
+  all: 'All history',
+  meaningful: 'Meaningful',
+  quiet: 'Quiet',
+  'high-confidence': 'High confidence'
+};
+
+function getWorldHistoryFilterEmptyText(filter: WorldHistoryFilter): string {
+  switch (filter) {
+    case 'all':
+      return 'No trusted events match this view.';
+    case 'meaningful':
+      return 'No trusted events match this view. Major or meaningful history will appear here when stronger world events are recorded.';
+    case 'quiet':
+      return 'No trusted events match this view. Quiet routine history will appear here when low-signal trusted records exist.';
+    case 'high-confidence':
+      return 'No trusted events match this view. High-confidence history will appear here when trusted records carry high confidence.';
+  }
 }
 
 function formatEventTime(value: string): string {
@@ -233,16 +257,22 @@ export function WorldHistoryTimeline({
   title = 'World History',
   description = 'Trusted events from Chronicle and World Memory.',
   emptyMessage = 'This world does not have enough trusted history yet.',
+  initialFilter = 'all',
   previewFallback = false,
   now,
   totalEventCount = events.length,
   onSelect
 }: WorldEventRendererProps) {
-  const chronicleEntries = worldEventsToChronicleEntries(events);
+  const [selectedFilter, setSelectedFilter] = React.useState<WorldHistoryFilter>(initialFilter);
+  const filterCounts = getWorldHistoryFilterCounts(events);
+  const filteredEvents = filterWorldHistoryEvents(events, selectedFilter);
+  const chronicleEntries = worldEventsToChronicleEntries(filteredEvents);
   const timelineGroups = groupWorldHistoryTimelineEntries(chronicleEntries, now);
-  const historyState = getWorldHistoryState(events, previewFallback);
+  const historyState = getWorldHistoryState(filteredEvents, previewFallback);
+  const hasFilteredOutEvents = events.length > 0 && filteredEvents.length === 0;
+  const visibleEventCount = chronicleEntries.length;
 
-  if (chronicleEntries.length === 0) {
+  if (events.length === 0) {
     return (
       <article className="card world-event-preview-card" aria-label="World history timeline">
         <div className="world-event-preview-heading">
@@ -269,7 +299,21 @@ export function WorldHistoryTimeline({
           <h2>{title}</h2>
           <p className="subtle">{description}</p>
         </div>
-        <span className="source-badge">showing {chronicleEntries.length} of {totalEventCount} trusted events</span>
+        <span className="source-badge">showing {visibleEventCount} of {totalEventCount} trusted events</span>
+      </div>
+
+      <div className="world-history-filter-row" aria-label="World History filters">
+        {filterCounts.map((item) => (
+          <button
+            key={item.filter}
+            type="button"
+            className={selectedFilter === item.filter ? 'world-history-filter-button world-history-filter-active' : 'world-history-filter-button'}
+            onClick={() => setSelectedFilter(item.filter)}
+          >
+            <span>{WORLD_HISTORY_FILTER_LABELS[item.filter]}</span>
+            <span>{item.count}</span>
+          </button>
+        ))}
       </div>
 
       {historyState.kind !== 'active' ? (
@@ -279,58 +323,65 @@ export function WorldHistoryTimeline({
         </div>
       ) : null}
 
-      <div className="world-history-group-list">
-        {timelineGroups.map((group) => (
-          <section key={group.label} className="world-history-group" aria-label={group.label}>
-            <h3>{group.label}</h3>
-            <ol className="world-event-preview-list">
-              {group.entries.map((entry) => {
-                const event = events.find((candidate) => candidate.id === entry.worldEventId);
+      {hasFilteredOutEvents ? (
+        <div className="world-history-state-note">
+          <strong>No trusted events match this view</strong>
+          <p>{getWorldHistoryFilterEmptyText(selectedFilter)}</p>
+        </div>
+      ) : (
+        <div className="world-history-group-list">
+          {timelineGroups.map((group) => (
+            <section key={group.label} className="world-history-group" aria-label={group.label}>
+              <h3>{group.label}</h3>
+              <ol className="world-event-preview-list">
+                {group.entries.map((entry) => {
+                  const event = filteredEvents.find((candidate) => candidate.id === entry.worldEventId);
 
-                if (!event) {
-                  return null;
-                }
+                  if (!event) {
+                    return null;
+                  }
 
-                return (
-                  <li key={entry.id} className={`world-event-preview-row world-event-${entry.significance}`}>
-                    <button
-                      type="button"
-                      className="world-event-preview-button"
-                      disabled={!onSelect}
-                      onClick={() => onSelect?.(event)}
-                    >
-                      <div className="world-event-preview-title">
-                        <span className="source-badge">{getWorldEventTypeLabel(event.eventType)}</span>
-                        <strong>{entry.title}</strong>
-                      </div>
-                      {entry.detail ? <p>{entry.detail}</p> : null}
-                      <div className="world-event-preview-meta">
-                        <span>Occurred {formatEventTime(entry.occurredAt)}</span>
-                        <span>Discovered {formatEventTime(entry.discoveredAt)}</span>
-                        <span>{entry.sourceLabel || getWorldEventSourceLabel(entry.sourceKind)}</span>
-                        <span>{entry.evidenceCount} evidence</span>
-                        <span className={`confidence-badge confidence-${entry.confidence}`}>
-                          {getWorldEventConfidenceLabel(event.confidence)}
-                        </span>
-                        <span className={`world-event-significance world-event-significance-${entry.significance}`}>
-                          {entry.significance}
-                        </span>
-                        <span>{getWorldEventRelevanceLabel(event)}</span>
-                        <span>Inspect evidence</span>
-                      </div>
-                      {entry.evidenceLabels.length > 0 ? (
-                        <div className="world-event-preview-meta">
-                          <span>Evidence: {entry.evidenceLabels.slice(0, 3).join(', ')}</span>
+                  return (
+                    <li key={entry.id} className={`world-event-preview-row world-event-${entry.significance}`}>
+                      <button
+                        type="button"
+                        className="world-event-preview-button"
+                        disabled={!onSelect}
+                        onClick={() => onSelect?.(event)}
+                      >
+                        <div className="world-event-preview-title">
+                          <span className="source-badge">{getWorldEventTypeLabel(event.eventType)}</span>
+                          <strong>{entry.title}</strong>
                         </div>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-        ))}
-      </div>
+                        {entry.detail ? <p>{entry.detail}</p> : null}
+                        <div className="world-event-preview-meta">
+                          <span>Occurred {formatEventTime(entry.occurredAt)}</span>
+                          <span>Discovered {formatEventTime(entry.discoveredAt)}</span>
+                          <span>{entry.sourceLabel || getWorldEventSourceLabel(entry.sourceKind)}</span>
+                          <span>{entry.evidenceCount} evidence</span>
+                          <span className={`confidence-badge confidence-${entry.confidence}`}>
+                            {getWorldEventConfidenceLabel(event.confidence)}
+                          </span>
+                          <span className={`world-event-significance world-event-significance-${entry.significance}`}>
+                            {entry.significance}
+                          </span>
+                          <span>{getWorldEventRelevanceLabel(event)}</span>
+                          <span>Inspect evidence</span>
+                        </div>
+                        {entry.evidenceLabels.length > 0 ? (
+                          <div className="world-event-preview-meta">
+                            <span>Evidence: {entry.evidenceLabels.slice(0, 3).join(', ')}</span>
+                          </div>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          ))}
+        </div>
+      )}
     </article>
   );
 }

@@ -4,6 +4,8 @@ import type { WorldEvent } from '@gameops/shared';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  filterWorldHistoryEvents,
+  getWorldHistoryFilterCounts,
   getWorldHistoryState,
   groupWorldHistoryTimelineEntries,
   selectChronicleWorldEvents,
@@ -118,6 +120,69 @@ test('world history timeline can render relevance-controlled selected events', (
   assert.match(html, /A major world event/);
   assert.doesNotMatch(html, /Routine arrival/);
   assert.match(html, /showing 1 of 2 trusted events/);
+});
+
+test('world history filters select all, meaningful, quiet, and high-confidence events', () => {
+  const events = [
+    event({ id: 'major', title: 'Major event', significance: 'major', confidence: 'medium' }),
+    event({ id: 'quiet', title: 'Quiet event', significance: 'minor', confidence: 'low', metadata: { sourceChronicleKind: 'return' } }),
+    event({ id: 'trusted', title: 'Trusted event', significance: 'normal', confidence: 'high' })
+  ];
+
+  assert.deepEqual(filterWorldHistoryEvents(events, 'all').map((item) => item.id), ['major', 'quiet', 'trusted']);
+  assert.deepEqual(filterWorldHistoryEvents(events, 'meaningful').map((item) => item.id), ['major', 'trusted']);
+  assert.deepEqual(filterWorldHistoryEvents(events, 'quiet').map((item) => item.id), ['quiet']);
+  assert.deepEqual(filterWorldHistoryEvents(events, 'high-confidence').map((item) => item.id), ['trusted']);
+});
+
+test('world history filter counts are deterministic', () => {
+  const counts = getWorldHistoryFilterCounts([
+    event({ id: 'major', significance: 'major', confidence: 'medium' }),
+    event({ id: 'quiet', significance: 'minor', confidence: 'low', metadata: { sourceChronicleKind: 'return' } }),
+    event({ id: 'trusted', significance: 'normal', confidence: 'high' })
+  ]);
+
+  assert.deepEqual(counts, [
+    { filter: 'all', count: 3 },
+    { filter: 'meaningful', count: 2 },
+    { filter: 'quiet', count: 1 },
+    { filter: 'high-confidence', count: 1 }
+  ]);
+});
+
+test('world history timeline shows filter controls and filtered empty state', () => {
+  const html = renderToStaticMarkup(
+    <WorldHistoryTimeline
+      events={[event({ id: 'quiet', title: 'Quiet return', significance: 'minor', confidence: 'low', metadata: { sourceChronicleKind: 'return' } })]}
+      initialFilter="high-confidence"
+      now={new Date('2026-07-01T18:00:00.000Z')}
+    />
+  );
+
+  assert.match(html, /All history/);
+  assert.match(html, /Meaningful/);
+  assert.match(html, /Quiet/);
+  assert.match(html, /High confidence/);
+  assert.match(html, /No trusted events match this view/);
+  assert.match(html, /High-confidence history will appear here/);
+  assert.doesNotMatch(html, /Quiet return/);
+});
+
+test('world history grouping still applies after filtering', () => {
+  const html = renderToStaticMarkup(
+    <WorldHistoryTimeline
+      events={[
+        event({ id: 'major', title: 'Major event', significance: 'major', confidence: 'medium', occurredAt: '2026-07-07T10:00:00.000Z' }),
+        event({ id: 'quiet', title: 'Quiet event', significance: 'minor', confidence: 'low', metadata: { sourceChronicleKind: 'return' }, occurredAt: '2026-07-01T10:00:00.000Z' })
+      ]}
+      initialFilter="meaningful"
+      now={new Date('2026-07-07T12:00:00.000Z')}
+    />
+  );
+
+  assert.match(html, /Today/);
+  assert.match(html, /Major event/);
+  assert.doesNotMatch(html, /Quiet event/);
 });
 
 test('world history timeline shows an owner-friendly empty state', () => {
