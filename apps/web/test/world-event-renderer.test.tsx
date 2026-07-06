@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { WorldEvent } from '@gameops/shared';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { WorldEventDetailDrawer, WorldEventRenderer } from '../src/world-event-renderer.tsx';
+import { WorldEventDetailDrawer, WorldEventRelationshipSummary, WorldEventRenderer } from '../src/world-event-renderer.tsx';
 
 function event(overrides: Partial<WorldEvent> = {}): WorldEvent {
   return {
@@ -64,6 +64,78 @@ test('world event detail drawer preserves trust, evidence, and related history',
   assert.match(html, /guild:iron-wolves/);
   assert.match(html, /character:chris/);
   assert.match(html, /Recorded from World Memory/);
+});
+
+test('world event detail drawer displays connected history with owner-friendly labels', () => {
+  const html = renderToStaticMarkup(
+    <WorldEventDetailDrawer
+      event={event({
+        relatedEvents: [{
+          eventId: 'event:portal',
+          relationshipType: 'followed_by',
+          confidence: 'medium',
+          sourceLabel: 'World Memory'
+        }]
+      })}
+      relatedEvents={[event({
+        id: 'event:portal',
+        title: 'Portal network expanded',
+        summary: 'The portal network expanded.'
+      })]}
+      onClose={() => undefined}
+    />
+  );
+
+  assert.match(html, /Connected history/);
+  assert.match(html, /Connected to 5 trusted references/);
+  assert.match(html, /Memory reference: memory:settlement/);
+  assert.match(html, /Player reference: player:chris/);
+  assert.match(html, /Guild reference: guild:iron-wolves/);
+  assert.match(html, /Character reference: character:chris/);
+  assert.match(html, /Related event: Portal network expanded/);
+});
+
+test('world event relationship summary names missing relationships clearly', () => {
+  const html = renderToStaticMarkup(
+    <WorldEventRelationshipSummary
+      event={event({
+        relatedEvents: [],
+        relatedMemories: [],
+        relatedPlayers: [],
+        relatedGuilds: [],
+        relatedCharacters: []
+      })}
+    />
+  );
+
+  assert.match(html, /No connected world history is recorded yet/);
+  assert.match(html, /No related memories recorded yet/);
+  assert.match(html, /No related people recorded yet/);
+  assert.match(html, /No related guilds recorded yet/);
+  assert.match(html, /No related characters recorded yet/);
+  assert.match(html, /No related events recorded yet/);
+});
+
+test('world event relationship summary falls back to related event ids when titles are unavailable', () => {
+  const html = renderToStaticMarkup(
+    <WorldEventRelationshipSummary
+      event={event({
+        relatedEvents: [{
+          eventId: 'event:missing',
+          relationshipType: 'related_to',
+          confidence: 'low',
+          sourceLabel: 'World Memory'
+        }],
+        relatedMemories: [],
+        relatedPlayers: [],
+        relatedGuilds: [],
+        relatedCharacters: []
+      })}
+      relatedEvents={[]}
+    />
+  );
+
+  assert.match(html, /Related event: event:missing/);
 });
 
 test('world event detail drawer names missing evidence clearly', () => {

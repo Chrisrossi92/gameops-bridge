@@ -38,12 +38,68 @@ function formatRelatedList(values: string[]): string {
   return values.length > 0 ? values.join(', ') : 'None attached yet';
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function getRelatedEventTitle(relatedEventId: string, relatedEvents: WorldEvent[]): string {
+  return relatedEvents.find((candidate) => candidate.id === relatedEventId)?.title ?? relatedEventId;
+}
+
+interface WorldEventRelationshipSummaryProps {
+  event: WorldEvent;
+  relatedEvents?: WorldEvent[];
+}
+
+export function WorldEventRelationshipSummary({ event, relatedEvents = [] }: WorldEventRelationshipSummaryProps) {
+  const relatedEventIds = event.relatedEvents.map((relationship) => relationship.eventId);
+  const connectionCount = event.relatedMemories.length
+    + event.relatedPlayers.length
+    + event.relatedGuilds.length
+    + event.relatedCharacters.length
+    + relatedEventIds.length;
+
+  return (
+    <section className="player-drawer-sessions world-event-detail-section">
+      <h3>Connected history</h3>
+      <p className="subtle">
+        {connectionCount > 0
+          ? `Connected to ${pluralize(connectionCount, 'trusted reference')}.`
+          : 'No connected world history is recorded yet.'}
+      </p>
+      <ul>
+        <li>
+          <span>Related memories</span>
+          <span>{event.relatedMemories.length > 0 ? event.relatedMemories.map((memoryId) => `Memory reference: ${memoryId}`).join(', ') : 'No related memories recorded yet.'}</span>
+        </li>
+        <li>
+          <span>Related people</span>
+          <span>{event.relatedPlayers.length > 0 ? event.relatedPlayers.map((playerId) => `Player reference: ${playerId}`).join(', ') : 'No related people recorded yet.'}</span>
+        </li>
+        <li>
+          <span>Related guilds</span>
+          <span>{event.relatedGuilds.length > 0 ? event.relatedGuilds.map((guildId) => `Guild reference: ${guildId}`).join(', ') : 'No related guilds recorded yet.'}</span>
+        </li>
+        <li>
+          <span>Related characters</span>
+          <span>{event.relatedCharacters.length > 0 ? event.relatedCharacters.map((characterId) => `Character reference: ${characterId}`).join(', ') : 'No related characters recorded yet.'}</span>
+        </li>
+        <li>
+          <span>Related events</span>
+          <span>{relatedEventIds.length > 0 ? relatedEventIds.map((eventId) => `Related event: ${getRelatedEventTitle(eventId, relatedEvents)}`).join(', ') : 'No related events recorded yet.'}</span>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
 interface WorldEventDetailDrawerProps {
   event: WorldEvent;
+  relatedEvents?: WorldEvent[];
   onClose: () => void;
 }
 
-export function WorldEventDetailDrawer({ event, onClose }: WorldEventDetailDrawerProps) {
+export function WorldEventDetailDrawer({ event, relatedEvents = [], onClose }: WorldEventDetailDrawerProps) {
   const sourceLabel = event.source.label || getWorldEventSourceLabel(event.source.kind);
 
   return (
@@ -122,6 +178,8 @@ export function WorldEventDetailDrawer({ event, onClose }: WorldEventDetailDrawe
             </li>
           </ul>
         </section>
+
+        <WorldEventRelationshipSummary event={event} relatedEvents={relatedEvents} />
 
         <section className="player-drawer-actions world-event-detail-section">
           <h3>Source</h3>

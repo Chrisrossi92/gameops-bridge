@@ -7106,6 +7106,7 @@ function App() {
       {selectedWorldEventDetail ? (
         <WorldEventDetailDrawer
           event={selectedWorldEventDetail}
+          relatedEvents={selectedWorldEvents}
           onClose={() => setSelectedWorldEventDetail(null)}
         />
       ) : null}
