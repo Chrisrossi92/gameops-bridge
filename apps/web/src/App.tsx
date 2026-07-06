@@ -167,6 +167,7 @@ interface ServerSummary {
   serverAliveRhythm: ServerAliveRhythmSummary;
   serverHealth: ServerHealthSummary;
   settingsCapabilities: ServerSettingsCapabilitySummary;
+  observedSettings: ObservedSettingsResponse | null;
   eventTemplateDrafts: EventTemplateDraftCatalog;
   palworldConfigAudit: PalworldConfigAudit | null;
   palworldBackupReadiness: PalworldBackupReadiness | null;
@@ -1367,117 +1368,254 @@ function ServerAliveRhythmPanel({ rhythm }: ServerAliveRhythmPanelProps) {
 
 interface SettingsCapabilityPanelProps {
   capabilities: ServerSettingsCapabilitySummary;
+  observedSettings: ObservedSettingsResponse | null;
+  configAudit: PalworldConfigAudit | null;
+  runtimeAudit: PalworldRuntimeAudit | null;
+  backupReadiness: PalworldBackupReadiness | null;
+  eventTemplateDrafts: EventTemplateDraftCatalog;
   onOpenObservedSettings: () => void;
 }
 
-function SettingsCapabilityPanel({ capabilities, onOpenObservedSettings }: SettingsCapabilityPanelProps) {
-  const missingPieces = capabilities.missingRequirements.slice(0, 5);
-  const validationSteps = capabilities.validationSteps.slice(0, 3);
-  const rollbackRequirements = capabilities.rollbackRequirements.slice(0, 3);
-  const unresolvedQuestions = capabilities.unresolvedQuestions.slice(0, 3);
+function formatCapabilityState(state: ServerSettingsCapabilitySummary['canReadSettings']): string {
+  if (state === 'yes') {
+    return 'yes';
+  }
+
+  if (state === 'no') {
+    return 'no';
+  }
+
+  return 'needs manual verification';
+}
+
+function formatWritePathStatus(status: ServerSettingsCapabilitySummary['writePathStatus']): string {
+  switch (status) {
+    case 'not_supported':
+      return 'not supported yet';
+    case 'possible_needs_validation':
+      return 'possible, needs validation';
+    case 'blocked_missing_config':
+      return 'blocked by missing config';
+    case 'unknown':
+      return 'needs manual verification';
+  }
+}
+
+function formatCandidateWritePath(path: ServerSettingsCapabilitySummary['candidateWritePaths'][number]): string {
+  switch (path) {
+    case 'manual':
+      return 'manual owner review';
+    case 'file_edit':
+      return 'settings file edit after backup';
+    case 'rest':
+      return 'Palworld REST after endpoint proof';
+    case 'rcon':
+      return 'RCON after persistence proof';
+  }
+}
+
+function formatRuntimeAlignment(configAudit: PalworldConfigAudit | null, runtimeAudit: PalworldRuntimeAudit | null): string {
+  if (runtimeAudit?.runtimeAuditStatus === 'matched_active_config') {
+    return 'active file matches';
+  }
+
+  if (!configAudit || configAudit.matchedRestSettings.length === 0) {
+    return 'needs manual verification';
+  }
+
+  return configAudit.matchedRestSettings.every((setting) => setting.valuesMatch)
+    ? 'file and REST values match'
+    : 'file and REST values differ';
+}
+
+function formatObservedSettingHandling(setting: ObservedSettingsResponse['groups'][number]['settings'][number]): string {
+  switch (setting.recommendedHandling) {
+    case 'template_candidate':
+      return 'boost-event candidate';
+    case 'manual_review':
+      return 'needs manual verification';
+    case 'never_auto_change':
+      return 'do not auto-change';
+    case 'read_only':
+      return 'read-only';
+    case 'unknown':
+      return 'needs mapping';
+  }
+}
+
+function SettingsCapabilityPanel({
+  capabilities,
+  observedSettings,
+  configAudit,
+  runtimeAudit,
+  backupReadiness,
+  eventTemplateDrafts,
+  onOpenObservedSettings
+}: SettingsCapabilityPanelProps) {
+  const allObservedSettings = observedSettings?.available
+    ? observedSettings.groups.flatMap((group) => group.settings)
+    : [];
+  const editableCandidates = allObservedSettings.filter((setting) => setting.recommendedHandling === 'template_candidate');
+  const lastObservedSettings = allObservedSettings
+    .filter((setting) => !setting.sensitive)
+    .slice(0, 6);
+  const matchingCount = configAudit?.matchedRestSettings.filter((setting) => setting.valuesMatch).length ?? 0;
+  const differingCount = configAudit ? configAudit.matchedRestSettings.length - matchingCount : 0;
+  const configFileFound = (configAudit?.discoveryStatus === 'found' && configAudit.canReadFile)
+    || Boolean(runtimeAudit?.inferredActiveConfigExists && runtimeAudit.inferredActiveConfigReadable);
+  const hasBoostDrafts = eventTemplateDrafts.drafts.some((draft) => draft.enabledInDashboard && draft.matchedSettings.length > 0);
+  const readyForBoostSetup = capabilities.canReadSettings === 'yes'
+    && editableCandidates.length > 0
+    && configFileFound
+    && backupReadiness?.readinessStatus === 'ready_for_manual_backup_plan';
+  const needsManualVerification = capabilities.canWriteSettings !== 'yes'
+    || capabilities.requiresRestart !== 'no'
+    || runtimeAudit?.runtimeAuditStatus !== 'matched_active_config'
+    || differingCount > 0;
   const canOpenObservedSettings = capabilities.canReadSettings === 'yes';
 
   return (
     <article
-      className={`card settings-capability-card ${canOpenObservedSettings ? 'clickable-row' : ''}`}
-      onClick={canOpenObservedSettings ? onOpenObservedSettings : undefined}
+      className="card settings-capability-card palworld-settings-control-card"
     >
       <div className="panel-title-row">
         <div>
-          <h2>Settings Control Readiness</h2>
-          <p className="subtle">{capabilities.nextSafeStep}</p>
+          <span className="summary-label">Palworld 1.0 readiness</span>
+          <h2>Settings Control Center</h2>
+          <p className="subtle">{capabilities.serverName ?? capabilities.serverId} • {capabilities.nextSafeStep}</p>
         </div>
-        <span className={`confidence-badge confidence-${capabilities.canReadSettings === 'yes' ? 'high' : capabilities.canReadSettings === 'unknown' ? 'medium' : 'low'}`}>
-          read {capabilities.canReadSettings}
-        </span>
+        <div className="settings-readiness-badges" aria-label="Settings readiness">
+          <span className={`confidence-badge confidence-${capabilities.canReadSettings === 'yes' ? 'high' : capabilities.canReadSettings === 'unknown' ? 'medium' : 'low'}`}>
+            Can read settings: {formatCapabilityState(capabilities.canReadSettings)}
+          </span>
+          <span className={`confidence-badge confidence-${readyForBoostSetup ? 'high' : hasBoostDrafts ? 'medium' : 'low'}`}>
+            {readyForBoostSetup ? 'Ready for boost event setup' : hasBoostDrafts ? 'Boost drafts available' : 'Needs manual verification'}
+          </span>
+        </div>
       </div>
 
-      <div className="detail-grid">
+      <div className="settings-readiness-strip">
+        <div>
+          <span className="summary-label">Selected server</span>
+          <strong>{capabilities.serverName ?? capabilities.serverId}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Settings source</span>
+          <strong>{capabilities.readSource}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Settings file found</span>
+          <strong>{configFileFound ? 'yes' : 'no'}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Restart likely required</span>
+          <strong>{formatCapabilityState(capabilities.requiresRestart)}</strong>
+        </div>
+      </div>
+
+      <div className="detail-grid settings-readiness-grid">
         <section className="detail-block">
           <h3>Can read settings</h3>
           <ul className="list compact">
-            <li><span>Status</span><span>{capabilities.canReadSettings}</span></li>
+            <li><span>Status</span><span>{formatCapabilityState(capabilities.canReadSettings)}</span></li>
             <li><span>Source</span><span>{capabilities.readSource}</span></li>
-            <li><span>Last snapshot</span><span>{capabilities.lastSettingsSnapshotAt ? formatTimestamp(capabilities.lastSettingsSnapshotAt) : 'None'}</span></li>
+            <li><span>Settings source/path</span><span>{configAudit?.selectedPath ?? backupReadiness?.activeRuntimeConfigPath ?? capabilities.readSource}</span></li>
+            <li><span>Last observed values</span><span>{capabilities.lastSettingsSnapshotAt ? formatTimestamp(capabilities.lastSettingsSnapshotAt) : 'None'}</span></li>
+            <li><span>Readable settings</span><span>{allObservedSettings.length}</span></li>
           </ul>
         </section>
 
         <section className="detail-block">
-          <h3>Can safely change settings</h3>
+          <h3>Can safely edit</h3>
           <ul className="list compact">
-            <li><span>Status</span><span>{capabilities.canWriteSettings}</span></li>
-            <li><span>Write path</span><span>{capabilities.writePathStatus}</span></li>
-            <li><span>Needs restart/manual</span><span>{capabilities.requiresRestart}</span></li>
+            <li><span>Status</span><span>{formatCapabilityState(capabilities.canWriteSettings)}</span></li>
+            <li><span>Readiness</span><span>{formatWritePathStatus(capabilities.writePathStatus)}</span></li>
+            <li><span>Editable candidates</span><span>{editableCandidates.length}</span></li>
             <li><span>Connector</span><span>{capabilities.connectorMode ?? 'unknown'}</span></li>
           </ul>
         </section>
 
         <section className="detail-block">
-          <h3>Candidate paths</h3>
+          <h3>Safest future route</h3>
           <ul className="list compact">
-            {capabilities.candidateWritePaths.length === 0 ? <li>No candidate paths reported.</li> : null}
+            {capabilities.candidateWritePaths.length === 0 ? <li>No future edit route reported.</li> : null}
             {capabilities.candidateWritePaths.map((path) => (
-              <li key={path}><span>{path}</span></li>
+              <li key={path}><span>{formatCandidateWritePath(path)}</span></li>
             ))}
           </ul>
         </section>
 
         <section className="detail-block">
-          <h3>Readable groups</h3>
+          <h3>Config and REST match</h3>
           <ul className="list compact">
-            {capabilities.supportedSettingGroups.length === 0 ? <li>No setting groups mapped yet.</li> : null}
-            {capabilities.supportedSettingGroups.map((group) => (
-              <li key={group}><span>{group}</span></li>
+            <li><span>Status</span><span>{formatRuntimeAlignment(configAudit, runtimeAudit)}</span></li>
+            <li><span>Same values</span><span>{matchingCount}</span></li>
+            <li><span>Different values</span><span>{differingCount}</span></li>
+            <li><span>Runtime config</span><span>{runtimeAudit?.pathsMatch ? 'matches selected file' : 'needs manual verification'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Editable candidates</h3>
+          <ul className="list compact">
+            {editableCandidates.length === 0 ? <li>No boost-event setting candidates found yet.</li> : null}
+            {editableCandidates.slice(0, 5).map((setting) => (
+              <li key={setting.key}>
+                <span>{setting.label}</span>
+                <span>{formatObservedSettingValue(setting.value)}</span>
+                <span className="subtle">{setting.riskLabel}</span>
+              </li>
             ))}
           </ul>
         </section>
 
         <section className="detail-block">
-          <h3>Missing pieces</h3>
+          <h3>Last observed values</h3>
           <ul className="list compact">
-            {missingPieces.length === 0 ? <li>No missing pieces reported.</li> : null}
-            {missingPieces.map((requirement) => (
-              <li key={requirement}><span>{requirement}</span></li>
+            {lastObservedSettings.length === 0 ? <li>No readable setting values are loaded yet.</li> : null}
+            {lastObservedSettings.map((setting) => (
+              <li key={setting.key}>
+                <span>{setting.label}</span>
+                <span>{formatObservedSettingValue(setting.value)}</span>
+                <span className="subtle">{setting.valueType}</span>
+              </li>
             ))}
           </ul>
         </section>
 
         <section className="detail-block">
-          <h3>Validation needed</h3>
+          <h3>Restart and rollback notes</h3>
           <ul className="list compact">
-            {validationSteps.length === 0 ? <li>No validation steps reported.</li> : null}
-            {validationSteps.map((step) => (
+            {capabilities.validationSteps.slice(0, 2).map((step) => (
               <li key={step}><span>{step}</span></li>
             ))}
-          </ul>
-        </section>
-
-        <section className="detail-block">
-          <h3>Rollback needed</h3>
-          <ul className="list compact">
-            {rollbackRequirements.length === 0 ? <li>No rollback requirements reported.</li> : null}
-            {rollbackRequirements.map((requirement) => (
+            {capabilities.rollbackRequirements.slice(0, 2).map((requirement) => (
               <li key={requirement}><span>{requirement}</span></li>
             ))}
           </ul>
         </section>
 
         <section className="detail-block">
-          <h3>Unknowns</h3>
+          <h3>Safety warnings</h3>
           <ul className="list compact">
-            {unresolvedQuestions.length === 0 ? <li>No unresolved questions reported.</li> : null}
-            {unresolvedQuestions.map((question) => (
-              <li key={question}><span>{question}</span></li>
+            {!needsManualVerification ? <li>Read-only checks are aligned. Apply controls are still intentionally unavailable.</li> : null}
+            {[...capabilities.safetyNotes, ...(configAudit?.safetyWarnings ?? []), ...(runtimeAudit?.safetyWarnings ?? [])].slice(0, 5).map((warning) => (
+              <li key={warning}><span>{warning}</span></li>
             ))}
           </ul>
         </section>
       </div>
 
-      <div className="trust-warning-row">
-        {capabilities.safetyNotes.slice(0, 3).map((note) => (
-          <span key={note}>{note}</span>
-        ))}
-        {canOpenObservedSettings ? <span>Open observed settings</span> : null}
+      <div className="settings-readiness-actions">
+        <button
+          type="button"
+          className="review-button approve-button"
+          onClick={onOpenObservedSettings}
+          disabled={!canOpenObservedSettings}
+        >
+          View readable settings
+        </button>
+        <span>No apply, write, restart, or schedule controls are exposed.</span>
       </div>
     </article>
   );
@@ -1756,7 +1894,7 @@ function ObservedSettingsDrawer({ observedSettings, loading, error, onClose }: O
                       <span className={`confidence-badge confidence-${getObservedSettingRiskTone(setting.changeRisk)}`}>
                         {setting.riskLabel}
                       </span>
-                      <span className="subtle">{setting.valueType} • {setting.recommendedHandling} • restart {setting.requiresRestart}</span>
+                      <span className="subtle">{setting.valueType} • {formatObservedSettingHandling(setting)} • restart {formatCapabilityState(setting.requiresRestart)}</span>
                       <span className="subtle">{setting.riskNote}</span>
                       {setting.sensitive || group.group === 'unknown/unmapped' ? <span className="subtle">{setting.safetyNote}</span> : null}
                     </li>
@@ -1782,7 +1920,7 @@ function EventTemplateDraftPanel({ catalog, onEditDraft }: EventTemplateDraftPan
     <article className="card event-template-draft-card">
       <div className="panel-title-row">
         <div>
-          <h2>Event Template Drafts</h2>
+          <h2>Boost Event Drafts</h2>
           <p className="subtle">{catalog.explanation}</p>
         </div>
         <span className={`confidence-badge confidence-${catalog.status === 'available' ? 'medium' : 'low'}`}>
@@ -1801,15 +1939,15 @@ function EventTemplateDraftPanel({ catalog, onEditDraft }: EventTemplateDraftPan
           <section key={draft.templateId} className="detail-block">
             <h3>{draft.name}</h3>
             <ul className="list compact">
-              <li><span>Status</span><span>{draft.status}</span></li>
-              <li><span>Can apply</span><span>{draft.canApply ? 'yes' : 'no'}</span></li>
-              <li><span>Restart</span><span>{draft.requiresRestart}</span></li>
-              <li><span>Matched</span><span>{draft.matchedSettings.map((setting) => setting.key).join(', ')}</span></li>
+              <li><span>Status</span><span>preview only</span></li>
+              <li><span>Can change server</span><span>{draft.canApply ? 'yes' : 'no'}</span></li>
+              <li><span>Restart likely required</span><span>needs manual verification</span></li>
+              <li><span>Readable settings</span><span>{draft.matchedSettings.map((setting) => setting.key).join(', ')}</span></li>
               {draft.missingSettings.length > 0 ? <li><span>Missing</span><span>{draft.missingSettings.join(', ')}</span></li> : null}
             </ul>
             <p className="subtle">{draft.description}</p>
             <button type="button" className="review-button approve-button" onClick={() => onEditDraft(draft)}>
-              Edit dashboard draft
+              Review dashboard draft
             </button>
           </section>
         ))}
@@ -3261,6 +3399,7 @@ function App() {
             fetch(`${apiBaseUrl}/servers/${server.id}/server-alive-rhythm`),
             fetch(`${apiBaseUrl}/servers/${server.id}/server-health`),
             fetch(`${apiBaseUrl}/servers/${server.id}/settings-capabilities`),
+            fetch(`${apiBaseUrl}/servers/${server.id}/settings-observed`),
             fetch(`${apiBaseUrl}/servers/${server.id}/event-template-drafts`),
             fetch(`${apiBaseUrl}/servers/${server.id}/session-timeline?limit=50`),
             fetch(`${apiBaseUrl}/servers/${server.id}/community-activity`)
@@ -3289,14 +3428,15 @@ function App() {
           const serverAliveRhythmResponse = responses[11];
           const serverHealthResponse = responses[12];
           const settingsCapabilitiesResponse = responses[13];
-          const eventTemplateDraftsResponse = responses[14];
-          const sessionTimelineResponse = responses[15];
-          const communityActivityResponse = responses[16];
-          const palworldLatestPlayersResponse = server.game === 'palworld' ? responses[17] : null;
-          const palworldMetricsResponse = server.game === 'palworld' ? responses[18] : null;
-          const palworldConfigAuditResponse = server.game === 'palworld' ? responses[19] : null;
-          const palworldBackupReadinessResponse = server.game === 'palworld' ? responses[20] : null;
-          const palworldRuntimeAuditResponse = server.game === 'palworld' ? responses[21] : null;
+          const observedSettingsResponse = responses[14];
+          const eventTemplateDraftsResponse = responses[15];
+          const sessionTimelineResponse = responses[16];
+          const communityActivityResponse = responses[17];
+          const palworldLatestPlayersResponse = server.game === 'palworld' ? responses[18] : null;
+          const palworldMetricsResponse = server.game === 'palworld' ? responses[19] : null;
+          const palworldConfigAuditResponse = server.game === 'palworld' ? responses[20] : null;
+          const palworldBackupReadinessResponse = server.game === 'palworld' ? responses[21] : null;
+          const palworldRuntimeAuditResponse = server.game === 'palworld' ? responses[22] : null;
           const requiredResponses = [
             statusResponse,
             sessionsResponse,
@@ -3312,6 +3452,7 @@ function App() {
             serverAliveRhythmResponse,
             serverHealthResponse,
             settingsCapabilitiesResponse,
+            observedSettingsResponse,
             eventTemplateDraftsResponse,
             sessionTimelineResponse,
             communityActivityResponse
@@ -3329,7 +3470,7 @@ function App() {
             throw new Error(`Server ${server.id} summary fetch failed with status ${failedRequiredResponse.status}`);
           }
 
-          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, playerActivityCapturePayload, dataFreshnessPayload, playerIntelligencePayload, playerIntelligenceSummaryPayload, playerEngagementPayload, serverAliveRhythmPayload, serverHealthPayload, settingsCapabilitiesPayload, eventTemplateDraftsPayload, sessionTimelinePayload, communityActivityPayload] = await Promise.all(
+          const [statusPayload, sessionsPayload, knownPlayersPayload, eventsPayload, activityLogPayload, operationalStatusPayload, playerActivityCapturePayload, dataFreshnessPayload, playerIntelligencePayload, playerIntelligenceSummaryPayload, playerEngagementPayload, serverAliveRhythmPayload, serverHealthPayload, settingsCapabilitiesPayload, observedSettingsPayload, eventTemplateDraftsPayload, sessionTimelinePayload, communityActivityPayload] = await Promise.all(
             requiredResponses.map((response) => response!.json())
           );
 
@@ -3355,6 +3496,7 @@ function App() {
           const serverAliveRhythmParsed = serverAliveRhythmSummarySchema.safeParse(serverAliveRhythmPayload);
           const serverHealthParsed = serverHealthSummarySchema.safeParse(serverHealthPayload);
           const settingsCapabilitiesParsed = serverSettingsCapabilitySummarySchema.safeParse(settingsCapabilitiesPayload);
+          const observedSettingsParsed = observedSettingsResponseSchema.safeParse(observedSettingsPayload);
           const eventTemplateDraftsParsed = eventTemplateDraftCatalogSchema.safeParse(eventTemplateDraftsPayload);
           const sessionTimelineParsed = sessionTimelineResponseSchema.safeParse(sessionTimelinePayload);
           const communityActivityParsed = communityActivityResponseSchema.safeParse(communityActivityPayload);
@@ -3379,7 +3521,7 @@ function App() {
             ? palworldRuntimeAuditSchema.safeParse(palworldRuntimeAuditPayload)
             : null;
 
-          if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success || !activityLogParsed.success || !operationalStatusParsed.success || !playerActivityCaptureParsed.success || !dataFreshnessParsed.success || !playerIntelligenceParsed.success || !playerIntelligenceSummaryParsed.success || !playerEngagementParsed.success || !serverAliveRhythmParsed.success || !serverHealthParsed.success || !settingsCapabilitiesParsed.success || !eventTemplateDraftsParsed.success || !sessionTimelineParsed.success || !communityActivityParsed.success) {
+          if (!statusParsed.success || !sessionsParsed.success || !knownPlayersParsed.success || !eventsParsed.success || !activityLogParsed.success || !operationalStatusParsed.success || !playerActivityCaptureParsed.success || !dataFreshnessParsed.success || !playerIntelligenceParsed.success || !playerIntelligenceSummaryParsed.success || !playerEngagementParsed.success || !serverAliveRhythmParsed.success || !serverHealthParsed.success || !settingsCapabilitiesParsed.success || !observedSettingsParsed.success || !eventTemplateDraftsParsed.success || !sessionTimelineParsed.success || !communityActivityParsed.success) {
             throw new Error(`Server ${server.id} payload validation failed.`);
           }
 
@@ -3447,6 +3589,7 @@ function App() {
             serverAliveRhythm: serverAliveRhythmParsed.data,
             serverHealth: serverHealthParsed.data,
             settingsCapabilities: settingsCapabilitiesParsed.data,
+            observedSettings: observedSettingsParsed.data,
             eventTemplateDrafts: eventTemplateDraftsParsed.data,
             palworldConfigAudit,
             palworldBackupReadiness,
@@ -6550,6 +6693,11 @@ function App() {
                       <>
                         <SettingsCapabilityPanel
                           capabilities={selectedServerSummary.settingsCapabilities}
+                          observedSettings={selectedServerSummary.observedSettings}
+                          configAudit={selectedServerSummary.palworldConfigAudit}
+                          runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
+                          backupReadiness={selectedServerSummary.palworldBackupReadiness}
+                          eventTemplateDrafts={selectedServerSummary.eventTemplateDrafts}
                           onOpenObservedSettings={() => setObservedSettingsOpen(true)}
                         />
                         {selectedServerSummary.palworldRuntimeAudit ? (
@@ -6919,6 +7067,11 @@ function App() {
                       <>
                         <SettingsCapabilityPanel
                           capabilities={selectedServerSummary.settingsCapabilities}
+                          observedSettings={selectedServerSummary.observedSettings}
+                          configAudit={selectedServerSummary.palworldConfigAudit}
+                          runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
+                          backupReadiness={selectedServerSummary.palworldBackupReadiness}
+                          eventTemplateDrafts={selectedServerSummary.eventTemplateDrafts}
                           onOpenObservedSettings={() => setObservedSettingsOpen(true)}
                         />
                         {selectedServerSummary.palworldRuntimeAudit ? (
