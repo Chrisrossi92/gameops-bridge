@@ -1,11 +1,17 @@
 import type {
   WorldEvent,
   WorldEventConfidence,
+  WorldEventEvidenceReference,
   WorldEventSignificance,
   WorldEventSourceKind,
   WorldEventType
 } from '@gameops/shared';
-import type { WorldChronicleEvent, WorldChronicleEventKind } from './world-memory.ts';
+import type {
+  WorldChronicleEvent,
+  WorldChronicleEventKind,
+  WorldMemoryRecord,
+  WorldMemoryRegistry
+} from './world-memory.ts';
 
 export const WORLD_EVENT_TYPE_LABELS: Record<WorldEventType, string> = {
   boss_defeated: 'Boss defeated',
@@ -55,6 +61,11 @@ export interface WorldEventChronicleEntry extends WorldChronicleEvent {
   relatedPlayers: string[];
   relatedGuilds: string[];
   relatedCharacters: string[];
+}
+
+export interface DerivedWorldEventsResult {
+  events: WorldEvent[];
+  previewFallback: boolean;
 }
 
 function compareWorldEvents(left: WorldEvent, right: WorldEvent): number {
@@ -111,6 +122,128 @@ function getWorldEventChronicleTitle(event: WorldEvent): string {
     case 'custom':
       return event.title;
   }
+}
+
+function getChronicleWorldEventSignificance(kind: WorldChronicleEventKind): WorldEventSignificance {
+  switch (kind) {
+    case 'arrival':
+    case 'return':
+    case 'join':
+    case 'leave':
+      return 'minor';
+    case 'base_lifecycle':
+    case 'guild_quiet':
+      return 'major';
+    case 'restart':
+    case 'imported_character':
+    case 'world_event':
+    case 'guild_active':
+      return 'normal';
+  }
+}
+
+function getWorldEventDiscoveredAt(event: WorldChronicleEvent, record: WorldMemoryRecord | null): string {
+  return record?.lastSeenAt ?? record?.firstSeenAt ?? event.occurredAt;
+}
+
+function getRelatedPlayers(record: WorldMemoryRecord | null): string[] {
+  return record?.type === 'person' ? [record.id] : [];
+}
+
+function getRelatedGuilds(record: WorldMemoryRecord | null): string[] {
+  return record?.type === 'guild' || record?.type === 'clan' ? [record.id] : [];
+}
+
+function getRelatedCharacters(record: WorldMemoryRecord | null): string[] {
+  return record?.type === 'character' ? [record.id] : [];
+}
+
+export function worldMemoryChronicleToWorldEvents(registry: WorldMemoryRegistry): WorldEvent[] {
+  const eventsById = new Map<string, WorldEvent>();
+
+  for (const chronicleEvent of registry.chronicleEvents) {
+    const memoryRecord = chronicleEvent.memoryRecordId ? registry.getRecord(chronicleEvent.memoryRecordId) : null;
+    const eventId = `chronicle:${registry.serverId}:${chronicleEvent.id}`;
+
+    if (eventsById.has(eventId)) {
+      continue;
+    }
+
+    const evidence: WorldEventEvidenceReference[] = [{
+      id: `evidence:${eventId}:chronicle`,
+      type: 'chronicle_entry' as const,
+      label: `Chronicle entry: ${chronicleEvent.title}`,
+      sourceLabel: chronicleEvent.sourceLabel,
+      observedAt: chronicleEvent.occurredAt,
+      metadata: {
+        chronicleEventId: chronicleEvent.id,
+        chronicleKind: chronicleEvent.kind
+      }
+    }];
+
+    if (memoryRecord) {
+      evidence.push({
+        id: `evidence:${eventId}:memory`,
+        type: 'memory_record',
+        label: `Memory record: ${memoryRecord.displayName}`,
+        sourceLabel: memoryRecord.sourceLabel,
+        observedAt: memoryRecord.lastSeenAt ?? memoryRecord.firstSeenAt ?? chronicleEvent.occurredAt,
+        metadata: {
+          memoryRecordId: memoryRecord.id,
+          memoryRecordType: memoryRecord.type
+        }
+      });
+    }
+
+    eventsById.set(eventId, {
+      id: eventId,
+      worldId: registry.serverId,
+      eventType: 'custom',
+      title: chronicleEvent.title,
+      summary: chronicleEvent.detail ?? 'A trusted Chronicle event was recorded.',
+      occurredAt: chronicleEvent.occurredAt,
+      discoveredAt: getWorldEventDiscoveredAt(chronicleEvent, memoryRecord),
+      confidence: chronicleEvent.confidence,
+      significance: getChronicleWorldEventSignificance(chronicleEvent.kind),
+      source: {
+        kind: 'chronicle',
+        label: chronicleEvent.sourceLabel,
+        referenceId: chronicleEvent.id
+      },
+      evidence,
+      relatedEvents: [],
+      relatedMemories: memoryRecord ? [memoryRecord.id] : [],
+      relatedPlayers: getRelatedPlayers(memoryRecord),
+      relatedGuilds: getRelatedGuilds(memoryRecord),
+      relatedCharacters: getRelatedCharacters(memoryRecord),
+      metadata: {
+        derivedFrom: 'world_memory_chronicle',
+        sourceChronicleEventId: chronicleEvent.id,
+        sourceChronicleKind: chronicleEvent.kind
+      }
+    });
+  }
+
+  return [...eventsById.values()].sort(compareWorldEvents);
+}
+
+export function getTrustedWorldEventsForRegistry(
+  registry: WorldMemoryRegistry,
+  previewEvents: WorldEvent[] = worldEventPreviewEvents
+): DerivedWorldEventsResult {
+  const derivedEvents = worldMemoryChronicleToWorldEvents(registry);
+
+  if (derivedEvents.length > 0) {
+    return {
+      events: createWorldEventRegistry(registry.serverId, derivedEvents).events,
+      previewFallback: false
+    };
+  }
+
+  return {
+    events: createWorldEventRegistry(previewEvents[0]?.worldId ?? registry.serverId, previewEvents).events,
+    previewFallback: true
+  };
 }
 
 export function createWorldEventRegistry(worldId: string, events: WorldEvent[]): WorldEventRegistry {

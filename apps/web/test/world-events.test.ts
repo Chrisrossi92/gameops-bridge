@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { WorldEvent } from '@gameops/shared';
+import type { WorldChronicleEvent, WorldMemoryRecord, WorldMemoryRegistry } from '../src/world-memory.ts';
 import {
   createWorldEventRegistry,
+  getTrustedWorldEventsForRegistry,
   worldEventToChronicleEntry,
-  worldEventsToChronicleEntries
+  worldEventsToChronicleEntries,
+  worldMemoryChronicleToWorldEvents
 } from '../src/world-events.ts';
 
 function event(overrides: Partial<WorldEvent>): WorldEvent {
@@ -26,6 +29,63 @@ function event(overrides: Partial<WorldEvent>): WorldEvent {
     relatedGuilds: overrides.relatedGuilds ?? [],
     relatedCharacters: overrides.relatedCharacters ?? [],
     metadata: overrides.metadata ?? {}
+  };
+}
+
+function memoryRecord(overrides: Partial<WorldMemoryRecord> = {}): WorldMemoryRecord {
+  return {
+    id: overrides.id ?? 'memory:guild:iron-wolves',
+    serverId: overrides.serverId ?? 'world',
+    displayName: overrides.displayName ?? 'Iron Wolves',
+    type: overrides.type ?? 'guild',
+    game: overrides.game ?? 'palworld',
+    firstSeenAt: overrides.firstSeenAt ?? '2026-07-01T10:00:00.000Z',
+    lastSeenAt: overrides.lastSeenAt ?? '2026-07-01T11:00:00.000Z',
+    currentStatus: overrides.currentStatus ?? 'active',
+    confidence: overrides.confidence ?? 'medium',
+    chronicleReferences: overrides.chronicleReferences ?? [],
+    relationships: overrides.relationships ?? [],
+    sourceLabel: overrides.sourceLabel ?? 'World Memory',
+    metadata: overrides.metadata ?? {}
+  };
+}
+
+function chronicleEvent(overrides: Partial<WorldChronicleEvent> = {}): WorldChronicleEvent {
+  return {
+    id: overrides.id ?? 'guild-active:iron-wolves',
+    kind: overrides.kind ?? 'guild_active',
+    occurredAt: overrides.occurredAt ?? '2026-07-01T11:00:00.000Z',
+    title: overrides.title ?? 'Iron Wolves showed activity.',
+    detail: overrides.detail ?? 'Rossi was the most recently seen member.',
+    actorName: overrides.actorName ?? 'Iron Wolves',
+    memoryRecordId: overrides.memoryRecordId ?? 'memory:guild:iron-wolves',
+    confidence: overrides.confidence ?? 'medium',
+    sourceLabel: overrides.sourceLabel ?? 'Guild activity'
+  };
+}
+
+function memoryRegistry(
+  overrides: {
+    serverId?: string;
+    records?: WorldMemoryRecord[];
+    chronicleEvents?: WorldChronicleEvent[];
+  } = {}
+): WorldMemoryRegistry {
+  const records = overrides.records ?? [memoryRecord()];
+  const chronicleEvents = overrides.chronicleEvents ?? [chronicleEvent()];
+
+  return {
+    serverId: overrides.serverId ?? 'world',
+    records,
+    relationships: [],
+    chronicleEvents,
+    getRecord: (recordId) => records.find((record) => record.id === recordId) ?? null,
+    getRecordsByType: (type) => records.filter((record) => record.type === type),
+    getChronicleForRecord: (recordId) => chronicleEvents.filter((event) => event.memoryRecordId === recordId),
+    getDetail: (recordId) => {
+      const record = records.find((item) => item.id === recordId);
+      return record ? { record, relationships: [], chronicleEvents: chronicleEvents.filter((event) => event.memoryRecordId === recordId) } : null;
+    }
   };
 }
 
@@ -136,4 +196,84 @@ test('world events map to chronicle entries without inventing summaries and stay
   assert.deepEqual(chronicleEntries.map((entry) => entry.kind), ['world_event', 'world_event']);
   assert.equal(chronicleEntries[0].detail, 'A major world event was recorded.');
   assert.equal(chronicleEntries[1].detail, 'A new settlement was established.');
+});
+
+test('chronicle events derive trusted world events with source, confidence, timing, and evidence preserved', () => {
+  const [derived] = worldMemoryChronicleToWorldEvents(memoryRegistry());
+
+  assert.ok(derived);
+  assert.equal(derived.id, 'chronicle:world:guild-active:iron-wolves');
+  assert.equal(derived.worldId, 'world');
+  assert.equal(derived.eventType, 'custom');
+  assert.equal(derived.title, 'Iron Wolves showed activity.');
+  assert.equal(derived.summary, 'Rossi was the most recently seen member.');
+  assert.equal(derived.occurredAt, '2026-07-01T11:00:00.000Z');
+  assert.equal(derived.discoveredAt, '2026-07-01T11:00:00.000Z');
+  assert.equal(derived.confidence, 'medium');
+  assert.equal(derived.significance, 'normal');
+  assert.deepEqual(derived.source, {
+    kind: 'chronicle',
+    label: 'Guild activity',
+    referenceId: 'guild-active:iron-wolves'
+  });
+  assert.deepEqual(derived.evidence.map((item) => [item.type, item.label, item.sourceLabel]), [
+    ['chronicle_entry', 'Chronicle entry: Iron Wolves showed activity.', 'Guild activity'],
+    ['memory_record', 'Memory record: Iron Wolves', 'World Memory']
+  ]);
+});
+
+test('derived world events preserve related memory and entity references', () => {
+  const guild = memoryRecord({ id: 'memory:guild:iron-wolves', type: 'guild' });
+  const character = memoryRecord({
+    id: 'memory:character:rossi',
+    type: 'character',
+    displayName: 'Rossi',
+    sourceLabel: 'Players'
+  });
+  const derivedEvents = worldMemoryChronicleToWorldEvents(memoryRegistry({
+    records: [guild, character],
+    chronicleEvents: [
+      chronicleEvent({ id: 'guild-active', memoryRecordId: guild.id }),
+      chronicleEvent({
+        id: 'imported-character',
+        kind: 'imported_character',
+        memoryRecordId: character.id,
+        title: 'Rossi appears to have entered this realm with existing progression.',
+        sourceLabel: 'Character metadata'
+      })
+    ]
+  }));
+
+  const guildEvent = derivedEvents.find((item) => item.id === 'chronicle:world:guild-active');
+  const characterEvent = derivedEvents.find((item) => item.id === 'chronicle:world:imported-character');
+
+  assert.deepEqual(guildEvent?.relatedMemories, ['memory:guild:iron-wolves']);
+  assert.deepEqual(guildEvent?.relatedGuilds, ['memory:guild:iron-wolves']);
+  assert.deepEqual(characterEvent?.relatedMemories, ['memory:character:rossi']);
+  assert.deepEqual(characterEvent?.relatedCharacters, ['memory:character:rossi']);
+});
+
+test('derived world events use stable ids and do not duplicate repeated chronicle input', () => {
+  const repeated = chronicleEvent({ id: 'restart:world-online', kind: 'restart', memoryRecordId: undefined });
+  const derivedEvents = worldMemoryChronicleToWorldEvents(memoryRegistry({
+    records: [],
+    chronicleEvents: [repeated, repeated]
+  }));
+
+  assert.deepEqual(derivedEvents.map((item) => item.id), ['chronicle:world:restart:world-online']);
+  assert.equal(derivedEvents[0]?.evidence[0]?.metadata.chronicleEventId, 'restart:world-online');
+});
+
+test('trusted world event selection uses preview fallback only when no real records exist', () => {
+  const trusted = getTrustedWorldEventsForRegistry(memoryRegistry());
+  const fallback = getTrustedWorldEventsForRegistry(
+    memoryRegistry({ records: [], chronicleEvents: [] }),
+    [event({ id: 'preview:event', worldId: 'preview-world', metadata: { previewOnly: true } })]
+  );
+
+  assert.equal(trusted.previewFallback, false);
+  assert.equal(trusted.events[0]?.metadata.derivedFrom, 'world_memory_chronicle');
+  assert.equal(fallback.previewFallback, true);
+  assert.deepEqual(fallback.events.map((item) => item.id), ['preview:event']);
+  assert.equal(fallback.events[0]?.metadata.previewOnly, true);
 });

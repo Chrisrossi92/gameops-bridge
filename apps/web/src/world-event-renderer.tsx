@@ -12,6 +12,7 @@ import {
 interface WorldEventRendererProps {
   events: WorldEvent[];
   title?: string;
+  description?: string;
   onSelect?: (event: WorldEvent) => void;
 }
 
@@ -129,7 +130,12 @@ export function WorldEventDetailDrawer({ event, onClose }: WorldEventDetailDrawe
   );
 }
 
-export function WorldEventRenderer({ events, title = 'World Events in the Chronicle', onSelect }: WorldEventRendererProps) {
+export function WorldEventRenderer({
+  events,
+  title = 'World Events in the Chronicle',
+  description = 'Trusted world events are shown here as readable history, with their source and evidence kept visible.',
+  onSelect
+}: WorldEventRendererProps) {
   const chronicleEntries = worldEventsToChronicleEntries(events);
 
   if (chronicleEntries.length === 0) {
@@ -142,7 +148,7 @@ export function WorldEventRenderer({ events, title = 'World Events in the Chroni
         <div>
           <span className="summary-label">Chronicle</span>
           <h2>{title}</h2>
-          <p className="subtle">Trusted world events are shown here as readable history, with their source and evidence kept visible.</p>
+          <p className="subtle">{description}</p>
         </div>
         <span className="source-badge">trusted events</span>
       </div>

@@ -96,7 +96,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
 import { WorldEventDetailDrawer, WorldEventRenderer } from './world-event-renderer.tsx';
-import { createWorldEventRegistry, worldEventPreviewEvents, worldEventsToChronicleEntries } from './world-events.ts';
+import {
+  createWorldEventRegistry,
+  worldEventPreviewEvents,
+  worldEventsToChronicleEntries,
+  worldMemoryChronicleToWorldEvents
+} from './world-events.ts';
 import {
   createWorldMemoryRegistry,
   getGuildConfidence,
@@ -388,6 +393,7 @@ interface WorldChroniclePanelProps {
   emptyMessage?: string;
   compact?: boolean;
   onOpenWorldEvent?: (worldEventId: string) => void;
+  getWorldEventIdForChronicleEvent?: (event: WorldChronicleEvent) => string | null;
 }
 
 function getChronicleKindLabel(kind: WorldChronicleEventKind): string {
@@ -419,7 +425,14 @@ function getChronicleWorldEventId(event: WorldChronicleEvent): string | null {
   return event.id.startsWith('world-event:') ? event.id.slice('world-event:'.length) : null;
 }
 
-function WorldChroniclePanel({ title, events, emptyMessage = 'This realm is still writing its story. More adventures will appear as players explore.', compact = false, onOpenWorldEvent }: WorldChroniclePanelProps) {
+function WorldChroniclePanel({
+  title,
+  events,
+  emptyMessage = 'This realm is still writing its story. More adventures will appear as players explore.',
+  compact = false,
+  onOpenWorldEvent,
+  getWorldEventIdForChronicleEvent
+}: WorldChroniclePanelProps) {
   const visibleEvents = compact ? events.slice(0, 5) : events;
 
   return (
@@ -438,7 +451,7 @@ function WorldChroniclePanel({ title, events, emptyMessage = 'This realm is stil
 
       <ol className="world-chronicle-list">
         {visibleEvents.map((event) => {
-          const worldEventId = getChronicleWorldEventId(event);
+          const worldEventId = getChronicleWorldEventId(event) ?? getWorldEventIdForChronicleEvent?.(event) ?? null;
           const canOpenWorldEvent = Boolean(worldEventId && onOpenWorldEvent);
 
           return (
@@ -5486,21 +5499,43 @@ function App() {
   const valheimCharacters = useMemo(() => {
     return selectedServer?.game === 'valheim' ? getValheimCharactersFromMemory(selectedWorldMemory) : [];
   }, [selectedServer?.game, selectedWorldMemory]);
-  const selectedWorldEventPreview = useMemo(() => {
+  const selectedWorldEvents = useMemo(() => {
     if (!selectedServer) {
       return [];
+    }
+
+    const trustedEvents = worldMemoryChronicleToWorldEvents(selectedWorldMemory);
+    if (trustedEvents.length > 0) {
+      return createWorldEventRegistry(selectedServer.id, trustedEvents).events;
     }
 
     const previewWorldId = selectedServer.game === 'palworld'
       ? 'preview-palworld-world'
       : 'preview-valheim-world';
     return createWorldEventRegistry(previewWorldId, worldEventPreviewEvents).events;
-  }, [selectedServer]);
+  }, [selectedServer, selectedWorldMemory]);
+  const selectedWorldEventsArePreviewFallback = useMemo(() => {
+    if (!selectedServer) {
+      return false;
+    }
+
+    return worldMemoryChronicleToWorldEvents(selectedWorldMemory).length === 0;
+  }, [selectedServer, selectedWorldMemory]);
+  const selectedWorldEventByChronicleId = useMemo(() => {
+    const entries = selectedWorldEvents
+      .map((event) => {
+        const sourceChronicleEventId = event.metadata.sourceChronicleEventId;
+        return typeof sourceChronicleEventId === 'string' ? [sourceChronicleEventId, event.id] as const : null;
+      })
+      .filter((entry): entry is readonly [string, string] => entry !== null);
+
+    return new Map(entries);
+  }, [selectedWorldEvents]);
   const selectedWorldEventChronicleEntries = useMemo(() => {
-    return worldEventsToChronicleEntries(selectedWorldEventPreview);
-  }, [selectedWorldEventPreview]);
+    return selectedWorldEventsArePreviewFallback ? worldEventsToChronicleEntries(selectedWorldEvents) : [];
+  }, [selectedWorldEvents, selectedWorldEventsArePreviewFallback]);
   function openWorldEventDetail(worldEventId: string): void {
-    const worldEvent = selectedWorldEventPreview.find((event) => event.id === worldEventId);
+    const worldEvent = selectedWorldEvents.find((event) => event.id === worldEventId);
 
     if (worldEvent) {
       setSelectedWorldEventDetail(worldEvent);
@@ -5957,6 +5992,7 @@ function App() {
                 events={selectedServer.game === 'palworld' ? palworldChronicleEvents : valheimChronicleEvents}
                 compact
                 onOpenWorldEvent={openWorldEventDetail}
+                getWorldEventIdForChronicleEvent={(event) => selectedWorldEventByChronicleId.get(event.id) ?? null}
                 emptyMessage={selectedServer.game === 'palworld'
                   ? 'The archipelago has not recorded enough guild history yet. More memories will appear as players explore.'
                   : 'This realm is still writing its story. More memories will appear as players explore.'}
@@ -5964,7 +6000,14 @@ function App() {
             ) : null}
 
             {selectedDashboardTab === 'overview' ? (
-              <WorldEventRenderer events={selectedWorldEventPreview} onSelect={setSelectedWorldEventDetail} />
+              <WorldEventRenderer
+                events={selectedWorldEvents}
+                title={selectedWorldEventsArePreviewFallback ? 'World Events Preview' : 'World Events in the Chronicle'}
+                description={selectedWorldEventsArePreviewFallback
+                  ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
+                  : 'Trusted world events are drawn from Chronicle and World Memory records already available in this dashboard.'}
+                onSelect={setSelectedWorldEventDetail}
+              />
             ) : null}
 
             {selectedDashboardTab === 'ops' ? (
