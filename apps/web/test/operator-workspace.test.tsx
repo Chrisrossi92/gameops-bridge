@@ -221,6 +221,9 @@ test('operator workspace renders full operator cards', () => {
   const html = workspaceHtml();
 
   assert.match(html, /AI Operator/);
+  assert.match(html, /Is anything asking for action/);
+  assert.match(html, /What should I inspect next/);
+  assert.match(html, /Why does GameOps believe this/);
   assert.match(html, /Ask Operator/);
   assert.match(html, /Run Operator Analysis/);
   assert.match(html, /Operational Memory/);

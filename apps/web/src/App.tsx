@@ -92,9 +92,12 @@ import {
   type PalworldUnifiedPlayerProfile,
   type WorldEvent
 } from '@gameops/shared';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
+import { EvidenceSurfaceSection, EvidenceSummaryCard } from './evidence-surface-section.tsx';
 import { OperatorWorkspace } from './operator-workspace.tsx';
+import { PlayersSurfaceSection } from './players-surface-section.tsx';
+import { SafetySurfaceSection, SafetySummaryCard } from './safety-surface-section.tsx';
 import {
   buildPalworldActivityConfidenceReport,
   type PalworldActivityConfidenceArea,
@@ -112,6 +115,7 @@ import {
   type PalworldControlCapabilityStatus
 } from './palworld-control-capabilities.ts';
 import { WorldEventDetailDrawer, WorldHistoryTimeline } from './world-event-renderer.tsx';
+import { ServerAttentionSummary, type ServerAttentionStatus } from './server-attention-summary.tsx';
 import {
   createWorldEventRegistry,
   scoreWorldEventRelevance,
@@ -2441,6 +2445,113 @@ function SettingsCapabilityPanel({
   );
 }
 
+interface ServerSettingsReferencePanelProps {
+  gameLabel: string;
+  capabilities: ServerSettingsCapabilitySummary;
+  observedSettings: ObservedSettingsResponse | null;
+  onOpenObservedSettings: () => void;
+}
+
+function ServerSettingsReferencePanel({
+  gameLabel,
+  capabilities,
+  observedSettings,
+  onOpenObservedSettings
+}: ServerSettingsReferencePanelProps) {
+  const readableSettingsCount = observedSettings?.available
+    ? observedSettings.groups.reduce((sum, group) => sum + group.settings.filter((setting) => !setting.sensitive).length, 0)
+    : 0;
+  const canOpenObservedSettings = capabilities.canReadSettings === 'yes';
+
+  return (
+    <article className="card settings-capability-card">
+      <div className="panel-title-row">
+        <div>
+          <span className="summary-label">{gameLabel} settings reference</span>
+          <h2>Settings Coverage</h2>
+          <p className="subtle">{capabilities.serverName ?? capabilities.serverId} • {capabilities.nextSafeStep}</p>
+        </div>
+        <span className={`confidence-badge confidence-${capabilities.canReadSettings === 'yes' ? 'high' : capabilities.canReadSettings === 'unknown' ? 'medium' : 'low'}`}>
+          read path: {formatCapabilityState(capabilities.canReadSettings)}
+        </span>
+      </div>
+
+      <div className="settings-readiness-strip">
+        <div>
+          <span className="summary-label">Readable settings</span>
+          <strong>{readableSettingsCount}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Write path</span>
+          <strong>{formatWritePathStatus(capabilities.writePathStatus)}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Restart likely</span>
+          <strong>{formatCapabilityState(capabilities.requiresRestart)}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Source</span>
+          <strong>{capabilities.readSource}</strong>
+        </div>
+      </div>
+
+      <div className="detail-grid settings-readiness-grid">
+        <section className="detail-block">
+          <h3>Current coverage</h3>
+          <ul className="list compact">
+            <li><span>Can read settings</span><span>{formatCapabilityState(capabilities.canReadSettings)}</span></li>
+            <li><span>Can write settings</span><span>{formatCapabilityState(capabilities.canWriteSettings)}</span></li>
+            <li><span>Connector</span><span>{capabilities.connectorMode ?? 'unknown'}</span></li>
+            <li><span>Last snapshot</span><span>{capabilities.lastSettingsSnapshotAt ? formatTimestamp(capabilities.lastSettingsSnapshotAt) : 'None'}</span></li>
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Safety notes</h3>
+          <ul className="list compact">
+            {capabilities.safetyNotes.length === 0 ? <li><span>No setting safety notes are loaded yet.</span></li> : null}
+            {capabilities.safetyNotes.slice(0, 4).map((note) => (
+              <li key={note}><span>{note}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Validation steps</h3>
+          <ul className="list compact">
+            {capabilities.validationSteps.length === 0 ? <li><span>No validation steps are loaded yet.</span></li> : null}
+            {capabilities.validationSteps.slice(0, 4).map((step) => (
+              <li key={step}><span>{step}</span></li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="detail-block">
+          <h3>Rollback requirements</h3>
+          <ul className="list compact">
+            {capabilities.rollbackRequirements.length === 0 ? <li><span>No rollback requirements are loaded yet.</span></li> : null}
+            {capabilities.rollbackRequirements.slice(0, 4).map((requirement) => (
+              <li key={requirement}><span>{requirement}</span></li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      <div className="settings-readiness-actions">
+        <button
+          type="button"
+          className="review-button approve-button"
+          onClick={onOpenObservedSettings}
+          disabled={!canOpenObservedSettings}
+        >
+          View readable settings
+        </button>
+        <span>No apply, write, restart, or schedule controls are exposed.</span>
+      </div>
+    </article>
+  );
+}
+
 interface PalworldControlCapabilityPanelProps {
   summary: ServerSummary;
   guildActivity: PalworldGuildActivityEntry[];
@@ -3889,14 +4000,75 @@ interface PalworldBaseSignalHistoryEntry {
   baseSignal: number;
 }
 
-type DashboardTab = 'overview' | 'operator' | 'highlights' | 'players' | 'characters' | 'review-saves' | 'guilds' | 'activity' | 'metrics' | 'ops' | 'diagnostics';
+type DashboardTab = 'overview' | 'players' | 'settings' | 'backups' | 'history' | 'capabilities';
 type WorkspaceView = 'overview' | 'valheim' | 'palworld';
+type TopLevelArea = 'overview' | 'servers' | 'operations' | 'automation' | 'history' | 'administration';
+type CurrentOperationTone = 'ok' | 'warning' | 'offline' | 'unknown';
+type CrossOperationHistoryTone = 'ok' | 'warning' | 'offline' | 'unknown';
+type AdministrationReferenceTone = 'ok' | 'warning' | 'offline' | 'unknown';
+
+interface CurrentOperationItem {
+  server: ServerOption;
+  summary: ServerSummary | null;
+  tone: CurrentOperationTone;
+  label: string;
+  detail: string;
+  activity: string;
+}
+
+interface CrossOperationHistoryItem {
+  server: ServerOption;
+  summary: ServerSummary | null;
+  tone: CrossOperationHistoryTone;
+  label: string;
+  title: string;
+  detail: string;
+  observedAt: string | null;
+  source: string;
+}
+
+interface AdministrationReferenceItem {
+  server: ServerOption;
+  summary: ServerSummary | null;
+  tone: AdministrationReferenceTone;
+  label: string;
+  title: string;
+  detail: string;
+  maintenance: string;
+  source: string;
+}
 
 const apiBaseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const REFRESH_INTERVAL_MS = 15_000;
 const WARNING_GROUP_WINDOW_MS = 8 * 60 * 1000;
 const LIVE_SIGNAL_WINDOW_MS = 10 * 60 * 1000;
 const REVIEWED_GUILDS_STORAGE_PREFIX = 'gameops.reviewedGuilds.';
+
+const TOP_LEVEL_NAV_ITEMS: Array<{
+  key: TopLevelArea;
+  label: string;
+  question: string;
+  status: 'live' | 'planned';
+  plannedIntent?: string;
+}> = [
+  { key: 'overview', label: 'Overview', question: 'Is everything okay?', status: 'live' },
+  { key: 'servers', label: 'Servers', question: 'Which server needs attention?', status: 'live' },
+  { key: 'operations', label: 'Operations', question: 'What work is happening right now?', status: 'live' },
+  {
+    key: 'automation',
+    label: 'Automation',
+    question: 'What will happen automatically?',
+    status: 'planned',
+    plannedIntent: 'Planned for real schedules, rules, and templates when loaded automation data exists.'
+  },
+  { key: 'history', label: 'History', question: 'What happened across the operation?', status: 'live' },
+  {
+    key: 'administration',
+    label: 'Administration',
+    question: 'What can I configure or maintain?',
+    status: 'live'
+  }
+];
 
 function getReviewedGuildsStorageKey(serverId: string): string {
   return `${REVIEWED_GUILDS_STORAGE_PREFIX}${serverId}`;
@@ -3992,6 +4164,23 @@ function getTelemetryAvailabilityLabel(summary: ServerSummary): string {
     : 'unavailable';
 }
 
+function getEvidenceToneFromOperationalStatus(summary: ServerSummary): 'high' | 'medium' | 'low' {
+  if (summary.operationalStatus.connectorStatus === 'running' && summary.dataFreshness.status === 'live') {
+    return 'high';
+  }
+
+  if (
+    summary.operationalStatus.connectorStatus === 'degraded'
+    || summary.operationalStatus.connectorStatus === 'stale'
+    || summary.dataFreshness.status === 'stale'
+    || summary.dataFreshness.status === 'historical'
+  ) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
 function getGameLabel(game: ServerOption['game']): string {
   return game === 'palworld' ? 'Palworld' : 'Valheim';
 }
@@ -4038,6 +4227,7 @@ function App() {
   const [operatorMemoryIndex, setOperatorMemoryIndex] = useState<OperatorMemoryIndexResponse | null>(null);
   const [operatorMemoryIndexLoading, setOperatorMemoryIndexLoading] = useState(false);
   const [operatorMemoryIndexError, setOperatorMemoryIndexError] = useState<string | null>(null);
+  const [activeTopLevelArea, setActiveTopLevelArea] = useState<TopLevelArea>('overview');
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('overview');
   const [selectedGameFilter, setSelectedGameFilter] = useState<GameFilter>('all');
   const [selectedServerId, setSelectedServerId] = useState<string>('');
@@ -4130,6 +4320,7 @@ function App() {
   const [drawerLinkSuccess, setDrawerLinkSuccess] = useState<string | null>(null);
   const [drawerLinkSubmitting, setDrawerLinkSubmitting] = useState(false);
   const reviewedGuildStorageServerId = useRef<string | null>(null);
+  const pendingDashboardTabRef = useRef<{ serverId: string; tab: DashboardTab } | null>(null);
 
   useEffect(() => {
     setSelectedValheimPlayerLookupKey(null);
@@ -4178,7 +4369,8 @@ function App() {
     setWorldMemorySearchQuery('');
     setSelectedMemoryDetail(null);
     setSelectedWorldEventDetail(null);
-    setSelectedDashboardTab('overview');
+    const pendingDashboardTab = pendingDashboardTabRef.current;
+    setSelectedDashboardTab(pendingDashboardTab?.serverId === selectedServerId ? pendingDashboardTab.tab : 'overview');
   }, [selectedServerId]);
 
   useEffect(() => {
@@ -6249,7 +6441,7 @@ function App() {
       actions.push({
         label: `${palworldUrgentGuildRiskCount} urgent guild ${palworldUrgentGuildRiskCount === 1 ? 'risk needs' : 'risks need'} review`,
         cta: 'View Guilds',
-        targetTab: 'guilds'
+        targetTab: 'players'
       });
     }
 
@@ -6265,23 +6457,23 @@ function App() {
       actions.push({
         label: `Resolve missing activity data for ${unknownGuildActivityCount} ${unknownGuildActivityCount === 1 ? 'guild' : 'guilds'}`,
         cta: 'View Guilds',
-        targetTab: 'guilds'
+        targetTab: 'players'
       });
     }
 
     if (palworldBaseCapacityAlerts && palworldBaseCapacityAlerts.severity !== 'safe') {
       actions.push({
         label: palworldBaseCapacityAlerts.alertMessage,
-        cta: 'View Operations',
-        targetTab: 'ops'
+        cta: 'View Capabilities',
+        targetTab: 'capabilities'
       });
     }
 
     if (palworldBaseCapacityAlerts?.growthAlert) {
       actions.push({
         label: palworldBaseCapacityAlerts.growthAlert,
-        cta: 'View Operations',
-        targetTab: 'ops'
+        cta: 'View Capabilities',
+        targetTab: 'capabilities'
       });
     }
 
@@ -6413,6 +6605,203 @@ function App() {
         summary: fleetByServerId[server.id]
       }));
   }, [fleetByServerId, serverOptions]);
+  const currentOperationItems = useMemo(() => {
+    const items = worldCards.reduce<CurrentOperationItem[]>((workItems, { server, summary }) => {
+        if (!summary) {
+          workItems.push({
+            server,
+            summary: null,
+            tone: 'unknown',
+            label: 'Waiting for data',
+            detail: 'Current server summary has not loaded yet.',
+            activity: 'No current activity data available.'
+          });
+          return workItems;
+        }
+
+        const warningCount = summary.recentWarnings.length;
+        const onlineNow = summary.game === 'palworld'
+          ? summary.palworldLatestPlayers.filter((player) => player.isOnline).length || summary.activePlayers
+          : summary.activePlayers;
+        const latestActivity = getLatestActivityLabel(summary);
+
+        if (summary.state === 'degraded' || summary.state === 'offline') {
+          workItems.push({
+            server,
+            summary,
+            tone: summary.state === 'degraded' ? 'warning' : 'offline',
+            label: summary.state === 'degraded' ? 'Server needs attention' : 'Server is offline',
+            detail: summary.operationalStatus.explanation,
+            activity: latestActivity
+          });
+          return workItems;
+        }
+
+        if (warningCount > 0) {
+          workItems.push({
+            server,
+            summary,
+            tone: 'warning',
+            label: `${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'} need review`,
+            detail: summary.recentWarnings[0]?.message ?? summary.operationalStatus.explanation,
+            activity: latestActivity
+          });
+          return workItems;
+        }
+
+        if (summary.dataFreshness.status === 'stale' || summary.dataFreshness.status === 'historical') {
+          workItems.push({
+            server,
+            summary,
+            tone: 'warning',
+            label: `Data is ${summary.dataFreshness.status}`,
+            detail: summary.dataFreshness.recommendedAction,
+            activity: latestActivity
+          });
+          return workItems;
+        }
+
+        if (onlineNow > 0) {
+          workItems.push({
+            server,
+            summary,
+            tone: 'ok',
+            label: `${onlineNow} ${onlineNow === 1 ? 'player is' : 'players are'} active now`,
+            detail: 'Live player activity is present.',
+            activity: latestActivity
+          });
+          return workItems;
+        }
+
+        return workItems;
+      }, []);
+
+    return items.slice(0, 6);
+  }, [worldCards]);
+  const crossOperationHistoryItems = useMemo(() => {
+    const items = worldCards.reduce<CrossOperationHistoryItem[]>((historyItems, { server, summary }) => {
+      if (!summary) {
+        historyItems.push({
+          server,
+          summary: null,
+          tone: 'unknown',
+          label: 'No history loaded',
+          title: 'Waiting for server history',
+          detail: 'This server has not loaded enough historical data for the cross-operation record yet.',
+          observedAt: null,
+          source: 'Loaded summaries'
+        });
+        return historyItems;
+      }
+
+      const activity = summary.activityLog[0];
+      if (activity) {
+        historyItems.push({
+          server,
+          summary,
+          tone: activity.severity === 'critical' ? 'offline' : activity.severity === 'warning' ? 'warning' : 'ok',
+          label: activity.title,
+          title: activity.description,
+          detail: activity.explanation,
+          observedAt: activity.timestamp,
+          source: `Activity log • ${activity.confidence} confidence`
+        });
+        return historyItems;
+      }
+
+      const event = summary.recentEvents[0];
+      if (event) {
+        historyItems.push({
+          server,
+          summary,
+          tone: 'unknown',
+          label: event.eventType.toLowerCase().replace(/_/g, ' '),
+          title: event.message ?? event.eventType,
+          detail: event.playerName ? `Observed for ${event.playerName}.` : 'Observed in the loaded server event stream.',
+          observedAt: event.occurredAt,
+          source: 'Recent event'
+        });
+        return historyItems;
+      }
+
+      const lastFreshnessAt = summary.dataFreshness.lastSessionActivityAt
+        ?? summary.dataFreshness.lastEventAt
+        ?? summary.dataFreshness.lastSuccessfulPollAt
+        ?? summary.dataFreshness.lastHeartbeatAt
+        ?? null;
+
+      historyItems.push({
+        server,
+        summary,
+        tone: summary.dataFreshness.status === 'live' ? 'ok' : summary.dataFreshness.status === 'error' ? 'offline' : 'unknown',
+        label: summary.dataFreshness.status,
+        title: summary.dataFreshness.headline,
+        detail: summary.dataFreshness.explanation,
+        observedAt: lastFreshnessAt,
+        source: 'Data trust'
+      });
+      return historyItems;
+    }, []);
+
+    return items
+      .sort((left, right) => {
+        if (!left.observedAt && !right.observedAt) {
+          return left.server.displayName.localeCompare(right.server.displayName);
+        }
+
+        if (!left.observedAt) {
+          return 1;
+        }
+
+        if (!right.observedAt) {
+          return -1;
+        }
+
+        return new Date(right.observedAt).getTime() - new Date(left.observedAt).getTime();
+      })
+      .slice(0, 6);
+  }, [worldCards]);
+  const administrationReferenceItems = useMemo(() => {
+    return worldCards.map<AdministrationReferenceItem>(({ server, summary }) => {
+      if (!summary) {
+        return {
+          server,
+          summary: null,
+          tone: 'unknown',
+          label: 'Loading reference',
+          title: server.displayName,
+          detail: 'Configuration and maintenance reference has not loaded for this server yet.',
+          maintenance: 'Open the server console when data is available.',
+          source: 'Configured server'
+        };
+      }
+
+      const capabilities = summary.settingsCapabilities;
+      const canRead = capabilities.canReadSettings === 'yes';
+      const canWrite = capabilities.canWriteSettings === 'yes';
+      const backupReadiness = summary.palworldBackupReadiness;
+      const tone: AdministrationReferenceTone = canWrite
+        ? 'warning'
+        : canRead
+          ? 'ok'
+          : capabilities.canReadSettings === 'unknown'
+            ? 'unknown'
+            : 'offline';
+
+      return {
+        server,
+        summary,
+        tone,
+        label: canWrite ? 'write path visible' : `read path ${formatCapabilityState(capabilities.canReadSettings)}`,
+        title: summary.displayName,
+        detail: `${getGameLabel(summary.game)} settings reference: ${capabilities.nextSafeStep}`,
+        maintenance: backupReadiness
+          ? `Backup readiness: ${backupReadiness.readinessStatus}.`
+          : 'No backup readiness evidence is loaded at the top level.',
+        source: `${capabilities.readSource} • write path ${formatWritePathStatus(capabilities.writePathStatus)}`
+      };
+    });
+  }, [worldCards]);
   const fleetCounts = useMemo(() => {
     const countedServers = activeWorkspace === 'overview' ? serverOptions : filteredServers;
     const visibleSummaries = countedServers
@@ -6434,30 +6823,55 @@ function App() {
   );
 
   const detailTabs = useMemo(() => {
-    if (selectedServer?.game === 'palworld') {
-      return [
-        { key: 'highlights', label: 'Chronicle' },
-        { key: 'overview', label: 'Community' },
-        { key: 'players', label: 'Players' },
-        { key: 'guilds', label: 'Guilds' },
-        { key: 'ops', label: 'Operations' }
-      ] satisfies Array<{ key: DashboardTab; label: string }>;
-    }
-
     return [
-      { key: 'activity', label: 'Chronicle' },
-      { key: 'overview', label: 'Community' },
+      { key: 'overview', label: 'Overview' },
       { key: 'players', label: 'Players' },
-      { key: 'characters', label: 'Characters' },
-      { key: 'ops', label: 'Operations' }
+      { key: 'settings', label: 'Settings' },
+      { key: 'backups', label: 'Backups' },
+      { key: 'history', label: 'History' },
+      { key: 'capabilities', label: 'Capabilities' }
     ] satisfies Array<{ key: DashboardTab; label: string }>;
-  }, [selectedServer?.game]);
+  }, []);
 
   useEffect(() => {
     if (!detailTabs.some((tab) => tab.key === selectedDashboardTab)) {
       setSelectedDashboardTab('overview');
     }
   }, [detailTabs, selectedDashboardTab]);
+
+  function focusDashboardTab(targetTab: DashboardTab): void {
+    setSelectedDashboardTab(targetTab);
+    requestAnimationFrame(() => {
+      document.getElementById(`server-tab-${targetTab}`)?.focus();
+    });
+  }
+
+  function handleDashboardTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: DashboardTab): void {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    const currentIndex = detailTabs.findIndex((tab) => tab.key === currentTab);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    if (event.key === 'Home') {
+      focusDashboardTab(detailTabs[0].key);
+      return;
+    }
+
+    if (event.key === 'End') {
+      focusDashboardTab(detailTabs[detailTabs.length - 1].key);
+      return;
+    }
+
+    const nextIndex = event.key === 'ArrowRight'
+      ? (currentIndex + 1) % detailTabs.length
+      : (currentIndex - 1 + detailTabs.length) % detailTabs.length;
+    focusDashboardTab(detailTabs[nextIndex].key);
+  }
 
   const selectedAlertCount = useMemo(() => {
     let count = selectedServerSummary?.recentWarnings.length ?? 0;
@@ -6474,6 +6888,116 @@ function App() {
 
     return count;
   }, [palworldBaseCapacityAlerts, selectedServer?.game, selectedServerSummary]);
+
+  const selectedRecommendedAction = useMemo(() => {
+    if (!selectedServerSummary) {
+      return 'Select a server to inspect.';
+    }
+
+    if (selectedServer?.game === 'palworld') {
+      return palworldNextActions[0]?.label ?? 'No immediate action needed';
+    }
+
+    return selectedWarningSummary[0]?.snippet ?? 'No immediate action needed';
+  }, [palworldNextActions, selectedServer?.game, selectedServerSummary, selectedWarningSummary]);
+
+  const selectedOnlinePlayerCount = selectedServer?.game === 'palworld'
+    ? palworldLatestPlayers.filter((player) => player.isOnline).length || selectedServerSummary?.activePlayers || 0
+    : selectedServerSummary?.activePlayers ?? 0;
+  const selectedAttentionWarnings = useMemo(() => {
+    const warnings = selectedWarningSummary.map((warning) => warning.snippet);
+
+    if (selectedServer?.game === 'palworld' && palworldBaseCapacityAlerts) {
+      if (palworldBaseCapacityAlerts.alertMessage && palworldBaseCapacityAlerts.severity !== 'safe') {
+        warnings.push(palworldBaseCapacityAlerts.alertMessage);
+      }
+
+      if (palworldBaseCapacityAlerts.growthAlert) {
+        warnings.push(palworldBaseCapacityAlerts.growthAlert);
+      }
+    }
+
+    return warnings;
+  }, [palworldBaseCapacityAlerts, selectedServer?.game, selectedWarningSummary]);
+  const selectedReadableSettingsCount = selectedServerSummary?.observedSettings?.available
+    ? selectedServerSummary.observedSettings.groups.reduce((sum, group) => sum + group.settings.length, 0)
+    : 0;
+  const selectedSettingsStatus = useMemo(() => {
+    const capabilities = selectedServerSummary?.settingsCapabilities;
+
+    if (!capabilities) {
+      return {
+        label: 'Unknown',
+        tone: 'low' as const,
+        summary: 'Settings confidence is unknown because no settings capability data is loaded.',
+        details: ['No settings capability data is loaded for this server.']
+      };
+    }
+
+    if (capabilities.canReadSettings === 'yes') {
+      return {
+        label: capabilities.canWriteSettings === 'yes' ? 'Review required' : 'Read-only',
+        tone: capabilities.canWriteSettings === 'yes' ? 'medium' as const : 'high' as const,
+        summary: capabilities.nextSafeStep,
+        details: [
+          `Readable settings are available from ${capabilities.readSource}.`,
+          capabilities.canWriteSettings === 'yes'
+            ? 'Existing controls still require safety review before any change.'
+            : 'No apply, write, restart, or schedule controls are exposed here.'
+        ]
+      };
+    }
+
+    if (capabilities.canReadSettings === 'unknown') {
+      return {
+        label: 'Unknown',
+        tone: 'medium' as const,
+        summary: capabilities.nextSafeStep,
+        details: ['Settings read confidence is unknown from the current server state.']
+      };
+    }
+
+    return {
+      label: 'Unavailable',
+      tone: 'low' as const,
+      summary: capabilities.nextSafeStep,
+      details: ['Settings are not readable from the current server state.']
+    };
+  }, [selectedServerSummary]);
+  const selectedBackupStatus = useMemo(() => {
+    const readiness = selectedServerSummary?.palworldBackupReadiness;
+
+    if (!readiness) {
+      return {
+        label: 'Unknown',
+        tone: 'low' as const,
+        summary: 'No backup readiness details are available for this server yet.',
+        details: ['Existing recovery evidence will appear here when the current data source provides it.']
+      };
+    }
+
+    if (readiness.readinessStatus === 'ready_for_manual_backup_plan') {
+      return {
+        label: 'Evidence available',
+        tone: 'medium' as const,
+        summary: 'Backup and rollback evidence is available for manual review.',
+        details: [
+          'No backup has been created by this screen.',
+          readiness.reasonCreateBackupDisabled
+        ]
+      };
+    }
+
+    return {
+      label: 'Needs review',
+      tone: 'low' as const,
+      summary: 'Recovery readiness needs manual review before relying on it.',
+      details: [
+        'Backup readiness is not reporting a ready manual backup plan.',
+        readiness.reasonCreateBackupDisabled
+      ]
+    };
+  }, [selectedServerSummary]);
 
   const palworldOverviewHighlights = useMemo(() => {
     const items: string[] = [];
@@ -6712,14 +7236,14 @@ function App() {
     setSelectedMemoryDetail(null);
 
     if (record.game === 'valheim' && record.type === 'character') {
-      setSelectedDashboardTab('characters');
+      setSelectedDashboardTab('players');
       setSelectedPlayerIntelligenceId(String(record.metadata.playerId ?? record.id));
       setSelectedValheimPlayerLookupKey(normalizePlayerKey(record.displayName));
       return;
     }
 
     if (record.game === 'palworld' && record.type === 'guild') {
-      setSelectedDashboardTab('guilds');
+      setSelectedDashboardTab('players');
       setExpandedGuildActivityName(record.displayName);
       return;
     }
@@ -6805,54 +7329,81 @@ function App() {
     ? palworldCommunityPulse
     : valheimCommunityPulse;
 
-  const palworldServerHealthSummary = useMemo(() => {
-    if (!hasPalworldBaseTelemetry || !palworldBaseCapacity) {
+  const selectedHistorySummary = useMemo(() => {
+    if (!selectedServer || !selectedServerSummary) {
       return null;
     }
 
+    const chronicleCount = selectedServer.game === 'palworld' ? palworldChronicleEvents.length : valheimChronicleEvents.length;
+    const trustedEventCount = selectedWorldEventsArePreviewFallback ? 0 : selectedWorldEventHighlights.totalEvents;
+    const latestChange = selectedWorldEventHighlights.events[0]?.title ?? activeHighlights[0] ?? 'No major world change is highlighted yet.';
+    const statusLabel = trustedEventCount > 0
+      ? 'trusted history'
+      : selectedWorldEventsArePreviewFallback
+        ? 'preview history'
+        : 'thin history';
+
     return {
-      status: palworldBaseCapacity.statusLabel,
-      estimatedBasesLabel: `${palworldBaseCapacity.estimatedBases} / 240`,
-      remainingSlotsLabel: `${palworldBaseCapacity.remainingCapacity}`,
-      trendLabel: `${palworldBaseSignalTrend.indicator} ${palworldBaseSignalTrend.direction}`,
-      summary: palworldBaseCapacity.summary
+      statusLabel,
+      statusTone: (trustedEventCount > 0 ? 'high' : chronicleCount > 0 ? 'medium' : 'low') as 'high' | 'medium' | 'low',
+      summary: trustedEventCount > 0
+        ? 'Recent world events are available and ordered by operational relevance.'
+        : chronicleCount > 0
+          ? 'Chronicle records are available, but trusted world event history is still thin.'
+          : 'This server has limited historical evidence so far.',
+      details: [
+        latestChange,
+        selectedWorldEventsArePreviewFallback
+          ? 'Preview history is shown until trusted World Events are available.'
+          : `${trustedEventCount} trusted ${trustedEventCount === 1 ? 'event' : 'events'} available.`,
+        `${chronicleCount} chronicle ${chronicleCount === 1 ? 'entry' : 'entries'} available for exploration.`
+      ],
+      metrics: [
+        { label: 'Trusted events', value: trustedEventCount },
+        { label: 'Chronicle entries', value: chronicleCount },
+        { label: 'World memories', value: searchableWorldMemoryRecords.length },
+        { label: 'Activity records', value: selectedServerSummary.activityLog.length }
+      ]
     };
-  }, [hasPalworldBaseTelemetry, palworldBaseCapacity, palworldBaseSignalTrend.direction, palworldBaseSignalTrend.indicator]);
+  }, [
+    activeHighlights,
+    palworldChronicleEvents.length,
+    searchableWorldMemoryRecords.length,
+    selectedServer,
+    selectedServerSummary,
+    selectedWorldEventHighlights,
+    selectedWorldEventsArePreviewFallback,
+    valheimChronicleEvents.length
+  ]);
 
-  const serverHealthTone = useMemo(() => {
-    if (selectedServer?.game === 'palworld' && palworldServerHealthSummary) {
-      const normalized = palworldServerHealthSummary.status.toLowerCase();
-
-      if (normalized === 'safe') {
-        return 'safe';
-      }
-
-      if (normalized === 'critical') {
-        return 'critical';
-      }
-
-      if (normalized === 'high') {
-        return 'high';
-      }
-
-      return 'warning';
+  const selectedCapabilitySummary = useMemo(() => {
+    if (!selectedServerSummary) {
+      return null;
     }
 
-    if (selectedServerSummary?.state === 'online') {
-      return 'safe';
-    }
+    const telemetryLabel = getTelemetryAvailabilityLabel(selectedServerSummary);
+    const capabilityCount = selectedServerSummary.operationalStatus.capabilities.length;
+    const collectorCount = selectedServerSummary.operationalStatus.collectors.length;
 
-    if (selectedServerSummary?.state === 'degraded') {
-      return 'warning';
-    }
-
-    if (selectedServerSummary?.state === 'offline') {
-      return 'critical';
-    }
-
-    return 'high';
-  }, [palworldServerHealthSummary, selectedServer?.game, selectedServerSummary?.state]);
-
+    return {
+      statusLabel: selectedServerSummary.operationalStatus.connectorStatus,
+      statusTone: getEvidenceToneFromOperationalStatus(selectedServerSummary),
+      summary: selectedServerSummary.operationalStatus.explanation,
+      details: [
+        `Telemetry is ${telemetryLabel}.`,
+        selectedServerSummary.operationalStatus.configured
+          ? 'This server has a configured connector profile.'
+          : 'This server does not have a configured connector profile.',
+        selectedServerSummary.dataFreshness.trustWarnings[0] ?? selectedServerSummary.dataFreshness.recommendedAction
+      ],
+      metrics: [
+        { label: 'Data freshness', value: selectedServerSummary.dataFreshness.status },
+        { label: 'Telemetry', value: telemetryLabel },
+        { label: 'Capabilities', value: capabilityCount },
+        { label: 'Collectors', value: collectorCount }
+      ]
+    };
+  }, [selectedServerSummary]);
   return (
     <main className="dashboard">
       <header className="dashboard-header">
@@ -6862,11 +7413,80 @@ function App() {
         </div>
 
         <div className="dashboard-control-rail">
+          <nav className="top-level-nav" aria-label="Top-level operations console areas">
+            {TOP_LEVEL_NAV_ITEMS.map((item) => {
+              const isActive = activeTopLevelArea === item.key;
+              const isImplemented = item.status === 'live';
+              const isUnavailable = !isImplemented;
+
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`top-level-nav-item ${isActive ? 'top-level-nav-item-active' : ''} ${isUnavailable ? 'top-level-nav-item-planned' : ''}`}
+                  aria-label={`${item.label}, ${item.status === 'live' ? 'live area' : 'planned area'}. ${item.question}`}
+                  aria-current={isActive ? 'page' : undefined}
+                  aria-disabled={isUnavailable ? 'true' : undefined}
+                  onClick={() => {
+                    if (!isImplemented) {
+                      return;
+                    }
+
+                    if (item.key === 'overview') {
+                      setActiveTopLevelArea('overview');
+                      setActiveWorkspace('overview');
+                      setSelectedGameFilter('all');
+                      return;
+                    }
+
+                    if (item.key === 'servers') {
+                      setActiveTopLevelArea('servers');
+                      if (!selectedServer) {
+                        setActiveWorkspace('overview');
+                        setSelectedGameFilter('all');
+                        return;
+                      }
+                      setActiveWorkspace(selectedServer.game);
+                      setSelectedGameFilter(selectedServer.game);
+                      return;
+                    }
+
+                    if (item.key === 'operations') {
+                      setActiveTopLevelArea('operations');
+                      return;
+                    }
+
+                    if (item.key === 'history') {
+                      setActiveTopLevelArea('history');
+                      return;
+                    }
+
+                    if (item.key === 'administration') {
+                      setActiveTopLevelArea('administration');
+                    }
+                  }}
+                >
+                  <span className="top-level-nav-label-row">
+                    <span>{item.label}</span>
+                    <span className={`top-level-nav-status top-level-nav-status-${item.status}`}>
+                      {item.status === 'live' ? 'live' : 'planned'}
+                    </span>
+                  </span>
+                  <span className="top-level-nav-question">{item.question}</span>
+                  {isUnavailable && item.plannedIntent ? (
+                    <span className="top-level-nav-planned-intent">{item.plannedIntent}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </nav>
+
           <nav className="workspace-nav" aria-label="Workspace navigation">
             <button
               type="button"
               className={activeWorkspace === 'overview' ? 'workspace-nav-item workspace-nav-item-active' : 'workspace-nav-item'}
               onClick={() => {
+                setActiveTopLevelArea('overview');
                 setActiveWorkspace('overview');
                 setSelectedGameFilter('all');
               }}
@@ -6878,6 +7498,7 @@ function App() {
               type="button"
               className={activeWorkspace === 'valheim' ? 'workspace-nav-item workspace-nav-item-active workspace-nav-valheim' : 'workspace-nav-item workspace-nav-valheim'}
               onClick={() => {
+                setActiveTopLevelArea('servers');
                 setActiveWorkspace('valheim');
                 setSelectedGameFilter('valheim');
               }}
@@ -6889,6 +7510,7 @@ function App() {
               type="button"
               className={activeWorkspace === 'palworld' ? 'workspace-nav-item workspace-nav-item-active workspace-nav-palworld' : 'workspace-nav-item workspace-nav-palworld'}
               onClick={() => {
+                setActiveTopLevelArea('servers');
                 setActiveWorkspace('palworld');
                 setSelectedGameFilter('palworld');
               }}
@@ -6921,7 +7543,7 @@ function App() {
                 <span className="status-value">{formatClock(lastUpdatedAt)}</span>
               </div>
             ) : null}
-            {activeWorkspace !== 'overview' && selectedServer && selectedServerSummary ? (
+            {activeTopLevelArea === 'servers' && activeWorkspace !== 'overview' && selectedServer && selectedServerSummary ? (
               <>
                 <div className="status-pill selected-status-pill">
                   <span className="status-label">Selected</span>
@@ -6949,14 +7571,19 @@ function App() {
             ) : null}
           </div>
 
-          {activeWorkspace !== 'overview' && selectedServer && selectedServerSummary ? (
-            <div className="dashboard-tab-row">
+          {activeTopLevelArea === 'servers' && activeWorkspace !== 'overview' && selectedServer && selectedServerSummary ? (
+            <div className="dashboard-tab-row" role="tablist" aria-label={`${selectedServerSummary.displayName} server sections`}>
               {detailTabs.map((tab) => (
                 <button
                   key={tab.key}
+                  id={`server-tab-${tab.key}`}
                   type="button"
-                  className={`review-button ${selectedDashboardTab === tab.key ? 'approve-button' : 'reject-button'}`}
+                  role="tab"
+                  aria-selected={selectedDashboardTab === tab.key}
+                  aria-controls="server-detail-panel"
+                  className={`review-button dashboard-tab-button ${selectedDashboardTab === tab.key ? 'dashboard-tab-button-active approve-button' : 'dashboard-tab-button-inactive reject-button'}`}
                   onClick={() => setSelectedDashboardTab(tab.key)}
+                  onKeyDown={(event) => handleDashboardTabKeyDown(event, tab.key)}
                 >
                   {tab.label}
                 </button>
@@ -6970,13 +7597,17 @@ function App() {
         {fleetError ? <p className="error dashboard-message">Fleet refresh failed: {fleetError}</p> : null}
       </header>
 
-      {activeWorkspace === 'overview' ? (
-        <section className="overview-shell" aria-label="Global Overview">
+      {activeTopLevelArea === 'overview' || (activeTopLevelArea === 'servers' && activeWorkspace === 'overview') ? (
+        <section className="overview-shell" aria-label={activeTopLevelArea === 'servers' ? 'Servers' : 'Global Overview'}>
           <div className="overview-heading">
             <div>
-              <span className="summary-label">Overview</span>
-              <h2>How are all my worlds?</h2>
-              <p className="subtle">One card per world. Open a world to inspect community, players, world history, and operations.</p>
+              <span className="summary-label">{activeTopLevelArea === 'servers' ? 'Servers' : 'Overview'}</span>
+              <h2>{activeTopLevelArea === 'servers' ? 'Which server needs attention?' : 'How are all my worlds?'}</h2>
+              <p className="subtle">
+                {activeTopLevelArea === 'servers'
+                  ? 'Choose a world to open its focused server console.'
+                  : 'One card per world. Open a world to inspect community, players, world history, and operations.'}
+              </p>
             </div>
           </div>
 
@@ -7029,7 +7660,10 @@ function App() {
                     type="button"
                     className="world-card-entry"
                     onClick={() => {
+                      setActiveTopLevelArea('servers');
+                      pendingDashboardTabRef.current = { serverId: server.id, tab: 'overview' };
                       setSelectedServerId(server.id);
+                      setSelectedDashboardTab('overview');
                       setSelectedGameFilter(server.game);
                       setActiveWorkspace(server.game);
                     }}
@@ -7043,8 +7677,236 @@ function App() {
         </section>
       ) : null}
 
-      {activeWorkspace !== 'overview' ? (
-      <section className={`detail-section workspace-shell workspace-shell-${activeWorkspace}`}>
+      {activeTopLevelArea === 'operations' ? (
+        <section className="operations-shell" aria-label="Operations">
+          <div className="overview-heading">
+            <div>
+              <span className="summary-label">Operations</span>
+              <h2>What work is happening right now?</h2>
+              <p className="subtle">Current server attention and live activity are summarized here. Details still live in the relevant server console.</p>
+            </div>
+          </div>
+
+          <section className="workspace-summary-strip" aria-label="Current operations summary">
+            <div>
+              <span className="summary-label">Current work</span>
+              <strong>{currentOperationItems.length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Degraded</span>
+              <strong>{worldCards.filter(({ summary }) => summary?.state === 'degraded').length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Players active</span>
+              <strong>{worldCards.reduce((sum, { summary }) => sum + (summary?.activePlayers ?? 0), 0)}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Warnings</span>
+              <strong>{worldCards.reduce((sum, { summary }) => sum + (summary?.recentWarnings.length ?? 0), 0)}</strong>
+            </div>
+          </section>
+
+          <div className="operations-work-list">
+            {currentOperationItems.length === 0 ? (
+              <article className="card server-empty-state-card">
+                <span className="summary-label">Current work</span>
+                <h2>No current work detected</h2>
+                <p className="subtle">No active player, warning, stale-data, degraded, or offline work is visible from the currently loaded fleet summaries.</p>
+              </article>
+            ) : null}
+
+            {currentOperationItems.map((item) => (
+              <article key={item.server.id} className="card operations-work-card">
+                <div>
+                  <span className="summary-label">{getGameLabel(item.server.game)}</span>
+                  <h3>{item.summary?.displayName ?? item.server.displayName}</h3>
+                  <p className="subtle">{item.detail}</p>
+                </div>
+                <div className="operations-work-meta">
+                  <span className={`state-pill state-${item.tone}`}>{item.label}</span>
+                  <span className="subtle">{item.activity}</span>
+                  <button
+                    type="button"
+                    className="world-card-entry"
+                    onClick={() => {
+                      setActiveTopLevelArea('servers');
+                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'overview' };
+                      setSelectedServerId(item.server.id);
+                      setSelectedDashboardTab('overview');
+                      setSelectedGameFilter(item.server.game);
+                      setActiveWorkspace(item.server.game);
+                    }}
+                  >
+                    Open server
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTopLevelArea === 'history' ? (
+        <section className="history-shell" aria-label="Cross-operation history">
+          <div className="overview-heading">
+            <div>
+              <span className="summary-label">History</span>
+              <h2>What happened across the operation?</h2>
+              <p className="subtle">Recent cross-server change is summarized here. Detailed timelines, chronicle search, and raw evidence remain in each server History tab.</p>
+            </div>
+          </div>
+
+          <section className="workspace-summary-strip" aria-label="Cross-operation history summary">
+            <div>
+              <span className="summary-label">History records</span>
+              <strong>{crossOperationHistoryItems.length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Servers with activity</span>
+              <strong>{worldCards.filter(({ summary }) => (summary?.activityLog.length ?? 0) > 0).length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Latest warnings</span>
+              <strong>{crossOperationHistoryItems.filter((item) => item.tone === 'warning' || item.tone === 'offline').length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Deep detail</span>
+              <strong>Server History</strong>
+            </div>
+          </section>
+
+          <div className="history-record-list">
+            {crossOperationHistoryItems.length === 0 ? (
+              <article className="card server-empty-state-card">
+                <span className="summary-label">Cross-operation history</span>
+                <h2>No cross-operation history loaded</h2>
+                <p className="subtle">The currently loaded fleet summaries do not include historical activity yet. Server History tabs will show deeper evidence when it is available.</p>
+              </article>
+            ) : null}
+
+            {crossOperationHistoryItems.map((item) => (
+              <article key={`${item.server.id}:${item.observedAt ?? item.label}`} className="card history-record-card">
+                <div>
+                  <span className="summary-label">{getGameLabel(item.server.game)} • {item.observedAt ? formatRelativeTime(item.observedAt) : 'time unknown'}</span>
+                  <h3>{item.title}</h3>
+                  <p className="subtle">{item.detail}</p>
+                </div>
+                <div className="history-record-meta">
+                  <span className={`state-pill state-${item.tone}`}>{item.label}</span>
+                  <span className="subtle">{item.summary?.displayName ?? item.server.displayName}</span>
+                  <span className="subtle">{item.source}</span>
+                  <button
+                    type="button"
+                    className="world-card-entry"
+                    onClick={() => {
+                      setActiveTopLevelArea('servers');
+                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'history' };
+                      setSelectedServerId(item.server.id);
+                      setSelectedGameFilter(item.server.game);
+                      setActiveWorkspace(item.server.game);
+                      setSelectedDashboardTab('history');
+                    }}
+                  >
+                    Open server history
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTopLevelArea === 'administration' ? (
+        <section className="administration-shell" aria-label="Administration reference">
+          <div className="overview-heading">
+            <div>
+              <span className="summary-label">Administration</span>
+              <h2>What can I configure or maintain?</h2>
+              <p className="subtle">Configuration and maintenance reference is summarized across configured servers. Detailed controls and evidence remain in each server Settings, Backups, and Capabilities tab.</p>
+            </div>
+          </div>
+
+          <section className="workspace-summary-strip" aria-label="Administration reference summary">
+            <div>
+              <span className="summary-label">Configured servers</span>
+              <strong>{serverOptions.length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Readable settings</span>
+              <strong>{worldCards.filter(({ summary }) => summary?.settingsCapabilities.canReadSettings === 'yes').length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Write paths visible</span>
+              <strong>{worldCards.filter(({ summary }) => summary?.settingsCapabilities.canWriteSettings === 'yes').length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Backup evidence</span>
+              <strong>{worldCards.filter(({ summary }) => Boolean(summary?.palworldBackupReadiness)).length}</strong>
+            </div>
+          </section>
+
+          <div className="administration-reference-list">
+            {administrationReferenceItems.length === 0 ? (
+              <article className="card server-empty-state-card">
+                <span className="summary-label">Administration reference</span>
+                <h2>No configuration reference loaded</h2>
+                <p className="subtle">Configured server, settings capability, and maintenance reference will appear here when existing fleet data is loaded.</p>
+              </article>
+            ) : null}
+
+            {administrationReferenceItems.map((item) => (
+              <article key={item.server.id} className="card administration-reference-card">
+                <div>
+                  <span className="summary-label">{getGameLabel(item.server.game)} • read-only reference</span>
+                  <h3>{item.title}</h3>
+                  <p className="subtle">{item.detail}</p>
+                  <p className="subtle">{item.maintenance}</p>
+                </div>
+                <div className="administration-reference-meta">
+                  <span className={`state-pill state-${item.tone}`}>{item.label}</span>
+                  <span className="subtle">{item.source}</span>
+                  <button
+                    type="button"
+                    className="world-card-entry"
+                    onClick={() => {
+                      setActiveTopLevelArea('servers');
+                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'settings' };
+                      setSelectedServerId(item.server.id);
+                      setSelectedGameFilter(item.server.game);
+                      setActiveWorkspace(item.server.game);
+                      setSelectedDashboardTab('settings');
+                    }}
+                  >
+                    Open settings
+                  </button>
+                  <button
+                    type="button"
+                    className="world-card-entry"
+                    onClick={() => {
+                      setActiveTopLevelArea('servers');
+                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'capabilities' };
+                      setSelectedServerId(item.server.id);
+                      setSelectedGameFilter(item.server.game);
+                      setActiveWorkspace(item.server.game);
+                      setSelectedDashboardTab('capabilities');
+                    }}
+                  >
+                    Open capabilities
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTopLevelArea === 'servers' && activeWorkspace !== 'overview' ? (
+      <section
+        id="server-detail-panel"
+        className={`detail-section workspace-shell workspace-shell-${activeWorkspace}`}
+        role={selectedServer && selectedServerSummary ? 'tabpanel' : undefined}
+        aria-labelledby={selectedServer && selectedServerSummary ? `server-tab-${selectedDashboardTab}` : undefined}
+      >
         {!selectedServer || !selectedServerSummary ? (
           <article className="card detail-card">
             <p className="subtle">Select a server from the fleet overview to inspect details.</p>
@@ -7053,22 +7915,49 @@ function App() {
           <>
             {detailLoading ? <p className="subtle">Loading game-specific telemetry...</p> : null}
             {detailError ? <p className="subtle dashboard-message">{detailError}</p> : null}
+            {selectedDashboardTab !== 'overview' ? (
             <section className={`world-workspace-header world-workspace-header-${selectedServer.game}`}>
               <div className="world-workspace-presence">
                 <span className="world-workspace-symbol" aria-hidden="true">{getGameSymbol(selectedServer.game)}</span>
                 <div>
-                  <span className="summary-label">{getGameLabel(selectedServer.game)} Workspace</span>
+                  <span className="summary-label">{getGameLabel(selectedServer.game)} Server</span>
                   <h2>{selectedServerSummary.displayName}</h2>
-                  <p>{selectedServer.game === 'palworld' ? 'Palworld players, guilds, world context, and operations for this server only.' : 'Valheim community, players, world history, and operations for this server only.'}</p>
+                  <p>{detailTabs.find((tab) => tab.key === selectedDashboardTab)?.label ?? 'Server'} view</p>
                 </div>
               </div>
-              <span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span>
+              <div className="server-attention-summary">
+                <span className={`state-pill state-${selectedServerSummary.state}`}>{selectedServerSummary.state}</span>
+                <span>{selectedRecommendedAction}</span>
+              </div>
             </section>
+            ) : null}
 
+            {selectedDashboardTab === 'overview' ? (
+              <ServerAttentionSummary
+                gameLabel={getGameLabel(selectedServer.game)}
+                gameSymbol={getGameSymbol(selectedServer.game)}
+                serverName={selectedServerSummary.displayName}
+                status={selectedServerSummary.state as ServerAttentionStatus}
+                statusMessage={selectedWarningSummary[0]?.snippet ?? selectedServerSummary.operationalStatus.explanation}
+                warningCount={selectedAlertCount}
+                warnings={selectedAttentionWarnings}
+                recommendedAction={selectedRecommendedAction}
+                currentActivity={selectedOnlinePlayerCount > 0
+                  ? `${selectedOnlinePlayerCount} ${selectedOnlinePlayerCount === 1 ? 'player is' : 'players are'} online now.`
+                  : 'No players are online right now.'}
+                recentChange={selectedServer.game === 'palworld' ? palworldOverviewHighlights[0] : activeHighlights[0]}
+                metrics={[
+                  { label: 'Online now', value: selectedOnlinePlayerCount },
+                  { label: 'Active this week', value: selectedServerSummary.serverAliveRhythm.sevenDays.uniqueActivePlayers },
+                  { label: 'Last activity', value: getLatestActivityLabel(selectedServerSummary) },
+                  { label: 'Data', value: selectedServerSummary.dataFreshness.status }
+                ]}
+              />
+            ) : (
             <section className="workspace-summary-strip" aria-label="World summary">
               <div>
                 <span className="summary-label">Online now</span>
-                <strong>{selectedServer.game === 'palworld' ? palworldLatestPlayers.filter((player) => player.isOnline).length || selectedServerSummary.activePlayers : selectedServerSummary.activePlayers}</strong>
+                <strong>{selectedOnlinePlayerCount}</strong>
               </div>
               <div>
                 <span className="summary-label">Active this week</span>
@@ -7083,135 +7972,309 @@ function App() {
                 <strong>{selectedServerSummary.dataFreshness.status}</strong>
               </div>
             </section>
+            )}
 
-            <WorldMemorySearch
-              game={selectedServer.game}
-              query={worldMemorySearchQuery}
-              results={worldMemorySearchResults}
-              totalMemories={searchableWorldMemoryRecords.length}
-              onQueryChange={setWorldMemorySearchQuery}
-              onOpenResult={openWorldMemoryRecord}
-            />
+            {selectedDashboardTab === 'history' && selectedHistorySummary ? (
+              <section className="server-focused-tab-grid evidence-surface" aria-label="Server history">
+                <EvidenceSurfaceSection
+                  eyebrow="Operator Timeline Summary"
+                  title="What happened?"
+                  description="History starts with the most meaningful change before exposing search tools and raw event evidence."
+                >
+                  <EvidenceSummaryCard
+                    eyebrow="Timeline read"
+                    question="What happened?"
+                    statusLabel={selectedHistorySummary.statusLabel}
+                    statusTone={selectedHistorySummary.statusTone}
+                    summary={selectedHistorySummary.summary}
+                    details={selectedHistorySummary.details}
+                    metrics={selectedHistorySummary.metrics}
+                  />
+                </EvidenceSurfaceSection>
 
-            {selectedDashboardTab === 'overview' ? (
-              <WorldChroniclePanel
-                title={selectedServer.game === 'palworld' ? 'Archipelago Chronicle' : 'Realm Chronicle'}
-                events={selectedServer.game === 'palworld' ? palworldChronicleEvents : valheimChronicleEvents}
-                compact
-                onOpenWorldEvent={openWorldEventDetail}
-                getWorldEventIdForChronicleEvent={(event) => selectedWorldEventByChronicleId.get(event.id) ?? null}
-                emptyMessage={selectedServer.game === 'palworld'
-                  ? 'The archipelago has not recorded enough guild history yet. More memories will appear as players explore.'
-                  : 'This realm is still writing its story. More memories will appear as players explore.'}
-              />
+                <EvidenceSurfaceSection
+                  eyebrow="Search / Exploration"
+                  title="Explore world memory"
+                  description="Search, chronicle, and lookup tools stay close to the summary without competing with it."
+                >
+                  <WorldMemorySearch
+                    game={selectedServer.game}
+                    query={worldMemorySearchQuery}
+                    results={worldMemorySearchResults}
+                    totalMemories={searchableWorldMemoryRecords.length}
+                    onQueryChange={setWorldMemorySearchQuery}
+                    onOpenResult={openWorldMemoryRecord}
+                  />
+                  <WorldChroniclePanel
+                    title={selectedServer.game === 'palworld' ? 'Archipelago Chronicle' : 'Realm Chronicle'}
+                    events={selectedServer.game === 'palworld' ? palworldChronicleEvents : valheimChronicleEvents}
+                    compact
+                    onOpenWorldEvent={openWorldEventDetail}
+                    getWorldEventIdForChronicleEvent={(event) => selectedWorldEventByChronicleId.get(event.id) ?? null}
+                    emptyMessage={selectedServer.game === 'palworld'
+                      ? 'The archipelago has not recorded enough guild history yet. More memories will appear as players explore.'
+                      : 'This realm is still writing its story. More memories will appear as players explore.'}
+                  />
+                </EvidenceSurfaceSection>
+
+                <EvidenceSurfaceSection
+                  eyebrow="Supporting Evidence"
+                  title="Trusted event evidence"
+                  description="Raw chronology and source-backed event evidence remain available after the operator timeline."
+                  quiet
+                >
+                  <WorldHistoryTimeline
+                    events={selectedWorldEventHighlights.events}
+                    totalEventCount={selectedWorldEventHighlights.totalEvents}
+                    title={selectedWorldEventsArePreviewFallback ? 'World History Preview' : 'World History'}
+                    description={selectedWorldEventsArePreviewFallback
+                      ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
+                      : 'Trusted events from Chronicle and World Memory. Showing the most meaningful history first.'}
+                    previewFallback={selectedWorldEventsArePreviewFallback}
+                    onSelect={setSelectedWorldEventDetail}
+                  />
+                </EvidenceSurfaceSection>
+              </section>
             ) : null}
 
-            {selectedDashboardTab === 'overview' ? (
-              <WorldHistoryTimeline
-                events={selectedWorldEventHighlights.events}
-                totalEventCount={selectedWorldEventHighlights.totalEvents}
-                title={selectedWorldEventsArePreviewFallback ? 'World History Preview' : 'World History'}
-                description={selectedWorldEventsArePreviewFallback
-                  ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
-                  : 'Trusted events from Chronicle and World Memory. Showing the most meaningful history first.'}
-                previewFallback={selectedWorldEventsArePreviewFallback}
-                onSelect={setSelectedWorldEventDetail}
-              />
-            ) : null}
+            {selectedDashboardTab === 'capabilities' && selectedCapabilitySummary ? (
+              <section className="server-focused-tab-grid evidence-surface" aria-label="Server capabilities">
+                <EvidenceSurfaceSection
+                  eyebrow="Console Coverage Summary"
+                  title="What can this console know or do?"
+                  description="Capabilities starts with observed coverage, current limits, and data freshness."
+                >
+                  <EvidenceSummaryCard
+                    eyebrow="Coverage read"
+                    question="What can this console know or do?"
+                    statusLabel={selectedCapabilitySummary.statusLabel}
+                    statusTone={selectedCapabilitySummary.statusTone}
+                    summary={selectedCapabilitySummary.summary}
+                    details={selectedCapabilitySummary.details}
+                    metrics={selectedCapabilitySummary.metrics}
+                  />
+                </EvidenceSurfaceSection>
 
-            {selectedDashboardTab === 'ops' ? (
-            <section className="workspace-operations-quiet" aria-label="Technical confidence">
-              <DataFreshnessBanner freshness={selectedServerSummary.dataFreshness} />
-              <article className="card connector-status-card">
-                <div className="connector-status-row">
-                <div>
-                  <h2>Connector Status</h2>
-                  <p className="subtle">{selectedServerSummary.operationalStatus.explanation}</p>
-                </div>
-                <span className={`state-pill state-${selectedServerSummary.operationalStatus.connectorStatus}`}>
-                  {selectedServerSummary.operationalStatus.connectorStatus}
-                </span>
-              </div>
-              <div className="connector-status-meta">
-                <span>Configured: {selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
-                <span>Mode: {selectedServerSummary.operationalStatus.connectorMode ?? 'unknown'}</span>
-                <span>Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
-                <span>Last heartbeat: {selectedServerSummary.operationalStatus.lastHeartbeatAt ? formatDurationFromSeconds(selectedServerSummary.operationalStatus.heartbeatAgeSeconds ?? 0) + ' ago' : 'never'}</span>
-              </div>
-              </article>
-            </section>
-            ) : null}
-            {selectedDashboardTab === 'operator' ? (
-              <OperatorWorkspace
-                apiBaseUrl={apiBaseUrl}
-                brief={operatorBrief}
-                briefLoading={operatorBriefLoading}
-                briefError={operatorBriefError}
-                dailyBrief={operatorDailyBrief}
-                dailyBriefLoading={operatorDailyBriefLoading}
-                dailyBriefError={operatorDailyBriefError}
-                changes={operatorChanges}
-                changesLoading={operatorChangesLoading}
-                changesError={operatorChangesError}
-                insights={operatorInsights}
-                insightsLoading={operatorInsightsLoading}
-                insightsError={operatorInsightsError}
-                memoryIndex={operatorMemoryIndex}
-                memoryIndexLoading={operatorMemoryIndexLoading}
-                memoryIndexError={operatorMemoryIndexError}
-                timelineEvents={operatorTimelineEvents}
-                timelineLoading={operatorTimelineLoading}
-                timelineError={operatorTimelineError}
-                debugServers={filteredServers
-                  .map((server) => fleetByServerId[server.id])
-                  .filter((summary): summary is ServerSummary => Boolean(summary))}
-                serverHealth={filteredServers
-                  .map((server) => fleetByServerId[server.id])
-                  .filter((summary): summary is ServerSummary => Boolean(summary))
-                  .map((summary) => ({
-                    displayName: summary.displayName,
-                    game: summary.game,
-                    health: summary.serverHealth
-                  }))}
-                communityActivity={filteredServers
-                  .map((server) => fleetByServerId[server.id])
-                  .filter((summary): summary is ServerSummary => Boolean(summary))
-                  .map((summary) => ({
-                    displayName: summary.displayName,
-                    game: summary.game,
-                    activity: summary.communityActivity
-                  }))}
-                playerIntelligenceSummary={filteredServers
-                  .map((server) => fleetByServerId[server.id])
-                  .filter((summary): summary is ServerSummary => Boolean(summary))
-                  .map((summary) => ({
-                    displayName: summary.displayName,
-                    game: summary.game,
-                    summary: summary.playerIntelligenceSummary
-                  }))}
-              />
+                <EvidenceSurfaceSection
+                  eyebrow="Available Capability Areas"
+                  title="Operator workspace"
+                  description="Existing insight, timeline, and memory surfaces show what the console can currently observe."
+                >
+                  <OperatorWorkspace
+                    apiBaseUrl={apiBaseUrl}
+                    brief={operatorBrief}
+                    briefLoading={operatorBriefLoading}
+                    briefError={operatorBriefError}
+                    dailyBrief={operatorDailyBrief}
+                    dailyBriefLoading={operatorDailyBriefLoading}
+                    dailyBriefError={operatorDailyBriefError}
+                    changes={operatorChanges}
+                    changesLoading={operatorChangesLoading}
+                    changesError={operatorChangesError}
+                    insights={operatorInsights}
+                    insightsLoading={operatorInsightsLoading}
+                    insightsError={operatorInsightsError}
+                    memoryIndex={operatorMemoryIndex}
+                    memoryIndexLoading={operatorMemoryIndexLoading}
+                    memoryIndexError={operatorMemoryIndexError}
+                    timelineEvents={operatorTimelineEvents}
+                    timelineLoading={operatorTimelineLoading}
+                    timelineError={operatorTimelineError}
+                    debugServers={filteredServers
+                      .map((server) => fleetByServerId[server.id])
+                      .filter((summary): summary is ServerSummary => Boolean(summary))}
+                    serverHealth={filteredServers
+                      .map((server) => fleetByServerId[server.id])
+                      .filter((summary): summary is ServerSummary => Boolean(summary))
+                      .map((summary) => ({
+                        displayName: summary.displayName,
+                        game: summary.game,
+                        health: summary.serverHealth
+                      }))}
+                    communityActivity={filteredServers
+                      .map((server) => fleetByServerId[server.id])
+                      .filter((summary): summary is ServerSummary => Boolean(summary))
+                      .map((summary) => ({
+                        displayName: summary.displayName,
+                        game: summary.game,
+                        activity: summary.communityActivity
+                      }))}
+                    playerIntelligenceSummary={filteredServers
+                      .map((server) => fleetByServerId[server.id])
+                      .filter((summary): summary is ServerSummary => Boolean(summary))
+                      .map((summary) => ({
+                        displayName: summary.displayName,
+                        game: summary.game,
+                        summary: summary.playerIntelligenceSummary
+                      }))}
+                  />
+                </EvidenceSurfaceSection>
+
+                <EvidenceSurfaceSection
+                  eyebrow="Technical Evidence / Diagnostics"
+                  title="Connector and data confidence"
+                  description="Freshness, heartbeat, and connector details support the coverage summary without leading the tab."
+                  quiet
+                >
+                  <DataFreshnessBanner freshness={selectedServerSummary.dataFreshness} />
+                  <article className="card connector-status-card">
+                    <div className="connector-status-row">
+                      <div>
+                        <h2>Connector Status</h2>
+                        <p className="subtle">{selectedServerSummary.operationalStatus.explanation}</p>
+                      </div>
+                      <span className={`state-pill state-${selectedServerSummary.operationalStatus.connectorStatus}`}>
+                        {selectedServerSummary.operationalStatus.connectorStatus}
+                      </span>
+                    </div>
+                    <div className="connector-status-meta">
+                      <span>Configured: {selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
+                      <span>Mode: {selectedServerSummary.operationalStatus.connectorMode ?? 'unknown'}</span>
+                      <span>Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
+                      <span>Last heartbeat: {selectedServerSummary.operationalStatus.lastHeartbeatAt ? formatDurationFromSeconds(selectedServerSummary.operationalStatus.heartbeatAgeSeconds ?? 0) + ' ago' : 'never'}</span>
+                    </div>
+                  </article>
+                </EvidenceSurfaceSection>
+              </section>
             ) : null}
             {selectedDashboardTab === 'overview' ? (
               <ServerAliveRhythmPanel rhythm={selectedServerSummary.serverAliveRhythm} />
             ) : null}
 
+            {selectedDashboardTab === 'settings' ? (
+              <section className="server-focused-tab-grid safety-surface" aria-label="Server settings">
+                <SafetySurfaceSection
+                  eyebrow="Change Impact Summary"
+                  title="What happens if I change this?"
+                  description="Settings starts with safety posture before exposing configuration controls or evidence."
+                >
+                  <SafetySummaryCard
+                    eyebrow="Settings safety"
+                    question="What happens if I change this?"
+                    statusLabel={selectedSettingsStatus.label}
+                    statusTone={selectedSettingsStatus.tone}
+                    summary={selectedSettingsStatus.summary}
+                    details={selectedSettingsStatus.details}
+                    metrics={[
+                      { label: 'Readable settings', value: selectedReadableSettingsCount },
+                      { label: 'Read path', value: formatCapabilityState(selectedServerSummary.settingsCapabilities.canReadSettings) },
+                      { label: 'Write path', value: formatCapabilityState(selectedServerSummary.settingsCapabilities.canWriteSettings) },
+                      { label: 'Restart likely', value: formatCapabilityState(selectedServerSummary.settingsCapabilities.requiresRestart) }
+                    ]}
+                  />
+                </SafetySurfaceSection>
+
+                <SafetySurfaceSection
+                  eyebrow="Active Configuration"
+                  title="Current setting controls"
+                  description="Existing preview and draft controls stay available after the safety summary."
+                >
+                  {selectedServer.game === 'palworld' ? (
+                    <BoostPresetPanel
+                      observedSettings={selectedServerSummary.observedSettings}
+                      capabilities={selectedServerSummary.settingsCapabilities}
+                      configAudit={selectedServerSummary.palworldConfigAudit}
+                      runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
+                      backupReadiness={selectedServerSummary.palworldBackupReadiness}
+                    />
+                  ) : (
+                    <article className="card server-empty-state-card">
+                      <span className="summary-label">Valheim controls</span>
+                      <h2>No Valheim setting controls are exposed here</h2>
+                      <p className="subtle">Existing read-only coverage and safety evidence remain available below. This screen does not change Valheim settings.</p>
+                    </article>
+                  )}
+                  <EventTemplateDraftPanel
+                    catalog={selectedServerSummary.eventTemplateDrafts}
+                    onEditDraft={setSelectedEventTemplateDraft}
+                  />
+                </SafetySurfaceSection>
+
+                <SafetySurfaceSection
+                  eyebrow="Configuration Evidence"
+                  title="Why does GameOps believe this?"
+                  description="Capability limits, raw settings metadata, and diagnostics are available without competing with the safety summary."
+                  quiet
+                >
+                  {selectedServer.game === 'palworld' ? (
+                    <SettingsCapabilityPanel
+                      capabilities={selectedServerSummary.settingsCapabilities}
+                      observedSettings={selectedServerSummary.observedSettings}
+                      configAudit={selectedServerSummary.palworldConfigAudit}
+                      runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
+                      backupReadiness={selectedServerSummary.palworldBackupReadiness}
+                      eventTemplateDrafts={selectedServerSummary.eventTemplateDrafts}
+                      onOpenObservedSettings={() => setObservedSettingsOpen(true)}
+                    />
+                  ) : (
+                    <ServerSettingsReferencePanel
+                      gameLabel={getGameLabel(selectedServer.game)}
+                      capabilities={selectedServerSummary.settingsCapabilities}
+                      observedSettings={selectedServerSummary.observedSettings}
+                      onOpenObservedSettings={() => setObservedSettingsOpen(true)}
+                    />
+                  )}
+                </SafetySurfaceSection>
+              </section>
+            ) : null}
+
+            {selectedDashboardTab === 'backups' ? (
+              <section className="server-focused-tab-grid safety-surface" aria-label="Server backups">
+                <SafetySurfaceSection
+                  eyebrow="Recovery Readiness Summary"
+                  title="Can I safely recover?"
+                  description="Backups starts with recovery confidence before showing evidence or diagnostics."
+                >
+                  <SafetySummaryCard
+                    eyebrow="Recovery safety"
+                    question="Can I safely recover?"
+                    statusLabel={selectedBackupStatus.label}
+                    statusTone={selectedBackupStatus.tone}
+                    summary={selectedBackupStatus.summary}
+                    details={selectedBackupStatus.details}
+                    metrics={[
+                      { label: 'Readiness', value: selectedServerSummary.palworldBackupReadiness?.readinessStatus ?? 'unknown' },
+                      { label: 'Files to back up', value: selectedServerSummary.palworldBackupReadiness?.filesToBackup.length ?? 0 },
+                      { label: 'Can create backup', value: selectedServerSummary.palworldBackupReadiness?.canCreateBackup ? 'yes' : 'no' },
+                      { label: 'Runtime alignment', value: selectedServerSummary.palworldBackupReadiness?.runtimeAlignmentStatus ?? 'unknown' }
+                    ]}
+                  />
+                </SafetySurfaceSection>
+
+                <SafetySurfaceSection
+                  eyebrow="Recovery Actions / Existing Controls"
+                  title="Available recovery controls"
+                  description="No new backup or restore controls are introduced in this phase."
+                >
+                  <article className="card server-empty-state-card">
+                    <span className="summary-label">Existing controls</span>
+                    <h2>No backup or restore controls are exposed here</h2>
+                    <p className="subtle">Use the readiness evidence below to understand manual recovery prerequisites. This screen does not create backups or restore files.</p>
+                  </article>
+                </SafetySurfaceSection>
+
+                <SafetySurfaceSection
+                  eyebrow="Backup History / Evidence"
+                  title="Recovery evidence"
+                  description="Backup diagnostics and rollback evidence stay available after the safety summary."
+                  quiet
+                >
+                  {selectedServerSummary.palworldBackupReadiness ? (
+                    <PalworldBackupReadinessPanel readiness={selectedServerSummary.palworldBackupReadiness} />
+                  ) : (
+                    <article className="card server-empty-state-card">
+                      <span className="summary-label">Backup evidence</span>
+                      <h2>No readiness evidence loaded</h2>
+                      <p className="subtle">Existing recovery evidence will appear here when the current data source provides it.</p>
+                    </article>
+                  )}
+                </SafetySurfaceSection>
+              </section>
+            ) : null}
+
             <section className="game-section">
               {selectedServer.game === 'palworld' && selectedDashboardTab === 'overview' ? (
                 <section className="palworld-command-center">
-                  <article className={`card command-summary-card server-health-${serverHealthTone}`}>
-                    <div className="command-summary-main">
-                      <span className="summary-label">Command Summary</span>
-                      <h2>{selectedServerSummary.displayName}</h2>
-                      <p>{palworldServerHealthSummary ? `${palworldServerHealthSummary.status}: ${palworldServerHealthSummary.summary}` : selectedServerSummary.operationalStatus.explanation}</p>
-                    </div>
-                    <div className="command-summary-meta">
-                      <span>{playerProfiles.filter((profile) => profile.isOnline).length || selectedServerSummary.activePlayers} online</span>
-                      <span>{hasPalworldBaseTelemetry && palworldBaseCapacity ? `${palworldBaseCapacity.estimatedBases} / 240 bases used` : 'No base telemetry yet'}</span>
-                      <span>{hasPalworldBaseTelemetry ? (palworldBaseCapacity?.remainingCapacity ?? 'N/A') : 'N/A'} slots left</span>
-                      <span className="urgent">{palworldUrgentGuildRiskCount} urgent guild risks</span>
-                    </div>
-                  </article>
-
                   <article className="card command-panel-card player-activity-card">
                     <div className="command-panel-heading">
                       <h2>Player Activity</h2>
@@ -7304,28 +8367,9 @@ function App() {
                 </section>
               ) : null}
 
-              {selectedServer.game === 'valheim' ? (
+              {selectedServer.game === 'valheim' && selectedDashboardTab === 'overview' ? (
                 <>
                   <section className="card-grid command-card-grid">
-                    <article className={`card summary-card signal-card server-health-card server-health-${serverHealthTone}`}>
-                      <h2>Server Health</h2>
-                      <div className="signal-main">
-                        <div className="signal-value">{selectedServerSummary.state}</div>
-                        <div className="signal-caption">{selectedWarningSummary[0]?.snippet ?? selectedServerSummary.operationalStatus.explanation}</div>
-                      </div>
-                      <div className="signal-metric-row">
-                        <div className="signal-metric">
-                          <span className="signal-metric-value">{selectedServerSummary.activePlayers}</span>
-                          <span className="signal-metric-label">active</span>
-                        </div>
-                        <div className="signal-metric">
-                          <span className="signal-metric-value">{selectedServerSummary.knownPlayerCount}</span>
-                          <span className="signal-metric-label">known</span>
-                        </div>
-                      </div>
-                      <div className="signal-inline-meta">{selectedServerSummary.reportedState}</div>
-                    </article>
-
                     <article className="card summary-card signal-card">
                       <h2>Community Pulse</h2>
                       <div className="signal-main">
@@ -7369,16 +8413,6 @@ function App() {
                       </ul>
                     </article>
 
-                    <article className="card summary-card signal-card">
-                      <h2>Alerts Snapshot</h2>
-                      <div className="signal-main">
-                        <div className="signal-value">{selectedAlertCount > 0 ? 'Active' : 'Clear'}</div>
-                        <div className="signal-caption">{selectedWarningSummary[0]?.snippet ?? 'No current alerts.'}</div>
-                      </div>
-                      <div className="signal-inline-stats">
-                        <span>{selectedWarningSummary.length} warning groups</span>
-                      </div>
-                    </article>
                   </section>
                 </>
               ) : null}
@@ -7393,194 +8427,174 @@ function App() {
                       />
                     ) : null}
 
-                    {selectedDashboardTab === 'highlights' ? (
-                      <article className="card">
-                        <h2>Highlights</h2>
-                        <ul className="list review-list">
-                          {activeHighlights.map((item) => (
-                            <li key={item} className="review-row"><div className="review-main">{item}</div></li>
-                          ))}
-                        </ul>
-                      </article>
+                    {selectedDashboardTab === 'history' ? (
+                      <EvidenceSurfaceSection
+                        eyebrow="Supporting Evidence"
+                        title="Valheim recent highlights"
+                        description="Realm-specific highlights stay below the trusted timeline as supporting context."
+                        quiet
+                      >
+                        <article className="card">
+                          <h2>Highlights</h2>
+                          <ul className="list review-list">
+                            {activeHighlights.length === 0 ? <li>This realm is still writing its story.</li> : null}
+                            {activeHighlights.map((item) => (
+                              <li key={item} className="review-row"><div className="review-main">{item}</div></li>
+                            ))}
+                          </ul>
+                        </article>
+                      </EvidenceSurfaceSection>
                     ) : null}
 
                     {selectedDashboardTab === 'players' ? (
                       <>
-                        <PlayerEngagementPanel
-                          engagement={selectedServerSummary.playerEngagement}
-                          onSelectPlayer={setSelectedEngagementPlayerId}
-                        />
-                        <PlayerIntelligencePanel
-                          players={selectedServerSummary.playerIntelligence}
-                          explanation={selectedServerSummary.playerIntelligenceExplanation}
-                          freshness={selectedServerSummary.dataFreshness}
-                          selectedPlayerId={selectedPlayerIntelligenceId}
-                          onSelectPlayer={setSelectedPlayerIntelligenceId}
-                        />
-                        <PlayerDetailPanel
-                          detail={selectedPlayerDetail}
-                          loading={selectedPlayerDetailLoading}
-                          error={selectedPlayerDetailError}
-                        />
+                        <PlayersSurfaceSection
+                          eyebrow="Player Activity Summary"
+                          title="Who is here right now?"
+                          description="Current Valheim activity appears first so quiet and active worlds are easy to scan."
+                        >
+                          <PlayerEngagementPanel
+                            engagement={selectedServerSummary.playerEngagement}
+                            onSelectPlayer={setSelectedEngagementPlayerId}
+                          />
+                        </PlayersSurfaceSection>
 
-                        <article className="card">
-                          <h2>Known Player Details</h2>
-                          <ul className="list">
-                            {selectedServerSummary.knownPlayers.length === 0 ? <li>No named Valheim identity records yet.</li> : null}
-                            {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
-                              <li
-                                key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
-                                className={`clickable-row ${selectedValheimPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
-                                onClick={() => setSelectedValheimPlayerLookupKey(player.normalizedPlayerKey)}
-                              >
-                                <span>{player.displayName}</span>
-                                <span className="known-meta">
-                                  <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
-                                  <span className="subtle">obs {player.observationCount}</span>
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </article>
+                        <PlayersSurfaceSection
+                          eyebrow="Player Directory"
+                          title="Who do we know?"
+                          description="Known players and player intelligence remain separate from character and evidence-heavy context."
+                        >
+                          <PlayerIntelligencePanel
+                            players={selectedServerSummary.playerIntelligence}
+                            explanation={selectedServerSummary.playerIntelligenceExplanation}
+                            freshness={selectedServerSummary.dataFreshness}
+                            selectedPlayerId={selectedPlayerIntelligenceId}
+                            onSelectPlayer={setSelectedPlayerIntelligenceId}
+                          />
 
-                        <article className="card">
-                          <h2>Player Detail</h2>
-                          {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a known player to inspect session and identity data.</p> : null}
-                          {selectedValheimPlayerProfile?.player ? (
-                            <>
-                              <div className="detail-grid">
-                                <div className="detail-block">
-                                  <h3>Identity</h3>
-                                  <ul className="list compact">
-                                    <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
-                                    <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
-                                    <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
-                                    <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
-                                  </ul>
-                                </div>
-                                <div className="detail-block">
-                                  <h3>Adventures</h3>
-                                  <ul className="list compact">
-                                    <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                                    {selectedValheimPlayerProfile.recentSessions.slice(0, 4).map((session, index) => (
-                                      <li key={`${session.startedAt}:${index}`}>
-                                        <span>{formatTimestamp(session.startedAt)}</span>
-                                        <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </div>
-                              {selectedValheimCharacterMemoryDetail ? (
-                                <WorldMemoryLivingTimeline
-                                  items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
-                                  emptyMessage="This story is just beginning."
-                                />
-                              ) : null}
-                              {selectedValheimCharacterMemoryDetail ? (
-                                <WorldMemoryRelationshipPanel
-                                  detail={selectedValheimCharacterMemoryDetail}
-                                  records={selectedWorldMemory.records}
-                                  title="Related Memories"
-                                  emptyMessage="No related memories have been recorded for this player yet."
-                                />
-                              ) : null}
-                            </>
-                          ) : null}
-                          {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
-                            <>
-                              <WorldMemoryLivingTimeline
-                                items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
-                                emptyMessage="This story is just beginning."
-                              />
-                              <WorldMemoryRelationshipPanel
-                                detail={selectedValheimCharacterMemoryDetail}
-                                records={selectedWorldMemory.records}
-                                title="Related Memories"
-                                emptyMessage="No related memories have been recorded for this player yet."
-                              />
-                            </>
-                          ) : null}
-                        </article>
+                          <article className="card">
+                            <h2>Known Player Details</h2>
+                            <ul className="list">
+                              {selectedServerSummary.knownPlayers.length === 0 ? <li>No named Valheim identity records yet.</li> : null}
+                              {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
+                                <li
+                                  key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
+                                  className={`clickable-row ${selectedValheimPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
+                                  onClick={() => setSelectedValheimPlayerLookupKey(player.normalizedPlayerKey)}
+                                >
+                                  <span>{player.displayName}</span>
+                                  <span className="known-meta">
+                                    <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
+                                    <span className="subtle">obs {player.observationCount}</span>
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </article>
+                        </PlayersSurfaceSection>
                       </>
                     ) : null}
 
-                    {selectedDashboardTab === 'characters' ? (
+                    {selectedDashboardTab === 'players' ? (
                       <>
-                        <ValheimCharacterIntelligencePanel
-                          characters={valheimCharacters}
-                          onSelectCharacter={(character) => {
-                            setSelectedPlayerIntelligenceId(character.id);
-                            setSelectedValheimPlayerLookupKey(normalizePlayerKey(character.name));
-                          }}
-                        />
+                        <PlayersSurfaceSection
+                          eyebrow="Game-Specific Context"
+                          title="Valheim characters"
+                          description="Character context is grouped separately from live activity and the player directory."
+                        >
+                          <ValheimCharacterIntelligencePanel
+                            characters={valheimCharacters}
+                            onSelectCharacter={(character) => {
+                              setSelectedPlayerIntelligenceId(character.id);
+                              setSelectedValheimPlayerLookupKey(normalizePlayerKey(character.name));
+                            }}
+                          />
+                        </PlayersSurfaceSection>
 
-                        <article className="card">
-                          <h2>Character Evidence</h2>
-                          {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a character to inspect session and identity evidence for this realm.</p> : null}
-                          {selectedValheimPlayerProfile?.player ? (
-                            <>
-                              <div className="detail-grid">
-                                <div className="detail-block">
-                                  <h3>Identity</h3>
-                                  <ul className="list compact">
-                                    <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
-                                    <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
-                                    <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
-                                    <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
-                                    <li><span>Observations</span><span>{selectedValheimPlayerProfile.player.observationCount}</span></li>
-                                  </ul>
+                        <PlayersSurfaceSection
+                          eyebrow="Supporting Evidence"
+                          title="Valheim player evidence"
+                          description="Session, identity, and memory relationship details stay available after the operator chooses a player or character."
+                          quiet
+                        >
+                          <PlayerDetailPanel
+                            detail={selectedPlayerDetail}
+                            loading={selectedPlayerDetailLoading}
+                            error={selectedPlayerDetailError}
+                          />
+
+                          <article className="card">
+                            <h2>Character Evidence</h2>
+                            {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a character to inspect session and identity evidence for this realm.</p> : null}
+                            {selectedValheimPlayerProfile?.player ? (
+                              <>
+                                <div className="detail-grid">
+                                  <div className="detail-block">
+                                    <h3>Identity</h3>
+                                    <ul className="list compact">
+                                      <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
+                                      <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
+                                      <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
+                                      <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
+                                      <li><span>Observations</span><span>{selectedValheimPlayerProfile.player.observationCount}</span></li>
+                                    </ul>
+                                  </div>
+                                  <div className="detail-block">
+                                    <h3>Recent Adventures</h3>
+                                    <ul className="list compact">
+                                      <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                      {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
+                                      {selectedValheimPlayerProfile.recentSessions.slice(0, 5).map((session, index) => (
+                                        <li key={`${session.startedAt}:${index}`}>
+                                          <span>{formatTimestamp(session.startedAt)}</span>
+                                          <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
                                 </div>
-                                <div className="detail-block">
-                                  <h3>Recent Adventures</h3>
-                                  <ul className="list compact">
-                                    <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                                    {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
-                                    {selectedValheimPlayerProfile.recentSessions.slice(0, 5).map((session, index) => (
-                                      <li key={`${session.startedAt}:${index}`}>
-                                        <span>{formatTimestamp(session.startedAt)}</span>
-                                        <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </div>
-                              {selectedValheimCharacterMemoryDetail ? (
+                                {selectedValheimCharacterMemoryDetail ? (
+                                  <WorldMemoryLivingTimeline
+                                    items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
+                                    emptyMessage="This story is just beginning."
+                                  />
+                                ) : null}
+                                {selectedValheimCharacterMemoryDetail ? (
+                                  <WorldMemoryRelationshipPanel
+                                    detail={selectedValheimCharacterMemoryDetail}
+                                    records={selectedWorldMemory.records}
+                                    title="Related Memories"
+                                    emptyMessage="No related memories have been recorded for this character yet."
+                                  />
+                                ) : null}
+                              </>
+                            ) : null}
+                            {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
+                              <>
                                 <WorldMemoryLivingTimeline
                                   items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
                                   emptyMessage="This story is just beginning."
                                 />
-                              ) : null}
-                              {selectedValheimCharacterMemoryDetail ? (
                                 <WorldMemoryRelationshipPanel
                                   detail={selectedValheimCharacterMemoryDetail}
                                   records={selectedWorldMemory.records}
                                   title="Related Memories"
                                   emptyMessage="No related memories have been recorded for this character yet."
                                 />
-                              ) : null}
-                            </>
-                          ) : null}
-                          {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
-                            <>
-                              <WorldMemoryLivingTimeline
-                                items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
-                                emptyMessage="This story is just beginning."
-                              />
-                              <WorldMemoryRelationshipPanel
-                                detail={selectedValheimCharacterMemoryDetail}
-                                records={selectedWorldMemory.records}
-                                title="Related Memories"
-                                emptyMessage="No related memories have been recorded for this character yet."
-                              />
-                            </>
-                          ) : null}
-                        </article>
+                              </>
+                            ) : null}
+                          </article>
+                        </PlayersSurfaceSection>
                       </>
                     ) : null}
 
-                    {selectedDashboardTab === 'activity' ? (
-                      <>
+                    {selectedDashboardTab === 'history' ? (
+                      <EvidenceSurfaceSection
+                        eyebrow="Supporting Evidence"
+                        title="Valheim historical evidence"
+                        description="Chronicle, session, activity, and active-player evidence stays available after the operator timeline."
+                        quiet
+                      >
                         <WorldChroniclePanel title="Realm Chronicle" events={valheimChronicleEvents} />
 
                         <article className="card valheim-world-highlights-card">
@@ -7617,59 +8631,55 @@ function App() {
                                   </button>
                                   <span className="subtle">{formatClock(event.occurredAt)}</span>
                                 </li>
-                              ))}
+                            ))}
                           </ul>
                         </article>
-                      </>
+                      </EvidenceSurfaceSection>
                     ) : null}
 
-                    {selectedDashboardTab === 'metrics' ? (
-                      <article className="card">
-                        <h2>Metrics</h2>
-                        <p className="subtle">Valheim metrics surface is still lightweight. Use fleet state, activity, and player detail while richer metrics are added.</p>
-                      </article>
+                    {selectedDashboardTab === 'capabilities' ? (
+                      <EvidenceSurfaceSection
+                        eyebrow="Available Capability Areas"
+                        title="Valheim observed coverage"
+                        description="Lightweight Valheim metrics and availability notes stay below the console coverage summary."
+                      >
+                        <article className="card">
+                          <h2>Metrics</h2>
+                          <p className="subtle">Valheim metrics surface is still lightweight. Use fleet state, activity, and player detail while richer metrics are added.</p>
+                        </article>
+                      </EvidenceSurfaceSection>
                     ) : null}
 
-                    {selectedDashboardTab === 'ops' ? (
-                      <>
-                        <SettingsCapabilityPanel
+                    {selectedDashboardTab === 'capabilities' ? (
+                      <EvidenceSurfaceSection
+                        eyebrow="Available Capability Areas"
+                        title="Valheim capability areas"
+                        description="Existing read-only settings coverage and event-template surfaces remain available as Valheim reference material."
+                      >
+                        <ServerSettingsReferencePanel
+                          gameLabel={getGameLabel(selectedServer.game)}
                           capabilities={selectedServerSummary.settingsCapabilities}
                           observedSettings={selectedServerSummary.observedSettings}
-                          configAudit={selectedServerSummary.palworldConfigAudit}
-                          runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
-                          backupReadiness={selectedServerSummary.palworldBackupReadiness}
-                          eventTemplateDrafts={selectedServerSummary.eventTemplateDrafts}
                           onOpenObservedSettings={() => setObservedSettingsOpen(true)}
                         />
-                        <PalworldControlCapabilityPanel
-                          summary={selectedServerSummary}
-                          guildActivity={guildActivity}
-                          milestoneFeed={palworldMilestoneFeed}
-                          transitionEvents={palworldTransitionEvents}
-                          hasBaseTelemetry={hasPalworldBaseTelemetry}
-                        />
-                        {selectedServerSummary.palworldRuntimeAudit ? (
-                          <PalworldRuntimeAuditPanel audit={selectedServerSummary.palworldRuntimeAudit} />
-                        ) : null}
-                        {selectedServerSummary.palworldConfigAudit ? (
-                          <PalworldConfigAuditPanel audit={selectedServerSummary.palworldConfigAudit} />
-                        ) : null}
-                        {selectedServerSummary.palworldBackupReadiness ? (
-                          <PalworldBackupReadinessPanel readiness={selectedServerSummary.palworldBackupReadiness} />
-                        ) : null}
                         <EventTemplateDraftPanel
                           catalog={selectedServerSummary.eventTemplateDrafts}
                           onEditDraft={setSelectedEventTemplateDraft}
                         />
                         <article className="card">
-                          <h2>Ops</h2>
-                          <p className="subtle">Ops workflows for Valheim remain unchanged. This tab is reserved for future command-center actions.</p>
+                          <h2>Valheim Operations Coverage</h2>
+                          <p className="subtle">Valheim operations remain read-only in this console. Live control, restore, and setting-write actions are not exposed.</p>
                         </article>
-                      </>
+                      </EvidenceSurfaceSection>
                     ) : null}
 
-                    {selectedDashboardTab === 'diagnostics' ? (
-                      <>
+                    {selectedDashboardTab === 'capabilities' ? (
+                      <EvidenceSurfaceSection
+                        eyebrow="Technical Evidence / Diagnostics"
+                        title="Valheim technical evidence"
+                        description="Server metadata and warnings are kept quiet as supporting diagnostics."
+                        quiet
+                      >
                         <article className="card">
                           <h2>Server Summary</h2>
                           <ul className="list compact">
@@ -7697,16 +8707,21 @@ function App() {
                             ))}
                           </ul>
                         </article>
-                      </>
+                      </EvidenceSurfaceSection>
                     ) : null}
                   </>
                 ) : (
                   <>
-                    {selectedDashboardTab === 'highlights' ? (
-                      <>
-                        <WorldChroniclePanel
-                          title="Archipelago Chronicle"
-                          events={palworldChronicleEvents}
+	                    {selectedDashboardTab === 'history' ? (
+	                      <EvidenceSurfaceSection
+	                        eyebrow="Supporting Evidence"
+	                        title="Palworld historical evidence"
+	                        description="Chronicle, world highlights, and milestone history are grouped as supporting evidence after the timeline summary."
+	                        quiet
+	                      >
+	                        <WorldChroniclePanel
+	                          title="Archipelago Chronicle"
+	                          events={palworldChronicleEvents}
                           emptyMessage="The archipelago has not recorded enough guild history yet. More memories will appear as players explore."
                         />
 
@@ -7735,160 +8750,79 @@ function App() {
                                   <div className="subtle">{entry.signalReason}</div>
                                 </div>
                               </li>
-                            ))}
-                          </ul>
-                        </article>
+	                            ))}
+	                          </ul>
+	                        </article>
+	                      </EvidenceSurfaceSection>
+	                    ) : null}
+
+                    {selectedDashboardTab === 'players' ? (
+                      <>
+                        <PlayersSurfaceSection
+                          eyebrow="Player Activity Summary"
+                          title="Who is here right now?"
+                          description="Live Palworld player activity is kept separate from identity, save, and guild evidence."
+                        >
+                          <PlayerEngagementPanel
+                            engagement={selectedServerSummary.playerEngagement}
+                            onSelectPlayer={setSelectedEngagementPlayerId}
+                          />
+
+                          <article className="card">
+                            <h2>Palworld Telemetry</h2>
+                            {palworldPlayerProfilesLoading ? <p className="subtle">Refreshing player intelligence...</p> : null}
+                            <ul className="list telemetry-list">
+                              {palworldLatestPlayers.length === 0 ? <li>This Palworld server has not recorded player activity for this view yet.</li> : null}
+                              {palworldPlayerList.map(({ player, identityState }) => (
+                                <li
+                                  key={`${player.lookupKey}:${player.lastSeenAt}`}
+                                  className={`clickable-row telemetry-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
+                                  onClick={() => setSelectedPalworldPlayerKey(player.lookupKey)}
+                                >
+                                  <div className="telemetry-main">
+                                    <div className="telemetry-heading">
+                                      <span className="telemetry-player-name">{player.playerName ?? player.accountName ?? player.lookupKey}</span>
+                                      <div className="telemetry-badges">
+                                        <span className={`identity-badge identity-${identityState}`}>{identityState}</span>
+                                        <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>{player.isOnline ? 'online' : 'offline'}</span>
+                                      </div>
+                                    </div>
+                                    <div className="telemetry-stats">
+                                      <span>lvl {player.level ?? 'N/A'}</span>
+                                      <span>{player.region ?? 'unknown region'}</span>
+                                      <span>ping {formatMetric(player.ping)}</span>
+                                      <span>session {formatDurationMaybe(player.currentSessionDurationSeconds)}</span>
+                                    </div>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </article>
+                        </PlayersSurfaceSection>
+
+                        <PlayersSurfaceSection
+                          eyebrow="Player Directory"
+                          title="Who do we know?"
+                          description="Directory intelligence stays focused on known players and profile entry points."
+                        >
+                          <PlayerIntelligencePanel
+                            players={selectedServerSummary.playerIntelligence}
+                            explanation={selectedServerSummary.playerIntelligenceExplanation}
+                            freshness={selectedServerSummary.dataFreshness}
+                            selectedPlayerId={selectedPlayerIntelligenceId}
+                            onSelectPlayer={setSelectedPlayerIntelligenceId}
+                          />
+                        </PlayersSurfaceSection>
+
                       </>
                     ) : null}
 
                     {selectedDashboardTab === 'players' ? (
-                      <>
-                        <PlayerEngagementPanel
-                          engagement={selectedServerSummary.playerEngagement}
-                          onSelectPlayer={setSelectedEngagementPlayerId}
-                        />
-                        <PlayerIntelligencePanel
-                          players={selectedServerSummary.playerIntelligence}
-                          explanation={selectedServerSummary.playerIntelligenceExplanation}
-                          freshness={selectedServerSummary.dataFreshness}
-                          selectedPlayerId={selectedPlayerIntelligenceId}
-                          onSelectPlayer={setSelectedPlayerIntelligenceId}
-                        />
-                        <PlayerDetailPanel
-                          detail={selectedPlayerDetail}
-                          loading={selectedPlayerDetailLoading}
-                          error={selectedPlayerDetailError}
-                        />
-
-                        <article className="card">
-                          <h2>Palworld Telemetry</h2>
-                          {palworldPlayerProfilesLoading ? <p className="subtle">Refreshing player intelligence...</p> : null}
-                          <ul className="list telemetry-list">
-                            {palworldLatestPlayers.length === 0 ? <li>This Palworld server has not recorded player activity for this view yet.</li> : null}
-                            {palworldPlayerList.map(({ player, identityState }) => (
-                              <li
-                                key={`${player.lookupKey}:${player.lastSeenAt}`}
-                                className={`clickable-row telemetry-row ${selectedPalworldPlayerKey === player.lookupKey ? 'selected' : ''}`}
-                                onClick={() => setSelectedPalworldPlayerKey(player.lookupKey)}
-                              >
-                                <div className="telemetry-main">
-                                  <div className="telemetry-heading">
-                                    <span className="telemetry-player-name">{player.playerName ?? player.accountName ?? player.lookupKey}</span>
-                                    <div className="telemetry-badges">
-                                      <span className={`identity-badge identity-${identityState}`}>{identityState}</span>
-                                      <span className={`state-pill state-${player.isOnline ? 'online' : 'offline'}`}>{player.isOnline ? 'online' : 'offline'}</span>
-                                    </div>
-                                  </div>
-                                  <div className="telemetry-stats">
-                                    <span>lvl {player.level ?? 'N/A'}</span>
-                                    <span>{player.region ?? 'unknown region'}</span>
-                                    <span>ping {formatMetric(player.ping)}</span>
-                                    <span>session {formatDurationMaybe(player.currentSessionDurationSeconds)}</span>
-                                  </div>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </article>
-
-                        <article className="card">
-                          <h2>Player Profile / History</h2>
-                          {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect live/save identity evidence and recent snapshots.</p> : null}
-                          {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
-                          {selectedPalworldPlayerProfile ? (
-                            <div className="detail-grid">
-                              <div className="detail-block">
-                                <h3>Unified Profile</h3>
-                                <ul className="list compact">
-                                  <li><span>Name</span><span>{selectedPalworldPlayerProfile.playerName ?? 'Unknown'}</span></li>
-                                  <li><span>Account</span><span>{selectedPalworldPlayerProfile.accountName ?? 'Unknown'}</span></li>
-                                  <li><span>Player ID</span><span>{selectedPalworldPlayerProfile.playerId}</span></li>
-                                  <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
-                                  <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
-                                  <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
-                                  <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping ?? undefined)}</span></li>
-                                  <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds ?? undefined)}</span></li>
-                                  <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.sessionTier ?? 'N/A'}</span></li>
-                                  <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                                  <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.levelTier ?? 'N/A'}</span></li>
-                                  <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
-                                  <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
-                                  <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>
-                                  <li><span>Save File</span><span>{selectedPalworldPlayerProfile.saveArtifact.present ? (selectedPalworldPlayerProfile.saveArtifact.savePlayerFileName ?? 'present') : 'Not found'}</span></li>
-                                  <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
-                                </ul>
-                                <div className="milestone-block">
-                                  <h4>Player Signals</h4>
-                                  <ul className="list compact">
-                                    <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
-                                    <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
-                                    <li><span>Identity State</span><span>{selectedPalworldPlayerProfile.playerIntelligence.identityState}</span></li>
-                                    <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
-                                    <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
-                                    <li><span>Tracked activity</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
-                                    <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
-                                    <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
-                                  </ul>
-                                </div>
-                              </div>
-                              <div className="detail-block">
-                                <h3>History</h3>
-                                <ul className="list compact">
-                                  {selectedPalworldHistory.length === 0 ? <li>This player does not have enough snapshot history yet.</li> : null}
-                                  {selectedPalworldHistory.map((snapshot) => (
-                                    <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
-                                      <div className="history-entry">
-                                        <span>{formatTimestamp(snapshot.observedAt)}</span>
-                                        <span className="subtle">lvl {snapshot.level ?? 'N/A'} • {snapshot.region ?? 'unknown region'} • ping {formatMetric(snapshot.ping)}</span>
-                                        <span className="subtle">x {formatCoordinate(snapshot.locationX)} • y {formatCoordinate(snapshot.locationY)}</span>
-                                      </div>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </div>
-                          ) : null}
-                        </article>
-                      </>
-                    ) : null}
-
-                    {selectedDashboardTab === 'review-saves' ? (
-                      <article className="card review-saves-card">
-                        <div className="command-panel-heading">
-                          <div>
-                            <h2>Review Saves</h2>
-                            <p className="subtle">Active 7-day players without linked saves.</p>
-                          </div>
-                          <span className="state-pill state-warning">{reviewSavePlayerProfiles.length} needed</span>
-                        </div>
-                        <ul className="list review-list review-saves-list">
-                          {reviewSavePlayerProfiles.length === 0 ? <li className="empty-line">No active players need save links.</li> : null}
-                          {reviewSavePlayerProfiles.map((profile) => (
-                            <li key={`review-save:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} className="review-save-item">
-                              <button
-                                type="button"
-                                className="review-save-row"
-                                onClick={() => setSelectedPlayerProfile(profile)}
-                              >
-                                <span className="review-save-main">
-                                  <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
-                                  <span className="homepage-player-meta">
-                                    {profile.profile.level !== null ? <span>lvl {profile.profile.level}</span> : null}
-                                    {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
-                                    <span>{formatDurationFromSeconds(profile.trackedSeconds7d)} 7d playtime</span>
-                                    <span>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'last seen N/A'}</span>
-                                  </span>
-                                </span>
-                                <span className="homepage-player-detail-button" aria-hidden="true">Details</span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </article>
-                    ) : null}
-
-                    {selectedDashboardTab === 'guilds' ? (
-                      <>
+                      <PlayersSurfaceSection
+                        eyebrow="Game-Specific Context"
+                        title="Palworld guilds and bases"
+                        description="Guild and base context is separate from live player activity and identity evidence."
+                      >
                         <PalworldGuildIntelligencePanel
                           guilds={palworldGuildIntelligence}
                           selectedGuildName={expandedGuildActivityName}
@@ -7968,20 +8902,136 @@ function App() {
                             ))}
                           </ul>
                         </article>
-                      </>
+                      </PlayersSurfaceSection>
                     ) : null}
 
-                    {selectedDashboardTab === 'activity' ? (
-                      <>
-                        <SessionTimelinePanel timeline={selectedServerSummary.sessionTimeline} freshness={selectedServerSummary.dataFreshness} />
-                        <ActivityLogPanel items={selectedServerSummary.activityLog} />
-                      </>
-                    ) : null}
+                    {selectedDashboardTab === 'players' ? (
+                      <PlayersSurfaceSection
+                        eyebrow="Supporting Evidence"
+                        title="Palworld player evidence"
+                        description="Profile history, save identity, and confidence evidence remain available after current activity, directory, and guild context."
+                        quiet
+                      >
+                        <article className="card review-saves-card">
+                          <div className="command-panel-heading">
+                            <div>
+                              <h2>Review Saves</h2>
+                              <p className="subtle">Active 7-day players without linked saves.</p>
+                            </div>
+                            <span className="state-pill state-warning">{reviewSavePlayerProfiles.length} needed</span>
+                          </div>
+                          <ul className="list review-list review-saves-list">
+                            {reviewSavePlayerProfiles.length === 0 ? <li className="empty-line">No active players need save links.</li> : null}
+                            {reviewSavePlayerProfiles.map((profile) => (
+                              <li key={`review-save:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} className="review-save-item">
+                                <button
+                                  type="button"
+                                  className="review-save-row"
+                                  onClick={() => setSelectedPlayerProfile(profile)}
+                                >
+                                  <span className="review-save-main">
+                                    <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
+                                    <span className="homepage-player-meta">
+                                      {profile.profile.level !== null ? <span>lvl {profile.profile.level}</span> : null}
+                                      {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
+                                      <span>{formatDurationFromSeconds(profile.trackedSeconds7d)} 7d playtime</span>
+                                      <span>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'last seen N/A'}</span>
+                                    </span>
+                                  </span>
+                                  <span className="homepage-player-detail-button" aria-hidden="true">Details</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
 
-                    {selectedDashboardTab === 'metrics' ? (
-                      <>
+                        <PlayerDetailPanel
+                          detail={selectedPlayerDetail}
+                          loading={selectedPlayerDetailLoading}
+                          error={selectedPlayerDetailError}
+                        />
+
                         <article className="card">
-                          <h2>Base Capacity</h2>
+                          <h2>Player Profile / History</h2>
+                          {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect live/save identity evidence and recent snapshots.</p> : null}
+                          {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
+                          {selectedPalworldPlayerProfile ? (
+                            <div className="detail-grid">
+                              <div className="detail-block">
+                                <h3>Unified Profile</h3>
+                                <ul className="list compact">
+                                  <li><span>Name</span><span>{selectedPalworldPlayerProfile.playerName ?? 'Unknown'}</span></li>
+                                  <li><span>Account</span><span>{selectedPalworldPlayerProfile.accountName ?? 'Unknown'}</span></li>
+                                  <li><span>Player ID</span><span>{selectedPalworldPlayerProfile.playerId}</span></li>
+                                  <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
+                                  <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
+                                  <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
+                                  <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping ?? undefined)}</span></li>
+                                  <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds ?? undefined)}</span></li>
+                                  <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.sessionTier ?? 'N/A'}</span></li>
+                                  <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                  <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.levelTier ?? 'N/A'}</span></li>
+                                  <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
+                                  <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
+                                  <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>
+                                  <li><span>Save File</span><span>{selectedPalworldPlayerProfile.saveArtifact.present ? (selectedPalworldPlayerProfile.saveArtifact.savePlayerFileName ?? 'present') : 'Not found'}</span></li>
+                                  <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
+                                </ul>
+                              </div>
+                              <div className="detail-block">
+                                <h3>History</h3>
+                                <ul className="list compact">
+                                  {selectedPalworldHistory.length === 0 ? <li>This player does not have enough snapshot history yet.</li> : null}
+                                  {selectedPalworldHistory.map((snapshot) => (
+                                    <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
+                                      <div className="history-entry">
+                                        <span>{formatTimestamp(snapshot.observedAt)}</span>
+                                        <span className="subtle">lvl {snapshot.level ?? 'N/A'} • {snapshot.region ?? 'unknown region'} • ping {formatMetric(snapshot.ping)}</span>
+                                        <span className="subtle">x {formatCoordinate(snapshot.locationX)} • y {formatCoordinate(snapshot.locationY)}</span>
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                                <div className="milestone-block">
+                                  <h4>Player Signals</h4>
+                                  <ul className="list compact">
+                                    <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
+                                    <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
+                                    <li><span>Identity State</span><span>{selectedPalworldPlayerProfile.playerIntelligence.identityState}</span></li>
+                                    <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
+                                    <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
+                                    <li><span>Tracked activity</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
+                                    <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
+                                    <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </article>
+                      </PlayersSurfaceSection>
+                    ) : null}
+
+	                    {selectedDashboardTab === 'history' ? (
+	                      <EvidenceSurfaceSection
+	                        eyebrow="Supporting Evidence"
+	                        title="Palworld activity record"
+	                        description="Session and activity logs stay available as the lower-priority factual record."
+	                        quiet
+	                      >
+	                        <SessionTimelinePanel timeline={selectedServerSummary.sessionTimeline} freshness={selectedServerSummary.dataFreshness} />
+	                        <ActivityLogPanel items={selectedServerSummary.activityLog} />
+	                      </EvidenceSurfaceSection>
+	                    ) : null}
+
+	                    {selectedDashboardTab === 'capabilities' ? (
+	                      <EvidenceSurfaceSection
+	                        eyebrow="Available Capability Areas"
+	                        title="Palworld observed coverage"
+	                        description="Base and metric visibility summarize existing Palworld telemetry without implying new controls."
+	                      >
+	                        <article className="card">
+	                          <h2>Base Capacity</h2>
                           {hasPalworldBaseTelemetry ? (
                             <>
                               <div><strong>Raw Signal:</strong> {palworldBaseSignal}</div>
@@ -7993,7 +9043,7 @@ function App() {
                               <div className="subtle"><strong>Last 5 Values:</strong> {palworldBaseSignalTrend.recentValues.length > 0 ? palworldBaseSignalTrend.recentValues.join(', ') : 'No history'}</div>
                               <div className="subtle"><strong>Trend:</strong> {palworldBaseSignalTrend.indicator} {palworldBaseSignalTrend.direction}</div>
                             </>
-                          ) : <p className="subtle">No base capacity telemetry yet. Start the Palworld save parser to estimate base usage.</p>}
+                          ) : <p className="subtle">Base capacity telemetry is not available yet. Capacity estimates appear after save data has been parsed.</p>}
                         </article>
 
                         <article className="card">
@@ -8005,16 +9055,20 @@ function App() {
                                 <span>{formatTimestamp(metric.observedAt)}</span>
                                 <span className="subtle">fps {metric.serverFps ?? 'N/A'} • players {metric.currentPlayerCount ?? 'N/A'} • uptime {metric.currentUptimeHours ?? 'N/A'}h</span>
                               </li>
-                            ))}
-                          </ul>
-                        </article>
-                      </>
-                    ) : null}
+	                            ))}
+	                          </ul>
+	                        </article>
+	                      </EvidenceSurfaceSection>
+	                    ) : null}
 
-                    {selectedDashboardTab === 'ops' ? (
-                      <>
-                        <PalworldActivityConfidencePanel
-                          summary={selectedServerSummary}
+	                    {selectedDashboardTab === 'capabilities' ? (
+	                      <EvidenceSurfaceSection
+	                        eyebrow="Available Capability Areas"
+	                        title="Palworld capability areas"
+	                        description="Existing activity-confidence, settings, control-readiness, identity, boost, and event-template surfaces remain available."
+	                      >
+	                        <PalworldActivityConfidencePanel
+	                          summary={selectedServerSummary}
                           guildActivity={guildActivity}
                           milestoneFeed={palworldMilestoneFeed}
                           transitionEvents={palworldTransitionEvents}
@@ -8127,15 +9181,20 @@ function App() {
                                 </button>
                               </div>
                             </>
-                          ) : null}
-                        </article>
-                      </>
-                    ) : null}
+	                          ) : null}
+	                        </article>
+	                      </EvidenceSurfaceSection>
+	                    ) : null}
 
-                    {selectedDashboardTab === 'diagnostics' ? (
-                      <>
-                        <article className="card">
-                          <h2>Recent Transition Events</h2>
+	                    {selectedDashboardTab === 'capabilities' ? (
+	                      <EvidenceSurfaceSection
+	                        eyebrow="Technical Evidence / Diagnostics"
+	                        title="Palworld technical evidence"
+	                        description="Transition and identity failure evidence is kept quiet as diagnostic support."
+	                        quiet
+	                      >
+	                        <article className="card">
+	                          <h2>Recent Transition Events</h2>
                           <ul className="list review-list">
                             {palworldTransitionEvents.length === 0 ? <li>No recent transition events.</li> : null}
                             {palworldTransitionEvents.map((event) => (
@@ -8182,11 +9241,11 @@ function App() {
                                   </div>
                                 </div>
                               </li>
-                            ))}
-                          </ul>
-                        </article>
-                      </>
-                    ) : null}
+	                            ))}
+	                          </ul>
+	                        </article>
+	                      </EvidenceSurfaceSection>
+	                    ) : null}
                   </>
                 )}
               </section>

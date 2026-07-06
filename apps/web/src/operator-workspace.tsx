@@ -117,43 +117,69 @@ export function OperatorWorkspace(props: OperatorWorkspaceProps) {
         </div>
       </article>
 
-      <div className="operator-workspace-grid">
-        <OperatorServerHealthCard servers={props.serverHealth} />
-        <OperatorCommunityActivityCard servers={props.communityActivity} />
-        <OperatorPlayerIntelligenceCard apiBaseUrl={props.apiBaseUrl} servers={props.playerIntelligenceSummary} />
-        <OperatorDebugPanel servers={props.debugServers} />
-        <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />
-        <OperatorReasonCard apiBaseUrl={props.apiBaseUrl} />
-        <OperatorMemoryIndexCard
-          memoryIndex={props.memoryIndex}
-          loading={props.memoryIndexLoading}
-          error={props.memoryIndexError}
-        />
-        <OperatorDailyBriefCard
-          brief={props.dailyBrief}
-          loading={props.dailyBriefLoading}
-          error={props.dailyBriefError}
-        />
-        <OperatorChangesCard
-          changes={props.changes}
-          loading={props.changesLoading}
-          error={props.changesError}
-        />
-        <OperatorInsightsCard
-          insights={props.insights}
-          loading={props.insightsLoading}
-          error={props.insightsError}
-        />
-        <OperatorTimelineCard
-          events={props.timelineEvents}
-          loading={props.timelineLoading}
-          error={props.timelineError}
-        />
-        <OperatorCurrentStateCard
-          brief={props.brief}
-          loading={props.briefLoading}
-          error={props.briefError}
-        />
+      <div className="operator-workspace-groups">
+        <section className="operator-workspace-group operator-workspace-group-primary" aria-labelledby="operator-attention-heading">
+          <div className="operator-workspace-group-heading">
+            <span className="summary-label">Current attention</span>
+            <h3 id="operator-attention-heading">Is anything asking for action?</h3>
+          </div>
+          <div className="operator-workspace-grid operator-workspace-grid-primary">
+            <OperatorServerHealthCard servers={props.serverHealth} />
+            <OperatorCommunityActivityCard servers={props.communityActivity} />
+            <OperatorPlayerIntelligenceCard apiBaseUrl={props.apiBaseUrl} servers={props.playerIntelligenceSummary} />
+            <OperatorDailyBriefCard
+              brief={props.dailyBrief}
+              loading={props.dailyBriefLoading}
+              error={props.dailyBriefError}
+            />
+            <OperatorChangesCard
+              changes={props.changes}
+              loading={props.changesLoading}
+              error={props.changesError}
+            />
+            <OperatorInsightsCard
+              insights={props.insights}
+              loading={props.insightsLoading}
+              error={props.insightsError}
+            />
+          </div>
+        </section>
+
+        <section className="operator-workspace-group" aria-labelledby="operator-tools-heading">
+          <div className="operator-workspace-group-heading">
+            <span className="summary-label">Operator tools</span>
+            <h3 id="operator-tools-heading">What should I inspect next?</h3>
+          </div>
+          <div className="operator-workspace-grid operator-workspace-grid-tools">
+            <OperatorAskCard apiBaseUrl={props.apiBaseUrl} />
+            <OperatorReasonCard apiBaseUrl={props.apiBaseUrl} />
+          </div>
+        </section>
+
+        <section className="operator-workspace-group operator-workspace-group-supporting" aria-labelledby="operator-evidence-heading">
+          <div className="operator-workspace-group-heading">
+            <span className="summary-label">Supporting evidence</span>
+            <h3 id="operator-evidence-heading">Why does GameOps believe this?</h3>
+          </div>
+          <div className="operator-workspace-grid operator-workspace-grid-supporting">
+            <OperatorMemoryIndexCard
+              memoryIndex={props.memoryIndex}
+              loading={props.memoryIndexLoading}
+              error={props.memoryIndexError}
+            />
+            <OperatorTimelineCard
+              events={props.timelineEvents}
+              loading={props.timelineLoading}
+              error={props.timelineError}
+            />
+            <OperatorCurrentStateCard
+              brief={props.brief}
+              loading={props.briefLoading}
+              error={props.briefError}
+            />
+            <OperatorDebugPanel servers={props.debugServers} />
+          </div>
+        </section>
       </div>
     </section>
   );
