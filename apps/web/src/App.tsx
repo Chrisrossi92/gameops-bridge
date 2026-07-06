@@ -101,6 +101,11 @@ import {
   type PalworldActivityConfidenceLevel
 } from './palworld-activity-confidence.ts';
 import {
+  buildPalworldApplyReadinessReport,
+  type PalworldApplyReadinessGate,
+  type PalworldApplyReadinessGateStatus
+} from './palworld-apply-readiness.ts';
+import {
   buildPalworldControlCapabilitySections,
   type PalworldControlCapability,
   type PalworldControlCapabilityConfidence,
@@ -1788,6 +1793,7 @@ function buildBoostPresetPreviews(observedSettings: ObservedSettingsResponse | n
 interface BoostPresetPanelProps {
   observedSettings: ObservedSettingsResponse | null;
   capabilities: ServerSettingsCapabilitySummary;
+  configAudit: PalworldConfigAudit | null;
   runtimeAudit: PalworldRuntimeAudit | null;
   backupReadiness: PalworldBackupReadiness | null;
 }
@@ -1832,7 +1838,7 @@ function buildBoostPresetChecklistText(input: {
   const missingLines = [...input.preset.missingTargets, ...input.preset.unsupportedTargets];
 
   return [
-    `Draft apply plan: ${input.preset.definition.name}`,
+    `Draft safety plan: ${input.preset.definition.name}`,
     `Server: ${input.capabilities.serverName ?? input.capabilities.serverId}`,
     `Config source/path: ${input.configSourcePath}`,
     `Restart required: ${formatRestartRequirementForPlan(input.capabilities.requiresRestart)}`,
@@ -1858,7 +1864,136 @@ function buildBoostPresetChecklistText(input: {
   ].join('\n');
 }
 
-function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit, backupReadiness }: BoostPresetPanelProps) {
+function formatApplyReadinessGateStatus(status: PalworldApplyReadinessGateStatus): string {
+  if (status === 'ready') {
+    return 'Ready';
+  }
+
+  if (status === 'needs_review') {
+    return 'Needs review';
+  }
+
+  return 'Blocked';
+}
+
+function getApplyReadinessGateTone(status: PalworldApplyReadinessGateStatus): string {
+  if (status === 'ready') {
+    return 'high';
+  }
+
+  if (status === 'needs_review') {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function renderApplyReadinessGateList(gates: PalworldApplyReadinessGate[], emptyMessage: string): ReactNode {
+  return (
+    <ul className="list compact">
+      {gates.length === 0 ? <li><span>{emptyMessage}</span></li> : null}
+      {gates.map((gate) => (
+        <li key={`${gate.name}:${gate.status}`}>
+          <span>{gate.name}</span>
+          <span className={`confidence-badge confidence-${getApplyReadinessGateTone(gate.status)}`}>
+            {formatApplyReadinessGateStatus(gate.status)}
+          </span>
+          <span className="subtle">{gate.detail}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+interface PalworldApplyReadinessPanelProps {
+  preset: BoostPresetPreview | null;
+  capabilities: ServerSettingsCapabilitySummary;
+  observedSettings: ObservedSettingsResponse | null;
+  configAudit: PalworldConfigAudit | null;
+  runtimeAudit: PalworldRuntimeAudit | null;
+  backupReadiness: PalworldBackupReadiness | null;
+}
+
+function PalworldApplyReadinessPanel({
+  preset,
+  capabilities,
+  observedSettings,
+  configAudit,
+  runtimeAudit,
+  backupReadiness
+}: PalworldApplyReadinessPanelProps) {
+  const report = buildPalworldApplyReadinessReport({
+    capabilities,
+    observedSettings,
+    configAudit,
+    runtimeAudit,
+    backupReadiness,
+    proposedChanges: preset?.settingPreviews.map((preview) => ({
+      key: preview.setting.key,
+      label: preview.setting.label,
+      currentValue: preview.setting.value,
+      proposedValue: preview.proposedValue,
+      canPreviewValue: preview.canPreviewValue,
+      warning: preview.warning
+    })) ?? []
+  });
+
+  return (
+    <section className="apply-readiness-panel" aria-label="Apply readiness">
+      <div className="boost-preset-detail-heading">
+        <div>
+          <span className="summary-label">Safety gate</span>
+          <h3>Apply readiness</h3>
+          <p className="subtle">Foundation checks for a future settings-change workflow. GameOps will not change Palworld.</p>
+        </div>
+        <span className={`confidence-badge confidence-${report.status === 'ready_for_future_implementation' ? 'medium' : 'low'}`}>
+          {report.label}
+        </span>
+      </div>
+
+      <div className="settings-readiness-strip apply-readiness-summary">
+        <div>
+          <span className="summary-label">What is ready</span>
+          <strong>{report.ready.length}</strong>
+        </div>
+        <div>
+          <span className="summary-label">What is blocked</span>
+          <strong>{report.blocked.length}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Needs review</span>
+          <strong>{report.needsReview.length}</strong>
+        </div>
+      </div>
+
+      <div className="detail-grid settings-readiness-grid">
+        <section className="detail-block">
+          <h3>What is ready</h3>
+          {renderApplyReadinessGateList(report.ready, 'No safety gates are ready yet.')}
+        </section>
+        <section className="detail-block">
+          <h3>What is blocked</h3>
+          {renderApplyReadinessGateList(report.blocked, 'No blocked safety gates.')}
+        </section>
+        <section className="detail-block">
+          <h3>Required safety steps</h3>
+          <ul className="list compact">
+            {report.requiredSafetySteps.slice(0, 4).map((step) => (
+              <li key={step}><span>{step}</span></li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      <div className="trust-warning-row">
+        <span>{report.reasonDisabled}</span>
+        <span>Review safety requirements before any future implementation.</span>
+      </div>
+    </section>
+  );
+}
+
+function BoostPresetPanel({ observedSettings, capabilities, configAudit, runtimeAudit, backupReadiness }: BoostPresetPanelProps) {
   const presetPreviews = buildBoostPresetPreviews(observedSettings);
   const firstPreviewablePreset = presetPreviews.find((preset) => preset.settingPreviews.length > 0) ?? presetPreviews[0] ?? null;
   const [selectedPresetId, setSelectedPresetId] = useState(firstPreviewablePreset?.definition.id ?? BOOST_PRESET_DEFINITIONS[0]?.id ?? '');
@@ -1958,6 +2093,15 @@ function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit, backup
                 </div>
               </div>
 
+              <PalworldApplyReadinessPanel
+                preset={selectedPreset}
+                capabilities={capabilities}
+                observedSettings={observedSettings}
+                configAudit={configAudit}
+                runtimeAudit={runtimeAudit}
+                backupReadiness={backupReadiness}
+              />
+
               <section className="event-draft-preview">
                 <h3>Affected settings</h3>
                 <ul>
@@ -2008,16 +2152,16 @@ function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit, backup
                     setChecklistCopyState('idle');
                   }}
                 >
-                  {applyPlanOpen ? 'Hide draft plan' : 'Review apply plan'}
+                  {applyPlanOpen ? 'Hide safety requirements' : 'Review safety requirements'}
                 </button>
                 <span>Draft planning only. No changes have been made.</span>
               </div>
 
               {applyPlanOpen ? (
-                <section className="boost-apply-plan" aria-label="Draft apply plan">
+                <section className="boost-apply-plan" aria-label="Draft safety plan">
                   <div className="boost-preset-detail-heading">
                     <div>
-                      <span className="summary-label">Draft apply plan</span>
+                      <span className="summary-label">Draft safety plan</span>
                       <h3>{selectedPreset.definition.name}</h3>
                       <p className="subtle">This is the safest known plan for a future change workflow. It does not change Palworld.</p>
                     </div>
@@ -7906,6 +8050,7 @@ function App() {
                         <BoostPresetPanel
                           observedSettings={selectedServerSummary.observedSettings}
                           capabilities={selectedServerSummary.settingsCapabilities}
+                          configAudit={selectedServerSummary.palworldConfigAudit}
                           runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
                           backupReadiness={selectedServerSummary.palworldBackupReadiness}
                         />
