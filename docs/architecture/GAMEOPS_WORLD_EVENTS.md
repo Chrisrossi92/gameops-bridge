@@ -115,6 +115,10 @@ Timeline presentation may group events with owner-language headings such as Toda
 
 The timeline may reuse relevance selection to keep routine events quiet, but it must not invent events, fabricate summaries, or replace trusted records with seeded previews. Preview events remain development fallbacks only and must not mask real Chronicle or World Memory records.
 
+World History filters are local presentation controls. Filters such as All history, Meaningful, Quiet, and High confidence may help an owner focus the timeline, but they must not delete, mutate, reclassify, or permanently hide trusted history. Filtered empty states should explain that no trusted events match the selected view instead of implying the world has no history.
+
+Low-data states are part of the trust model. When a world has no trusted World Events, the UI should explain that World History appears after trusted Chronicle or World Memory records exist. When only quiet or low-confidence history exists, the UI should keep those records inspectable while explaining that major history needs stronger evidence.
+
 World History is a product surface over World Events, not a new event source. It does not add AI summaries, collector behavior, notifications, Discord posting, manual creation, or telemetry changes.
 
 ## Detail Inspection
@@ -144,3 +148,21 @@ Future production surfaces should consume this domain model instead of rebuildin
 Phase 8 created the World Event foundation only. It did not introduce AI-generated history, notification systems, Discord posting, collector changes, telemetry changes, predictions, manual event creation, or world scoring.
 
 Future AI consumers may read trusted World Events as context, but AI must not become a source of world history unless a future architecture explicitly defines provenance, confidence, evidence, and owner review rules.
+
+## Phase 9 Closeout
+
+Phase 9 established World History as the primary owner-facing consumption surface for trusted World Events.
+
+Durable Phase 9 rules:
+
+- World History consumes trusted World Events from Chronicle and World Memory.
+- Timeline grouping is deterministic, plain-language, and scoped to the selected world.
+- Relevance and filters govern presentation only; they do not change the trusted event set.
+- Evidence inspection must remain available from visible timeline rows.
+- Detail drawers must provide a clear return path back to World History.
+- Source, confidence, occurred timestamp, discovered timestamp, evidence, and connected history remain inspectable.
+- Empty and low-data states must explain missing trusted history honestly.
+- Preview or development events must never mask trusted real records.
+- AI-generated story, lore, or summaries remain out of bounds until a future architecture explicitly defines provenance, evidence, confidence, owner review, and correction rules.
+
+Phase 10 should build on this foundation by adding deeper owner workflows around trusted history, not by bypassing it with raw telemetry or generated narrative.

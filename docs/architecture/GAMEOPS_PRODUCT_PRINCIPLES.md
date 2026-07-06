@@ -100,6 +100,8 @@ World history should be built from trusted records, not generated narrative.
 
 World Events, Chronicle entries, and future timelines must preserve why a claim is shown: source, confidence, timing, evidence, and connected history. Relevance or noise control can decide what appears first, but it must not delete trusted history or hide the provenance needed for owner trust.
 
+Timeline grouping, low-data explanations, and local filters should make trusted history easier to scan without turning it into raw logs or analytics. A filter can focus the visible timeline, but the product should still make clear that trusted records remain evidence-backed and inspectable.
+
 AI-generated history is out of bounds until a future architecture explicitly defines source attribution, evidence, confidence, review, and correction rules.
 
 ## Plain Language

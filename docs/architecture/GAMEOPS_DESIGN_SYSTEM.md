@@ -230,6 +230,8 @@ They should slide smoothly, keep the selected world visible, and focus on one en
 
 World Event drawers should make trust inspectable. They should show evidence, source, confidence, timestamps, and connected history in owner language such as "Connected history" and "Related memories." Empty relationship states should be honest and compact instead of hidden or inflated.
 
+World History controls should stay compact and readable. Group headings and filters should use owner language such as "Today," "This week," "All history," "Meaningful," "Quiet," and "High confidence." Empty filtered states should explain the selected view plainly instead of exposing implementation details.
+
 ### Empty States
 
 Empty states should be honest and useful.

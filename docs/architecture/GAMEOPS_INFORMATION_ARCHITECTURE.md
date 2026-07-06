@@ -121,6 +121,8 @@ World Events should appear as readable world history, not raw telemetry. Surface
 
 World History is the first timeline surface for trusted World Events. It belongs inside the selected world context, should preserve evidence inspection through the World Event drawer, and should not become a new navigation area until the product needs a deeper history workspace.
 
+World History grouping and filters are readability tools inside this selected-world context. They help owners scan trusted history by time, meaning, quiet routine activity, or confidence. They should not create a spreadsheet-like analysis surface, mutate trusted events, or replace the evidence-first detail flow.
+
 ### Operations
 
 Purpose: Is the technical pipeline healthy?
@@ -204,6 +206,8 @@ Good drawer uses:
 Drawers should answer a focused question and provide enough evidence for trust. They should not become miniature full pages with unrelated sections.
 
 World Event drawers should preserve the selected world context while showing source, confidence, occurred and discovered timestamps, evidence, and connected history such as related memories, people, guilds, characters, and related events.
+
+When opened from World History, a World Event drawer should provide an obvious return path back to the timeline so the owner can inspect evidence without losing their place in the selected world.
 
 ## Raw Telemetry And Debug References
 
