@@ -5,6 +5,8 @@ import type { WorldChronicleEvent, WorldMemoryRecord, WorldMemoryRegistry } from
 import {
   createWorldEventRegistry,
   getTrustedWorldEventsForRegistry,
+  scoreWorldEventRelevance,
+  selectChronicleWorldEvents,
   worldEventToChronicleEntry,
   worldEventsToChronicleEntries,
   worldMemoryChronicleToWorldEvents
@@ -276,4 +278,130 @@ test('trusted world event selection uses preview fallback only when no real reco
   assert.equal(fallback.previewFallback, true);
   assert.deepEqual(fallback.events.map((item) => item.id), ['preview:event']);
   assert.equal(fallback.events[0]?.metadata.previewOnly, true);
+});
+
+test('world event relevance ranks major and historic events above routine events', () => {
+  const selected = selectChronicleWorldEvents([
+    event({ id: 'routine', significance: 'minor', confidence: 'high', occurredAt: '2026-07-05T10:00:00.000Z' }),
+    event({ id: 'major', significance: 'major', confidence: 'medium', occurredAt: '2026-07-01T10:00:00.000Z' }),
+    event({ id: 'historic', significance: 'historic', confidence: 'low', occurredAt: '2026-06-01T10:00:00.000Z' })
+  ]);
+
+  assert.deepEqual(selected.events.map((item) => item.id), ['historic', 'major', 'routine']);
+});
+
+test('world event relevance rewards confidence, evidence, and related memories', () => {
+  const thin = event({ id: 'thin', confidence: 'low', evidence: [], relatedMemories: [] });
+  const grounded = event({
+    id: 'grounded',
+    confidence: 'high',
+    evidence: [{
+      id: 'evidence:grounded',
+      type: 'memory_record',
+      label: 'Memory record',
+      sourceLabel: 'World Memory',
+      metadata: {}
+    }],
+    relatedMemories: ['memory:grounded']
+  });
+
+  assert.ok(scoreWorldEventRelevance(grounded) > scoreWorldEventRelevance(thin));
+  assert.deepEqual(selectChronicleWorldEvents([thin, grounded]).events.map((item) => item.id), ['grounded', 'thin']);
+});
+
+test('restart and join noise does not dominate when stronger events exist', () => {
+  const selected = selectChronicleWorldEvents([
+    event({
+      id: 'restart',
+      significance: 'normal',
+      confidence: 'high',
+      metadata: { sourceChronicleKind: 'restart' },
+      occurredAt: '2026-07-05T10:00:00.000Z'
+    }),
+    event({
+      id: 'join',
+      significance: 'minor',
+      confidence: 'high',
+      metadata: { sourceChronicleKind: 'join' },
+      occurredAt: '2026-07-05T11:00:00.000Z'
+    }),
+    event({
+      id: 'base-risk',
+      significance: 'major',
+      confidence: 'medium',
+      relatedMemories: ['memory:base'],
+      evidence: [{
+        id: 'evidence:base',
+        type: 'chronicle_entry',
+        label: 'Chronicle entry',
+        sourceLabel: '30-day base lifecycle',
+        metadata: {}
+      }],
+      metadata: { sourceChronicleKind: 'base_lifecycle' },
+      occurredAt: '2026-07-01T10:00:00.000Z'
+    })
+  ], { maxEvents: 2 });
+
+  assert.deepEqual(selected.events.map((item) => item.id), ['base-risk', 'restart']);
+});
+
+test('world event selection cap works and reports total events', () => {
+  const selected = selectChronicleWorldEvents([
+    event({ id: 'one', significance: 'major' }),
+    event({ id: 'two', significance: 'normal' }),
+    event({ id: 'three', significance: 'minor' })
+  ], { maxEvents: 2 });
+
+  assert.equal(selected.totalEvents, 3);
+  assert.deepEqual(selected.events.map((item) => item.id), ['one', 'two']);
+});
+
+test('world event relevance uses stable tie breakers', () => {
+  const selected = selectChronicleWorldEvents([
+    event({ id: 'b', occurredAt: '2026-07-01T10:00:00.000Z', discoveredAt: '2026-07-01T10:01:00.000Z' }),
+    event({ id: 'a', occurredAt: '2026-07-01T10:00:00.000Z', discoveredAt: '2026-07-01T10:01:00.000Z' }),
+    event({ id: 'newer', occurredAt: '2026-07-01T11:00:00.000Z', discoveredAt: '2026-07-01T11:01:00.000Z' })
+  ]);
+
+  assert.deepEqual(selected.events.map((item) => item.id), ['newer', 'a', 'b']);
+});
+
+test('world event selection does not mutate events', () => {
+  const original = [
+    event({ id: 'routine', significance: 'minor' }),
+    event({ id: 'major', significance: 'major' })
+  ];
+  const snapshot = structuredClone(original);
+
+  selectChronicleWorldEvents(original, { maxEvents: 1 });
+
+  assert.deepEqual(original, snapshot);
+});
+
+test('duplicate-feeling events are quieted before filling the selection', () => {
+  const selected = selectChronicleWorldEvents([
+    event({
+      id: 'duplicate-newer',
+      title: 'Iron Wolves showed activity.',
+      source: { kind: 'chronicle', label: 'Guild activity' },
+      relatedMemories: ['memory:guild:iron-wolves'],
+      occurredAt: '2026-07-01T12:00:00.000Z'
+    }),
+    event({
+      id: 'duplicate-older',
+      title: 'Iron Wolves showed activity.',
+      source: { kind: 'chronicle', label: 'Guild activity' },
+      relatedMemories: ['memory:guild:iron-wolves'],
+      occurredAt: '2026-07-01T11:00:00.000Z'
+    }),
+    event({
+      id: 'different',
+      title: 'A new settlement was established.',
+      source: { kind: 'chronicle', label: 'World Memory' },
+      relatedMemories: ['memory:settlement'],
+      occurredAt: '2026-07-01T10:00:00.000Z'
+    })
+  ], { maxEvents: 2 });
+
+  assert.deepEqual(selected.events.map((item) => item.id), ['duplicate-newer', 'different']);
 });

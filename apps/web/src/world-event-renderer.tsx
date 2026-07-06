@@ -2,6 +2,7 @@
 import type { WorldEvent } from '@gameops/shared';
 import React from 'react';
 import {
+  getWorldEventRelevanceLabel,
   getWorldEventConfidenceLabel,
   getWorldEventSourceLabel,
   getWorldEventTypeLabel,
@@ -13,6 +14,7 @@ interface WorldEventRendererProps {
   events: WorldEvent[];
   title?: string;
   description?: string;
+  totalEventCount?: number;
   onSelect?: (event: WorldEvent) => void;
 }
 
@@ -134,6 +136,7 @@ export function WorldEventRenderer({
   events,
   title = 'World Events in the Chronicle',
   description = 'Trusted world events are shown here as readable history, with their source and evidence kept visible.',
+  totalEventCount = events.length,
   onSelect
 }: WorldEventRendererProps) {
   const chronicleEntries = worldEventsToChronicleEntries(events);
@@ -150,7 +153,7 @@ export function WorldEventRenderer({
           <h2>{title}</h2>
           <p className="subtle">{description}</p>
         </div>
-        <span className="source-badge">trusted events</span>
+        <span className="source-badge">showing {chronicleEntries.length} of {totalEventCount} trusted events</span>
       </div>
 
       <ol className="world-event-preview-list">
@@ -185,6 +188,7 @@ export function WorldEventRenderer({
                   <span className={`world-event-significance world-event-significance-${entry.significance}`}>
                     {entry.significance}
                   </span>
+                  <span>{getWorldEventRelevanceLabel(event)}</span>
                 </div>
                 {entry.evidenceLabels.length > 0 ? (
                   <div className="world-event-preview-meta">

@@ -92,12 +92,14 @@ import {
   type PalworldUnifiedPlayerProfile,
   type WorldEvent
 } from '@gameops/shared';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
 import { WorldEventDetailDrawer, WorldEventRenderer } from './world-event-renderer.tsx';
 import {
   createWorldEventRegistry,
+  scoreWorldEventRelevance,
+  selectChronicleWorldEvents,
   worldEventPreviewEvents,
   worldEventsToChronicleEntries,
   worldMemoryChronicleToWorldEvents
@@ -5531,16 +5533,37 @@ function App() {
 
     return new Map(entries);
   }, [selectedWorldEvents]);
+  const selectedWorldEventById = useMemo(() => {
+    return new Map(selectedWorldEvents.map((event) => [event.id, event]));
+  }, [selectedWorldEvents]);
+  const selectedWorldEventHighlights = useMemo(() => {
+    return selectChronicleWorldEvents(selectedWorldEvents, { maxEvents: 6 });
+  }, [selectedWorldEvents]);
   const selectedWorldEventChronicleEntries = useMemo(() => {
     return selectedWorldEventsArePreviewFallback ? worldEventsToChronicleEntries(selectedWorldEvents) : [];
   }, [selectedWorldEvents, selectedWorldEventsArePreviewFallback]);
   function openWorldEventDetail(worldEventId: string): void {
-    const worldEvent = selectedWorldEvents.find((event) => event.id === worldEventId);
+    const worldEvent = selectedWorldEventById.get(worldEventId);
 
     if (worldEvent) {
       setSelectedWorldEventDetail(worldEvent);
     }
   }
+
+  const compareChronicleEventsForOverview = useCallback((left: WorldChronicleEvent, right: WorldChronicleEvent): number => {
+    const leftWorldEventId = selectedWorldEventByChronicleId.get(left.id);
+    const rightWorldEventId = selectedWorldEventByChronicleId.get(right.id);
+    const leftWorldEvent = leftWorldEventId ? selectedWorldEventById.get(leftWorldEventId) : null;
+    const rightWorldEvent = rightWorldEventId ? selectedWorldEventById.get(rightWorldEventId) : null;
+    const leftScore = leftWorldEvent ? scoreWorldEventRelevance(leftWorldEvent) : 0;
+    const rightScore = rightWorldEvent ? scoreWorldEventRelevance(rightWorldEvent) : 0;
+
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore;
+    }
+
+    return Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
+  }, [selectedWorldEventByChronicleId, selectedWorldEventById]);
 
   const valheimChronicleEvents = useMemo(() => {
     if (selectedServer?.game !== 'valheim') {
@@ -5548,9 +5571,9 @@ function App() {
     }
 
     return [...selectedWorldMemory.chronicleEvents, ...selectedWorldEventChronicleEntries]
-      .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+      .sort(compareChronicleEventsForOverview)
       .slice(0, 14);
-  }, [selectedServer?.game, selectedWorldEventChronicleEntries, selectedWorldMemory]);
+  }, [compareChronicleEventsForOverview, selectedServer?.game, selectedWorldEventChronicleEntries, selectedWorldMemory]);
   const palworldGuildIntelligence = useMemo(() => {
     return selectedServer?.game === 'palworld' ? getPalworldGuildIntelligenceFromMemory(selectedWorldMemory) : [];
   }, [selectedServer?.game, selectedWorldMemory]);
@@ -5560,9 +5583,9 @@ function App() {
     }
 
     return [...selectedWorldMemory.chronicleEvents, ...selectedWorldEventChronicleEntries]
-      .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+      .sort(compareChronicleEventsForOverview)
       .slice(0, 14);
-  }, [selectedServer?.game, selectedWorldEventChronicleEntries, selectedWorldMemory]);
+  }, [compareChronicleEventsForOverview, selectedServer?.game, selectedWorldEventChronicleEntries, selectedWorldMemory]);
   const searchableWorldMemoryRecords = useMemo(() => {
     if (!selectedServer) {
       return [];
@@ -6001,11 +6024,12 @@ function App() {
 
             {selectedDashboardTab === 'overview' ? (
               <WorldEventRenderer
-                events={selectedWorldEvents}
+                events={selectedWorldEventHighlights.events}
+                totalEventCount={selectedWorldEventHighlights.totalEvents}
                 title={selectedWorldEventsArePreviewFallback ? 'World Events Preview' : 'World Events in the Chronicle'}
                 description={selectedWorldEventsArePreviewFallback
                   ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
-                  : 'Trusted world events are drawn from Chronicle and World Memory records already available in this dashboard.'}
+                  : 'Showing the most meaningful trusted events first. Lower-signal events stay quieter while their evidence remains inspectable.'}
                 onSelect={setSelectedWorldEventDetail}
               />
             ) : null}

@@ -68,6 +68,15 @@ export interface DerivedWorldEventsResult {
   previewFallback: boolean;
 }
 
+export interface WorldEventSelectionOptions {
+  maxEvents?: number;
+}
+
+export interface SelectedWorldEvents {
+  events: WorldEvent[];
+  totalEvents: number;
+}
+
 function compareWorldEvents(left: WorldEvent, right: WorldEvent): number {
   const occurredDelta = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
 
@@ -156,6 +165,202 @@ function getRelatedGuilds(record: WorldMemoryRecord | null): string[] {
 
 function getRelatedCharacters(record: WorldMemoryRecord | null): string[] {
   return record?.type === 'character' ? [record.id] : [];
+}
+
+function getSignificanceScore(significance: WorldEventSignificance): number {
+  switch (significance) {
+    case 'historic':
+      return 1_000;
+    case 'major':
+      return 700;
+    case 'normal':
+      return 400;
+    case 'minor':
+      return 100;
+  }
+}
+
+function getConfidenceScore(confidence: WorldEventConfidence): number {
+  switch (confidence) {
+    case 'high':
+      return 180;
+    case 'medium':
+      return 100;
+    case 'low':
+      return 20;
+    case 'unknown':
+      return 0;
+  }
+}
+
+function getSourceChronicleKind(event: WorldEvent): WorldChronicleEventKind | null {
+  return typeof event.metadata.sourceChronicleKind === 'string'
+    ? event.metadata.sourceChronicleKind as WorldChronicleEventKind
+    : null;
+}
+
+function getChronicleKindRelevanceScore(kind: WorldChronicleEventKind | null): number {
+  switch (kind) {
+    case 'base_lifecycle':
+      return 260;
+    case 'guild_quiet':
+      return 230;
+    case 'imported_character':
+      return 220;
+    case 'world_event':
+      return 120;
+    case 'guild_active':
+      return 80;
+    case 'restart':
+      return -180;
+    case 'arrival':
+    case 'return':
+    case 'join':
+    case 'leave':
+      return -120;
+    case null:
+      return 0;
+  }
+}
+
+function getEventTypeRelevanceScore(eventType: WorldEventType): number {
+  switch (eventType) {
+    case 'boss_defeated':
+      return 280;
+    case 'settlement_founded':
+    case 'guild_created':
+    case 'base_abandoned':
+      return 180;
+    case 'trader_discovered':
+    case 'portal_network_expanded':
+    case 'expedition_launched':
+      return 140;
+    case 'community_milestone':
+      return 120;
+    case 'world_state_changed':
+    case 'custom':
+      return 0;
+  }
+}
+
+function getDuplicateFeelingKey(event: WorldEvent): string {
+  const occurredDate = event.occurredAt.slice(0, 10);
+  const subject = event.relatedMemories[0] ?? event.relatedGuilds[0] ?? event.relatedCharacters[0] ?? event.relatedPlayers[0] ?? event.title;
+  return [
+    event.source.kind,
+    event.source.referenceId ? '' : event.source.label,
+    event.eventType,
+    subject.toLowerCase(),
+    event.title.toLowerCase(),
+    occurredDate
+  ].join('|');
+}
+
+export function scoreWorldEventRelevance(event: WorldEvent): number {
+  const evidenceScore = Math.min(event.evidence.length, 3) * 50;
+  const relatedHistoryScore = event.relatedMemories.length > 0 ? 90 : 0;
+  const relatedEntityScore = (
+    event.relatedGuilds.length > 0
+    || event.relatedCharacters.length > 0
+    || event.relatedPlayers.length > 0
+  ) ? 40 : 0;
+
+  return getSignificanceScore(event.significance)
+    + getConfidenceScore(event.confidence)
+    + evidenceScore
+    + relatedHistoryScore
+    + relatedEntityScore
+    + getEventTypeRelevanceScore(event.eventType)
+    + getChronicleKindRelevanceScore(getSourceChronicleKind(event));
+}
+
+export function getWorldEventRelevanceLabel(event: WorldEvent): string {
+  const score = scoreWorldEventRelevance(event);
+
+  if (event.significance === 'historic' || score >= 1_000) {
+    return 'Historic history';
+  }
+
+  if (event.significance === 'major' || score >= 750) {
+    return 'Major history';
+  }
+
+  if (score >= 500) {
+    return 'Meaningful history';
+  }
+
+  return 'Quiet history';
+}
+
+export function selectChronicleWorldEvents(
+  events: WorldEvent[],
+  options: WorldEventSelectionOptions = {}
+): SelectedWorldEvents {
+  const maxEvents = options.maxEvents ?? 6;
+  const rankedEvents = events
+    .map((event, index) => ({ event, index, relevance: scoreWorldEventRelevance(event) }))
+    .sort((left, right) => {
+      if (right.relevance !== left.relevance) {
+        return right.relevance - left.relevance;
+      }
+
+      const occurredDelta = Date.parse(right.event.occurredAt) - Date.parse(left.event.occurredAt);
+      if (occurredDelta !== 0) {
+        return occurredDelta;
+      }
+
+      const discoveredDelta = Date.parse(right.event.discoveredAt) - Date.parse(left.event.discoveredAt);
+      if (discoveredDelta !== 0) {
+        return discoveredDelta;
+      }
+
+      const idDelta = left.event.id.localeCompare(right.event.id);
+      return idDelta !== 0 ? idDelta : left.index - right.index;
+    });
+
+  if (maxEvents <= 0) {
+    return {
+      events: [],
+      totalEvents: events.length
+    };
+  }
+
+  const selectedEvents: WorldEvent[] = [];
+  const seenDuplicateKeys = new Set<string>();
+
+  for (const ranked of rankedEvents) {
+    const duplicateKey = getDuplicateFeelingKey(ranked.event);
+
+    if (seenDuplicateKeys.has(duplicateKey)) {
+      continue;
+    }
+
+    selectedEvents.push(ranked.event);
+    seenDuplicateKeys.add(duplicateKey);
+
+    if (selectedEvents.length >= maxEvents) {
+      break;
+    }
+  }
+
+  if (selectedEvents.length < Math.min(maxEvents, events.length)) {
+    for (const ranked of rankedEvents) {
+      if (selectedEvents.some((event) => event.id === ranked.event.id)) {
+        continue;
+      }
+
+      selectedEvents.push(ranked.event);
+
+      if (selectedEvents.length >= maxEvents) {
+        break;
+      }
+    }
+  }
+
+  return {
+    events: selectedEvents,
+    totalEvents: events.length
+  };
 }
 
 export function worldMemoryChronicleToWorldEvents(registry: WorldMemoryRegistry): WorldEvent[] {
