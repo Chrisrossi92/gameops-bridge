@@ -102,6 +102,26 @@ test('top-level navigation shell exposes route intent without unsupported screen
   assert.ok(!appSource.includes("if (item.key === 'automation')"));
 });
 
+test('server navigation treats the selected server as the primary object', () => {
+  assert.ok(appSource.includes('const groupedServerNavigation = useMemo(() => {'));
+  assert.ok(appSource.includes('aria-label="Fleet server navigation"'));
+  assert.ok(appSource.includes('server-nav-game-group'));
+  assert.ok(appSource.includes('server-nav-server-item'));
+  assert.ok(appSource.includes('role="group"'));
+  assert.ok(appSource.includes('aria-label={`${getGameLabel(group.game)} servers`}'));
+  assert.ok(appSource.includes('aria-label={`${summary?.displayName ?? server.displayName}, ${getGameLabel(server.game)} server, ${summary?.state ?? '));
+  assert.ok(appSource.includes("{isActiveServer ? 'Selected · ' : ''}"));
+  assert.ok(appSource.includes("pendingDashboardTabRef.current = { serverId: server.id, tab: 'overview' };"));
+  assert.ok(appSource.includes("setActiveWorkspace(server.game);"));
+  assert.ok(appSource.includes('aria-label="Selected server context"'));
+  assert.ok(appSource.includes('Connector: {selectedServerSummary.operationalStatus.connectorStatus}'));
+  assert.ok(appSource.includes('Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}'));
+  assert.ok(appSource.includes('Alerts: {selectedAlertCount}'));
+  assert.ok(appSource.includes('Configured: {selectedServerSummary.operationalStatus.configured ? '));
+  assert.ok(appSource.includes('servers: serverOptions.length'));
+  assert.ok(!appSource.includes('selected-status-pill'));
+});
+
 test('server tabs expose the expected primary questions and hierarchy labels', () => {
   for (const question of [
     'Does this server need my attention?',

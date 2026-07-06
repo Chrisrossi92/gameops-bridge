@@ -6605,6 +6605,18 @@ function App() {
         summary: fleetByServerId[server.id]
       }));
   }, [fleetByServerId, serverOptions]);
+  const groupedServerNavigation = useMemo(() => {
+    const gameOrder = ['palworld', 'valheim'] satisfies Array<ServerOption['game']>;
+
+    return gameOrder
+      .map((game) => ({
+        game,
+        servers: serverOptions
+          .filter((server) => server.game === game)
+          .sort((left, right) => left.displayName.localeCompare(right.displayName))
+      }))
+      .filter((group) => group.servers.length > 0);
+  }, [serverOptions]);
   const currentOperationItems = useMemo(() => {
     const items = worldCards.reduce<CurrentOperationItem[]>((workItems, { server, summary }) => {
         if (!summary) {
@@ -6803,18 +6815,17 @@ function App() {
     });
   }, [worldCards]);
   const fleetCounts = useMemo(() => {
-    const countedServers = activeWorkspace === 'overview' ? serverOptions : filteredServers;
-    const visibleSummaries = countedServers
+    const visibleSummaries = serverOptions
       .map((server) => fleetByServerId[server.id])
       .filter((summary): summary is ServerSummary => Boolean(summary));
 
     return {
-      servers: countedServers.length,
+      servers: serverOptions.length,
       online: visibleSummaries.filter((summary) => summary.state === 'online').length,
       degraded: visibleSummaries.filter((summary) => summary.state === 'degraded').length,
       activePlayers: visibleSummaries.reduce((sum, summary) => sum + summary.activePlayers, 0)
     };
-  }, [activeWorkspace, filteredServers, fleetByServerId, serverOptions]);
+  }, [fleetByServerId, serverOptions]);
 
   const apiHealthLabel = health?.ok ? 'Online' : 'Unknown';
   const selectedWarningSummary = useMemo(
@@ -7481,43 +7492,70 @@ function App() {
             })}
           </nav>
 
-          <nav className="workspace-nav" aria-label="Workspace navigation">
+          <nav className="workspace-nav server-navigation" aria-label="Fleet server navigation">
             <button
               type="button"
-              className={activeWorkspace === 'overview' ? 'workspace-nav-item workspace-nav-item-active' : 'workspace-nav-item'}
+              className={activeTopLevelArea === 'servers' && activeWorkspace === 'overview' ? 'workspace-nav-item workspace-nav-item-active server-nav-fleet-item' : 'workspace-nav-item server-nav-fleet-item'}
+              aria-current={activeTopLevelArea === 'servers' && activeWorkspace === 'overview' ? 'page' : undefined}
               onClick={() => {
-                setActiveTopLevelArea('overview');
+                setActiveTopLevelArea('servers');
                 setActiveWorkspace('overview');
                 setSelectedGameFilter('all');
               }}
             >
               <span className="workspace-nav-symbol" aria-hidden="true">O</span>
-              <span>Overview</span>
+              <span className="server-nav-item-copy">
+                <span>Fleet</span>
+                <span>All servers</span>
+              </span>
             </button>
-            <button
-              type="button"
-              className={activeWorkspace === 'valheim' ? 'workspace-nav-item workspace-nav-item-active workspace-nav-valheim' : 'workspace-nav-item workspace-nav-valheim'}
-              onClick={() => {
-                setActiveTopLevelArea('servers');
-                setActiveWorkspace('valheim');
-                setSelectedGameFilter('valheim');
-              }}
-            >
-              <span className="workspace-nav-symbol" aria-hidden="true">V</span>
-              <span>Valheim</span>
-            </button>
-            <button
-              type="button"
-              className={activeWorkspace === 'palworld' ? 'workspace-nav-item workspace-nav-item-active workspace-nav-palworld' : 'workspace-nav-item workspace-nav-palworld'}
-              onClick={() => {
-                setActiveTopLevelArea('servers');
-                setActiveWorkspace('palworld');
-                setSelectedGameFilter('palworld');
-              }}
-            >
-              <span className="workspace-nav-symbol" aria-hidden="true">P</span>
-              <span>Palworld</span>
-            </button>
+
+            {groupedServerNavigation.map((group) => (
+              <div
+                key={group.game}
+                className={`server-nav-game-group server-nav-game-group-${group.game}`}
+                role="group"
+                aria-label={`${getGameLabel(group.game)} servers`}
+              >
+                <div className="server-nav-game-heading" aria-hidden="true">
+                  <span className="workspace-nav-symbol">{getGameSymbol(group.game)}</span>
+                  <span>{getGameLabel(group.game)}</span>
+                </div>
+                <div className="server-nav-server-list">
+                  {group.servers.map((server) => {
+                    const summary = fleetByServerId[server.id];
+                    const isActiveServer = activeTopLevelArea === 'servers' && selectedServerId === server.id && activeWorkspace !== 'overview';
+
+                    return (
+                      <button
+                        key={server.id}
+                        type="button"
+                        className={`workspace-nav-item server-nav-server-item workspace-nav-${server.game} ${isActiveServer ? 'workspace-nav-item-active' : ''}`}
+                        aria-current={isActiveServer ? 'page' : undefined}
+                        aria-label={`${summary?.displayName ?? server.displayName}, ${getGameLabel(server.game)} server, ${summary?.state ?? 'loading'}`}
+                        onClick={() => {
+                          setActiveTopLevelArea('servers');
+                          pendingDashboardTabRef.current = { serverId: server.id, tab: 'overview' };
+                          setSelectedServerId(server.id);
+                          setSelectedDashboardTab('overview');
+                          setSelectedGameFilter(server.game);
+                          setActiveWorkspace(server.game);
+                        }}
+                      >
+                        <span className={`server-nav-state-dot state-dot-${summary?.state ?? 'unknown'}`} aria-hidden="true" />
+                        <span className="server-nav-item-copy">
+                          <span>{summary?.displayName ?? server.displayName}</span>
+                          <span>
+                            {isActiveServer ? 'Selected · ' : ''}
+                            {summary?.state ?? 'loading'} · {summary?.activePlayers ?? 0} online
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
           <div className="status-strip">
@@ -7542,32 +7580,6 @@ function App() {
                 <span className="status-label">Updated</span>
                 <span className="status-value">{formatClock(lastUpdatedAt)}</span>
               </div>
-            ) : null}
-            {activeTopLevelArea === 'servers' && activeWorkspace !== 'overview' && selectedServer && selectedServerSummary ? (
-              <>
-                <div className="status-pill selected-status-pill">
-                  <span className="status-label">Selected</span>
-                  <span className="status-value">{selectedServerSummary.displayName}</span>
-                </div>
-                <div className="status-pill">
-                  <span className="status-label">Configured</span>
-                  <span className="status-value status-good">{selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
-                </div>
-                <div className="status-pill">
-                  <span className="status-label">Connector</span>
-                  <span className={`status-value ${getConnectorStatusTone(selectedServerSummary.operationalStatus.connectorStatus)}`}>
-                    {selectedServerSummary.operationalStatus.connectorStatus}
-                  </span>
-                </div>
-                <div className="status-pill">
-                  <span className="status-label">Telemetry</span>
-                  <span className="status-value">{getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
-                </div>
-                <div className="status-pill">
-                  <span className="status-label">Alerts</span>
-                  <span className="status-value">{selectedAlertCount}</span>
-                </div>
-              </>
             ) : null}
           </div>
 
@@ -7923,6 +7935,14 @@ function App() {
                   <span className="summary-label">{getGameLabel(selectedServer.game)} Server</span>
                   <h2>{selectedServerSummary.displayName}</h2>
                   <p>{detailTabs.find((tab) => tab.key === selectedDashboardTab)?.label ?? 'Server'} view</p>
+                  <div className="server-context-strip" aria-label="Selected server context">
+                    <span className={getConnectorStatusTone(selectedServerSummary.operationalStatus.connectorStatus)}>
+                      Connector: {selectedServerSummary.operationalStatus.connectorStatus}
+                    </span>
+                    <span>Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
+                    <span>Alerts: {selectedAlertCount}</span>
+                    <span>Configured: {selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
+                  </div>
                 </div>
               </div>
               <div className="server-attention-summary">
@@ -7933,6 +7953,15 @@ function App() {
             ) : null}
 
             {selectedDashboardTab === 'overview' ? (
+              <>
+              <div className="server-context-strip server-overview-context-strip" aria-label="Selected server context">
+                <span className={getConnectorStatusTone(selectedServerSummary.operationalStatus.connectorStatus)}>
+                  Connector: {selectedServerSummary.operationalStatus.connectorStatus}
+                </span>
+                <span>Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
+                <span>Alerts: {selectedAlertCount}</span>
+                <span>Configured: {selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
+              </div>
               <ServerAttentionSummary
                 gameLabel={getGameLabel(selectedServer.game)}
                 gameSymbol={getGameSymbol(selectedServer.game)}
@@ -7953,6 +7982,7 @@ function App() {
                   { label: 'Data', value: selectedServerSummary.dataFreshness.status }
                 ]}
               />
+              </>
             ) : (
             <section className="workspace-summary-strip" aria-label="World summary">
               <div>

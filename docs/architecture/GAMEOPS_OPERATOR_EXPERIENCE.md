@@ -1151,6 +1151,107 @@ Known limitations:
 
 Phase 11 can close when this contract remains green in validation. Future feature work should begin by choosing the correct top-level area, server tab, drawer, or dialog before code is added.
 
+## Phase 12A Server Navigation Architecture
+
+Phase 12A keeps the Phase 11 Operator Console IA intact and improves only how operators choose and recognize servers. The server is now treated as the primary object inside the Servers area. Operators should immediately understand:
+
+- what game scope they are in
+- which server is selected
+- how to switch to another server
+- which metadata describes the fleet versus the selected server
+
+Research notes:
+
+- Kubernetes-style dashboards separate cluster/resource scope from object detail and use navigation hierarchy to keep dense operational resources approachable.
+- DigitalOcean Projects organize infrastructure resources into groups that match how operators work, which supports a fleet-first grouping model for many servers.
+- AWS Console patterns reinforce top-level task/service navigation with resource-specific detail once an object is selected.
+- Hetzner Cloud documentation frames Cloud Console work around projects, servers, and product-specific reference, which supports a clear resource list plus detail view.
+- IDE project explorers show why a persistent left-to-right hierarchy works: the selected object remains visible while the detail editor changes.
+
+Navigation models considered:
+
+| Model | Strengths | Weaknesses | Decision |
+| --- | --- | --- | --- |
+| Flat server tabs | Fast for two or three servers; minimal UI. | Does not scale to dozens; game context is implicit; names can truncate. | Rejected as the long-term model. |
+| Game-only switcher | Makes Palworld versus Valheim clear. | Still hides individual servers behind cards; selected server can feel secondary. | Rejected as insufficient. |
+| Search/select dropdown | Scales to many servers and supports keyboard selection. | Poor ambient awareness; hides fleet structure until opened. | Future enhancement, not the primary POC. |
+| Persistent sidebar tree | Strong hierarchy for large fleets. | Too large a layout change for this phase; risks redesigning the console shell. | Good future direction, deferred. |
+| Hybrid grouped rail: Fleet -> Game -> Server | Clear game grouping, visible server choices, small reversible change, works with the existing shell. | Horizontal density must be managed on mobile; search may be needed when fleets become large. | Recommended for Phase 12A. |
+
+Recommended model:
+
+```text
+Fleet
+`-- Servers
+    |-- Palworld
+    |   |-- Fantasy
+    |   |-- Vanilla
+    |   `-- Chaos World
+    `-- Valheim
+        `-- King's Landing
+```
+
+The grouped server rail belongs below the top-level shell and above the fleet/server content. It is not a replacement for the Phase 11 top-level navigation. It is the object selector inside Servers.
+
+Fleet scope rules:
+
+- Fleet health belongs in the compact fleet status strip: API, total servers, online servers, total players, and last update.
+- Fleet overview answers which server needs attention and shows comparable server cards.
+- Fleet-level metrics must not visually compete with selected-server identity.
+
+Server scope rules:
+
+- The selected server hero must make the server name one of the most prominent pieces of text on the page.
+- The hero should show game label, server name, online/state treatment, and quiet server-scoped metadata such as connector, telemetry, alerts, and configured state.
+- Server tabs remain unchanged: Overview, Players, Settings, Backups, History, Capabilities.
+- Server-specific connector, telemetry, alert, configuration, and capability metadata belongs in the selected server hero or the relevant server tab, not in the fleet status strip.
+
+POC implementation notes:
+
+- The current POC uses a grouped rail with Fleet, Palworld servers, and Valheim servers.
+- Server buttons use only existing catalog and summary data.
+- Selecting a server opens the existing Servers area and preserves the Phase 11 server tab contract.
+- Switching servers routes to that server's Overview tab so the operator starts with the attention summary.
+- The grouped rail scrolls internally on narrow screens instead of widening the page.
+
+Future scaling rules:
+
+- Add search/filter only when server count makes visible grouping insufficient.
+- Keep grouping by game first until another operational grouping becomes more important, such as environment, community, owner, or region.
+- If dozens of servers are common, promote the grouped rail into a persistent sidebar or drawer without changing the server tab contract.
+- Do not use card grids as the only server switching mechanism once the fleet grows beyond a small set.
+- Preserve the distinction between selecting an object and investigating that object's tabs.
+
+## Phase 12B Server Navigation Visual Verification
+
+Phase 12B visually verifies and lightly polishes the Phase 12A server navigation without changing the Phase 11 Operator Console IA.
+
+Verified:
+
+- the grouped rail communicates Fleet -> Game -> Server before the operator enters a server console
+- the selected server name is the primary heading in the server Overview
+- the game label supports server identity without replacing the server name
+- fleet metadata stays in the fleet strip while server metadata stays in selected-server context
+- mobile layout uses internal navigation scrolling rather than page-level horizontal overflow
+
+Polished:
+
+- active server buttons use stronger selected styling and explicit selected copy
+- game groups have accessible group labels for Palworld and Valheim server lists
+- selected-server context omits duplicated status because status is already shown by the server hero
+- server context chips stay quiet so they do not compete with the server name and attention summary
+- grouped rail spacing was loosened to make multiple Palworld servers easier to distinguish
+
+Intentionally out of scope:
+
+- no routing migration
+- no server console redesign
+- no backend, connector, Palworld, Valheim, automation, schema, or persistence change
+- no operational buttons or new server actions
+- no search/dropdown until fleet size makes visible grouping insufficient
+
+The model still scales because visible game grouping works for a small fleet, horizontal/internal scrolling prevents mobile page overflow, and the documented next step for dozens of servers is to promote the same hierarchy into a persistent sidebar or drawer without changing the server tab contract.
+
 ## Phase 11A Boundary
 
 This architecture does not add backend capabilities, Palworld behavior, connectors, automation, write actions, or server functionality. It reorganizes how existing and future functionality should be presented so GameOps can grow without becoming a wall of cards.

@@ -78,9 +78,9 @@ export function ServerAttentionSummary({
         <div className="server-attention-identity">
           <span className="world-workspace-symbol" aria-hidden="true">{gameSymbol}</span>
           <div>
-            <span className="summary-label">{gameLabel} Overview</span>
-            <h2>Does this server need my attention?</h2>
-            <p>{serverName}</p>
+            <span className="summary-label">{gameLabel} Server</span>
+            <h2>{serverName}</h2>
+            <p>Does this server need my attention?</p>
           </div>
         </div>
 
