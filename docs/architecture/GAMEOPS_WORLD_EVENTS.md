@@ -107,6 +107,14 @@ Lower-signal events such as routine joins, leaves, returns, and server restart o
 
 Relevance is a presentation rule, not a truth rule. The full trusted event set should remain available to detail views, Chronicle links, future timelines, or future history surfaces.
 
+## World History Timeline
+
+World History is the first timeline consumer of trusted World Events. It presents selected events as readable history for the currently selected world, ordered by world time and backed by the same source, confidence, timestamp, evidence, and connected-history inspection used by Chronicle integration.
+
+The timeline may reuse relevance selection to keep routine events quiet, but it must not invent events, fabricate summaries, or replace trusted records with seeded previews. Preview events remain development fallbacks only and must not mask real Chronicle or World Memory records.
+
+World History is a product surface over World Events, not a new event source. It does not add AI summaries, collector behavior, notifications, Discord posting, manual creation, or telemetry changes.
+
 ## Detail Inspection
 
 World Event detail views are read-only trust surfaces.
@@ -125,7 +133,7 @@ Connected history includes related memories, people, guilds, characters, and rel
 
 ## UI Foundation
 
-The current UI includes Chronicle integration, a World Events overview section, and a read-only detail drawer. It demonstrates the contract, source attribution, evidence counts, timestamps, confidence, significance, relevance labels, and connected history without adding navigation, notifications, analytics, collector behavior, telemetry changes, or AI.
+The current UI includes Chronicle integration, a lightweight World History timeline, and a read-only detail drawer. It demonstrates the contract, source attribution, evidence counts, timestamps, confidence, significance, relevance labels, and connected history without adding navigation, notifications, analytics, collector behavior, telemetry changes, or AI.
 
 Future production surfaces should consume this domain model instead of rebuilding separate event shapes.
 

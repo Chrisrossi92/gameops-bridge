@@ -3,7 +3,13 @@ import test from 'node:test';
 import type { WorldEvent } from '@gameops/shared';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { WorldEventDetailDrawer, WorldEventRelationshipSummary, WorldEventRenderer } from '../src/world-event-renderer.tsx';
+import { selectChronicleWorldEvents } from '../src/world-events.ts';
+import {
+  WorldEventDetailDrawer,
+  WorldEventRelationshipSummary,
+  WorldEventRenderer,
+  WorldHistoryTimeline
+} from '../src/world-event-renderer.tsx';
 
 function event(overrides: Partial<WorldEvent> = {}): WorldEvent {
   return {
@@ -27,14 +33,53 @@ function event(overrides: Partial<WorldEvent> = {}): WorldEvent {
   };
 }
 
-test('world event renderer uses Chronicle language and opens from trusted entries', () => {
-  const html = renderToStaticMarkup(<WorldEventRenderer events={[event()]} onSelect={() => undefined} />);
+test('world history timeline uses trusted history language and exposes evidence inspection', () => {
+  const html = renderToStaticMarkup(<WorldHistoryTimeline events={[event()]} onSelect={() => undefined} />);
 
-  assert.match(html, /World Events in the Chronicle/);
-  assert.match(html, /Trusted world events are shown here as readable history/);
+  assert.match(html, /World History/);
+  assert.match(html, /Trusted events from Chronicle and World Memory/);
   assert.match(html, /A new settlement was established/);
   assert.match(html, /World Memory/);
   assert.match(html, /0 evidence/);
+  assert.match(html, /Inspect evidence/);
+});
+
+test('world history timeline orders selected rows by occurred time without mutating input', () => {
+  const older = event({ id: 'older', title: 'Older world event', occurredAt: '2026-07-01T10:00:00.000Z' });
+  const newer = event({ id: 'newer', title: 'Newer world event', occurredAt: '2026-07-01T12:00:00.000Z' });
+  const events = [older, newer];
+  const snapshot = structuredClone(events);
+  const html = renderToStaticMarkup(<WorldHistoryTimeline events={events} />);
+
+  assert.ok(html.indexOf('Newer world event') < html.indexOf('Older world event'));
+  assert.deepEqual(events, snapshot);
+});
+
+test('world history timeline can render relevance-controlled selected events', () => {
+  const selected = selectChronicleWorldEvents([
+    event({ id: 'routine', title: 'Routine arrival', significance: 'minor', confidence: 'high' }),
+    event({ id: 'major', title: 'A major world event', significance: 'major', confidence: 'medium' })
+  ], { maxEvents: 1 });
+  const html = renderToStaticMarkup(
+    <WorldHistoryTimeline events={selected.events} totalEventCount={selected.totalEvents} />
+  );
+
+  assert.match(html, /A major world event/);
+  assert.doesNotMatch(html, /Routine arrival/);
+  assert.match(html, /showing 1 of 2 trusted events/);
+});
+
+test('world history timeline shows an owner-friendly empty state', () => {
+  const html = renderToStaticMarkup(<WorldHistoryTimeline events={[]} />);
+
+  assert.match(html, /This world does not have enough trusted history yet/);
+});
+
+test('world event renderer remains a compatibility wrapper for the timeline', () => {
+  const html = renderToStaticMarkup(<WorldEventRenderer events={[event()]} />);
+
+  assert.match(html, /World History/);
+  assert.match(html, /Trusted events from Chronicle and World Memory/);
 });
 
 test('world event detail drawer preserves trust, evidence, and related history', () => {

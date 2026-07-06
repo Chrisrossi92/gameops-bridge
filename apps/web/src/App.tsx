@@ -95,7 +95,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { OperatorWorkspace } from './operator-workspace.tsx';
-import { WorldEventDetailDrawer, WorldEventRenderer } from './world-event-renderer.tsx';
+import { WorldEventDetailDrawer, WorldHistoryTimeline } from './world-event-renderer.tsx';
 import {
   createWorldEventRegistry,
   scoreWorldEventRelevance,
@@ -6023,13 +6023,13 @@ function App() {
             ) : null}
 
             {selectedDashboardTab === 'overview' ? (
-              <WorldEventRenderer
+              <WorldHistoryTimeline
                 events={selectedWorldEventHighlights.events}
                 totalEventCount={selectedWorldEventHighlights.totalEvents}
-                title={selectedWorldEventsArePreviewFallback ? 'World Events Preview' : 'World Events in the Chronicle'}
+                title={selectedWorldEventsArePreviewFallback ? 'World History Preview' : 'World History'}
                 description={selectedWorldEventsArePreviewFallback
                   ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
-                  : 'Showing the most meaningful trusted events first. Lower-signal events stay quieter while their evidence remains inspectable.'}
+                  : 'Trusted events from Chronicle and World Memory. Showing the most meaningful history first.'}
                 onSelect={setSelectedWorldEventDetail}
               />
             ) : null}

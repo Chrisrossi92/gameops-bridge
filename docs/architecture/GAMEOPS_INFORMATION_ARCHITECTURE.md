@@ -119,6 +119,8 @@ World should avoid generic analytics when the game has stronger native concepts.
 
 World Events should appear as readable world history, not raw telemetry. Surfaces can rank the most meaningful trusted events first, but lower-signal events should remain available through trusted records, Chronicle links, or future history surfaces instead of being discarded.
 
+World History is the first timeline surface for trusted World Events. It belongs inside the selected world context, should preserve evidence inspection through the World Event drawer, and should not become a new navigation area until the product needs a deeper history workspace.
+
 ### Operations
 
 Purpose: Is the technical pipeline healthy?

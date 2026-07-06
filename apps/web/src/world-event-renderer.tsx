@@ -14,6 +14,7 @@ interface WorldEventRendererProps {
   events: WorldEvent[];
   title?: string;
   description?: string;
+  emptyMessage?: string;
   totalEventCount?: number;
   onSelect?: (event: WorldEvent) => void;
 }
@@ -190,24 +191,36 @@ export function WorldEventDetailDrawer({ event, relatedEvents = [], onClose }: W
   );
 }
 
-export function WorldEventRenderer({
+export function WorldHistoryTimeline({
   events,
-  title = 'World Events in the Chronicle',
-  description = 'Trusted world events are shown here as readable history, with their source and evidence kept visible.',
+  title = 'World History',
+  description = 'Trusted events from Chronicle and World Memory.',
+  emptyMessage = 'This world does not have enough trusted history yet.',
   totalEventCount = events.length,
   onSelect
 }: WorldEventRendererProps) {
   const chronicleEntries = worldEventsToChronicleEntries(events);
 
   if (chronicleEntries.length === 0) {
-    return null;
+    return (
+      <article className="card world-event-preview-card" aria-label="World history timeline">
+        <div className="world-event-preview-heading">
+          <div>
+            <span className="summary-label">World History</span>
+            <h2>{title}</h2>
+            <p className="subtle">{description}</p>
+          </div>
+        </div>
+        <p className="subtle">{emptyMessage}</p>
+      </article>
+    );
   }
 
   return (
-    <article className="card world-event-preview-card" aria-label="World events in the chronicle">
+    <article className="card world-event-preview-card world-history-timeline-card" aria-label="World history timeline">
       <div className="world-event-preview-heading">
         <div>
-          <span className="summary-label">Chronicle</span>
+          <span className="summary-label">World History</span>
           <h2>{title}</h2>
           <p className="subtle">{description}</p>
         </div>
@@ -247,6 +260,7 @@ export function WorldEventRenderer({
                     {entry.significance}
                   </span>
                   <span>{getWorldEventRelevanceLabel(event)}</span>
+                  <span>Inspect evidence</span>
                 </div>
                 {entry.evidenceLabels.length > 0 ? (
                   <div className="world-event-preview-meta">
@@ -260,4 +274,8 @@ export function WorldEventRenderer({
       </ol>
     </article>
   );
+}
+
+export function WorldEventRenderer(props: WorldEventRendererProps) {
+  return <WorldHistoryTimeline {...props} />;
 }
