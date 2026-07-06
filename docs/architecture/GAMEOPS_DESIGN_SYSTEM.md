@@ -228,6 +228,8 @@ Detail drawers should preserve context.
 
 They should slide smoothly, keep the selected world visible, and focus on one entity or event. A player drawer should explain that player. A guild drawer should explain that guild. A session timeline should explain session evidence.
 
+World Event drawers should make trust inspectable. They should show evidence, source, confidence, timestamps, and connected history in owner language such as "Connected history" and "Related memories." Empty relationship states should be honest and compact instead of hidden or inflated.
+
 ### Empty States
 
 Empty states should be honest and useful.

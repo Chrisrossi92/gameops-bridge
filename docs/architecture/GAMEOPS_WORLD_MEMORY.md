@@ -115,6 +115,10 @@ The UI should not expose raw memory implementation details. Memory gives Chronic
 
 When a Chronicle event is tied to a memory record, detail drawers and future timelines can use that reference without text matching or duplicate lookup logic.
 
+World Events may be derived from World Memory Chronicle events and linked memory records. This derivation must remain deterministic and source-grounded. It should preserve Chronicle source labels, confidence, occurred timestamps, discovered timestamps, evidence references, and memory record links.
+
+World Memory does not invent World Events. It provides trusted records and Chronicle references that a World Event adapter can translate into readable world history.
+
 ## Detail Drawer Foundation
 
 Detail drawers should increasingly receive a memory detail model:

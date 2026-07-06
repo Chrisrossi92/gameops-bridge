@@ -111,10 +111,13 @@ Useful content:
 
 - game-specific world history
 - notable events
+- trusted World Events
 - progression-related facts when available
 - future game-specific intelligence
 
 World should avoid generic analytics when the game has stronger native concepts. A Valheim world history surface and a Palworld guild/base surface should not be forced to look identical.
+
+World Events should appear as readable world history, not raw telemetry. Surfaces can rank the most meaningful trusted events first, but lower-signal events should remain available through trusted records, Chronicle links, or future history surfaces instead of being discarded.
 
 ### Operations
 
@@ -192,10 +195,13 @@ Good drawer uses:
 - session timeline
 - recent activity details
 - event evidence
+- World Event connected history
 - identity confidence explanation
 - pipeline diagnostic detail
 
 Drawers should answer a focused question and provide enough evidence for trust. They should not become miniature full pages with unrelated sections.
+
+World Event drawers should preserve the selected world context while showing source, confidence, occurred and discovered timestamps, evidence, and connected history such as related memories, people, guilds, characters, and related events.
 
 ## Raw Telemetry And Debug References
 

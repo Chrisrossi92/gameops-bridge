@@ -94,6 +94,14 @@ Each major surface should have one clear responsibility:
 
 Avoid mixed-purpose screens that combine global health, per-server community detail, player investigation, and collector diagnostics in the same visual priority. If a screen has too many jobs, split the work into sections, drawers, or an Operations surface.
 
+## Trusted World History
+
+World history should be built from trusted records, not generated narrative.
+
+World Events, Chronicle entries, and future timelines must preserve why a claim is shown: source, confidence, timing, evidence, and connected history. Relevance or noise control can decide what appears first, but it must not delete trusted history or hide the provenance needed for owner trust.
+
+AI-generated history is out of bounds until a future architecture explicitly defines source attribution, evidence, confidence, review, and correction rules.
+
 ## Plain Language
 
 Prefer owner-friendly product language:

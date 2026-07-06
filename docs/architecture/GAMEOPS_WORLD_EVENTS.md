@@ -56,6 +56,8 @@ Every World Event has a source:
 
 Sources explain where the event originated. Evidence references explain why the event is trusted. Evidence may point to log truth entries, sessions, memory records, Chronicle entries, operator notes, or external references.
 
+Source, confidence, occurred timestamp, discovered timestamp, and evidence are not optional UI concerns. Any production surface that renders a World Event must keep them visible or inspectable so an owner can understand why the system believes the event happened.
+
 ## Significance
 
 World Events use reusable significance levels:
@@ -85,8 +87,50 @@ Chronicle may adapt trusted World Events into readable Chronicle entries. That a
 
 Chronicle integration must not create new World Events or invent missing history. It can render trusted events, sort them with existing Chronicle entries, and expose evidence in owner-friendly language.
 
+World Events now also derive deterministically from trusted World Memory and Chronicle records. The derivation layer uses records that already exist in the selected world's memory registry. It does not read raw collectors, create telemetry, or infer unsupported history. Chronicle-derived events must include Chronicle evidence. Memory-derived events must include memory evidence when a memory record is available.
+
+Preview World Events are development fallbacks only. They must never mask real trusted records. When trusted World Memory or Chronicle records exist for the selected world, production surfaces should prefer those records and suppress seeded preview events.
+
+## Relevance And Noise Control
+
+World Events can be ranked for presentation, but ranking must not delete or rewrite trusted events.
+
+The current relevance layer is deterministic and favors:
+
+- historic and major significance
+- higher confidence
+- attached evidence
+- related memory and entity references
+- game-meaningful lifecycle or progression records
+
+Lower-signal events such as routine joins, leaves, returns, and server restart or online records should be quieter when stronger world history exists. They may still be shown when they are the only trusted history available.
+
+Relevance is a presentation rule, not a truth rule. The full trusted event set should remain available to detail views, Chronicle links, future timelines, or future history surfaces.
+
+## Detail Inspection
+
+World Event detail views are read-only trust surfaces.
+
+They should show:
+
+- title and summary
+- event type and significance
+- confidence
+- source
+- occurred and discovered timestamps
+- evidence references
+- connected history
+
+Connected history includes related memories, people, guilds, characters, and related World Events when those fields are already present on the event. The UI may resolve related event titles from the selected event list, but it must not invent relationships or make unsupported targets clickable.
+
 ## UI Foundation
 
-The current UI scope is an internal preview renderer only. It demonstrates the contract, source attribution, evidence counts, timestamps, confidence, and significance without adding navigation, notifications, analytics, collector behavior, telemetry changes, or AI.
+The current UI includes Chronicle integration, a World Events overview section, and a read-only detail drawer. It demonstrates the contract, source attribution, evidence counts, timestamps, confidence, significance, relevance labels, and connected history without adding navigation, notifications, analytics, collector behavior, telemetry changes, or AI.
 
 Future production surfaces should consume this domain model instead of rebuilding separate event shapes.
+
+## Phase 8 Guardrails
+
+Phase 8 created the World Event foundation only. It did not introduce AI-generated history, notification systems, Discord posting, collector changes, telemetry changes, predictions, manual event creation, or world scoring.
+
+Future AI consumers may read trusted World Events as context, but AI must not become a source of world history unless a future architecture explicitly defines provenance, confidence, evidence, and owner review rules.
