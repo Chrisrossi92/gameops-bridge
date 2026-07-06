@@ -1443,6 +1443,345 @@ function formatObservedSettingHandling(setting: ObservedSettingsResponse['groups
   }
 }
 
+type ObservedSetting = ObservedSettingsResponse['groups'][number]['settings'][number];
+
+interface BoostPresetTargetDefinition {
+  label: string;
+  patterns: RegExp[];
+  multiplier: number;
+  missingMessage: string;
+}
+
+interface BoostPresetDefinition {
+  id: string;
+  name: string;
+  summary: string;
+  targetDefinitions: BoostPresetTargetDefinition[];
+}
+
+interface BoostPresetSettingPreview {
+  setting: ObservedSetting;
+  targetLabel: string;
+  multiplier: number;
+  proposedValue: unknown | null;
+  canPreviewValue: boolean;
+  warning: string | null;
+}
+
+interface BoostPresetPreview {
+  definition: BoostPresetDefinition;
+  settingPreviews: BoostPresetSettingPreview[];
+  missingTargets: string[];
+  unsupportedTargets: string[];
+  fullyPreviewable: boolean;
+}
+
+const BOOST_PRESET_DEFINITIONS: BoostPresetDefinition[] = [
+  {
+    id: 'weekend-xp-boost',
+    name: 'Weekend XP Boost',
+    summary: 'A short progression boost for a weekend event.',
+    targetDefinitions: [{
+      label: 'XP rate',
+      patterns: [/\bexp/i, /\bxp/i],
+      multiplier: 2,
+      missingMessage: 'No readable XP or experience rate setting was found.'
+    }]
+  },
+  {
+    id: 'capture-boost',
+    name: 'Capture Boost',
+    summary: 'A temporary boost for catching Pals.',
+    targetDefinitions: [{
+      label: 'Capture rate',
+      patterns: [/capture/i, /catch/i],
+      multiplier: 1.5,
+      missingMessage: 'No readable capture rate setting was found.'
+    }]
+  },
+  {
+    id: 'resource-gathering-boost',
+    name: 'Resource Gathering Boost',
+    summary: 'A temporary boost for gathering and collection pacing.',
+    targetDefinitions: [
+      {
+        label: 'Gathering or collection rate',
+        patterns: [/gather/i, /collection/i, /collect/i],
+        multiplier: 2,
+        missingMessage: 'No readable gathering or collection rate setting was found.'
+      },
+      {
+        label: 'Drop rate',
+        patterns: [/drop/i],
+        multiplier: 1.5,
+        missingMessage: 'No readable drop rate setting was found.'
+      }
+    ]
+  },
+  {
+    id: 'fast-eggs',
+    name: 'Fast Eggs',
+    summary: 'A temporary egg hatch and incubation speed-up.',
+    targetDefinitions: [{
+      label: 'Egg hatch or incubation time',
+      patterns: [/egg/i, /incubat/i, /hatch/i],
+      multiplier: 0.5,
+      missingMessage: 'No readable egg hatch or incubation setting was found.'
+    }]
+  },
+  {
+    id: 'casual-server-boost',
+    name: 'Casual Server Boost',
+    summary: 'A softer all-around progression boost for casual play.',
+    targetDefinitions: [
+      {
+        label: 'XP rate',
+        patterns: [/\bexp/i, /\bxp/i],
+        multiplier: 1.5,
+        missingMessage: 'No readable XP or experience rate setting was found.'
+      },
+      {
+        label: 'Capture rate',
+        patterns: [/capture/i, /catch/i],
+        multiplier: 1.25,
+        missingMessage: 'No readable capture rate setting was found.'
+      },
+      {
+        label: 'Gathering or collection rate',
+        patterns: [/gather/i, /collection/i, /collect/i],
+        multiplier: 1.5,
+        missingMessage: 'No readable gathering or collection rate setting was found.'
+      },
+      {
+        label: 'Egg hatch or incubation time',
+        patterns: [/egg/i, /incubat/i, /hatch/i],
+        multiplier: 0.75,
+        missingMessage: 'No readable egg hatch or incubation setting was found.'
+      }
+    ]
+  },
+  {
+    id: 'hardcore-penalty-event',
+    name: 'Hardcore Penalty Event',
+    summary: 'A temporary harder-mode draft using only readable numeric settings.',
+    targetDefinitions: [
+      {
+        label: 'XP rate',
+        patterns: [/\bexp/i, /\bxp/i],
+        multiplier: 0.75,
+        missingMessage: 'No readable XP or experience rate setting was found.'
+      },
+      {
+        label: 'Capture rate',
+        patterns: [/capture/i, /catch/i],
+        multiplier: 0.75,
+        missingMessage: 'No readable capture rate setting was found.'
+      },
+      {
+        label: 'Player damage received',
+        patterns: [/player.*damage/i, /damage.*player/i],
+        multiplier: 1.25,
+        missingMessage: 'No readable numeric player damage setting was found.'
+      }
+    ]
+  }
+];
+
+function getNumericSettingValue(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function settingMatchesTarget(setting: ObservedSetting, target: BoostPresetTargetDefinition): boolean {
+  return target.patterns.some((pattern) => pattern.test(setting.key) || pattern.test(setting.label));
+}
+
+function buildBoostPresetPreviews(observedSettings: ObservedSettingsResponse | null): BoostPresetPreview[] {
+  const settings = observedSettings?.available
+    ? observedSettings.groups
+      .flatMap((group) => group.settings)
+      .filter((setting) => !setting.sensitive && setting.recommendedHandling === 'template_candidate')
+    : [];
+
+  return BOOST_PRESET_DEFINITIONS.map((definition) => {
+    const settingPreviews: BoostPresetSettingPreview[] = [];
+    const missingTargets: string[] = [];
+    const unsupportedTargets: string[] = [];
+
+    for (const target of definition.targetDefinitions) {
+      const matches = settings.filter((setting) => settingMatchesTarget(setting, target));
+
+      if (matches.length === 0) {
+        missingTargets.push(target.missingMessage);
+        continue;
+      }
+
+      for (const setting of matches) {
+        const numericValue = getNumericSettingValue(setting.value);
+        const canPreviewValue = numericValue !== null;
+        const proposedValue = canPreviewValue
+          ? Number((numericValue * target.multiplier).toFixed(4))
+          : null;
+        const warning = canPreviewValue
+          ? null
+          : `${setting.label} is readable, but the current value is not numeric, so GameOps cannot calculate a proposed value.`;
+
+        if (warning) {
+          unsupportedTargets.push(warning);
+        }
+
+        settingPreviews.push({
+          setting,
+          targetLabel: target.label,
+          multiplier: target.multiplier,
+          proposedValue,
+          canPreviewValue,
+          warning
+        });
+      }
+    }
+
+    return {
+      definition,
+      settingPreviews,
+      missingTargets,
+      unsupportedTargets,
+      fullyPreviewable: settingPreviews.length > 0 && missingTargets.length === 0 && unsupportedTargets.length === 0
+    };
+  });
+}
+
+interface BoostPresetPanelProps {
+  observedSettings: ObservedSettingsResponse | null;
+  capabilities: ServerSettingsCapabilitySummary;
+  runtimeAudit: PalworldRuntimeAudit | null;
+}
+
+function BoostPresetPanel({ observedSettings, capabilities, runtimeAudit }: BoostPresetPanelProps) {
+  const presetPreviews = buildBoostPresetPreviews(observedSettings);
+  const firstPreviewablePreset = presetPreviews.find((preset) => preset.settingPreviews.length > 0) ?? presetPreviews[0] ?? null;
+  const [selectedPresetId, setSelectedPresetId] = useState(firstPreviewablePreset?.definition.id ?? BOOST_PRESET_DEFINITIONS[0]?.id ?? '');
+  const selectedPreset = presetPreviews.find((preset) => preset.definition.id === selectedPresetId) ?? firstPreviewablePreset;
+  const readableSettingsCount = observedSettings?.available
+    ? observedSettings.groups.reduce((sum, group) => sum + group.settings.length, 0)
+    : 0;
+
+  return (
+    <article className="card boost-preset-card">
+      <div className="panel-title-row">
+        <div>
+          <span className="summary-label">Draft only</span>
+          <h2>Boost Event Presets</h2>
+          <p className="subtle">Choose a preset to preview affected readable settings. GameOps will not change the server.</p>
+        </div>
+        <span className="confidence-badge confidence-medium">preview only</span>
+      </div>
+
+      <div className="boost-preset-layout">
+        <div className="boost-preset-list" aria-label="Boost presets">
+          {presetPreviews.map((preset) => (
+            <button
+              key={preset.definition.id}
+              type="button"
+              className={preset.definition.id === selectedPreset?.definition.id ? 'selected' : ''}
+              onClick={() => setSelectedPresetId(preset.definition.id)}
+            >
+              <span>{preset.definition.name}</span>
+              <small>{preset.settingPreviews.length > 0 ? `${preset.settingPreviews.length} readable settings` : 'missing settings'}</small>
+            </button>
+          ))}
+        </div>
+
+        <section className="boost-preset-detail">
+          {selectedPreset ? (
+            <>
+              <div className="boost-preset-detail-heading">
+                <div>
+                  <h3>{selectedPreset.definition.name}</h3>
+                  <p className="subtle">{selectedPreset.definition.summary}</p>
+                </div>
+                <span className={`confidence-badge confidence-${selectedPreset.fullyPreviewable ? 'high' : selectedPreset.settingPreviews.length > 0 ? 'medium' : 'low'}`}>
+                  {selectedPreset.fullyPreviewable ? 'ready to preview' : selectedPreset.settingPreviews.length > 0 ? 'partial preview' : 'missing settings'}
+                </span>
+              </div>
+
+              <div className="settings-readiness-strip">
+                <div>
+                  <span className="summary-label">Readable settings</span>
+                  <strong>{readableSettingsCount}</strong>
+                </div>
+                <div>
+                  <span className="summary-label">Affected settings</span>
+                  <strong>{selectedPreset.settingPreviews.length}</strong>
+                </div>
+                <div>
+                  <span className="summary-label">Can change server</span>
+                  <strong>no</strong>
+                </div>
+                <div>
+                  <span className="summary-label">Restart likely required</span>
+                  <strong>{formatCapabilityState(capabilities.requiresRestart)}</strong>
+                </div>
+              </div>
+
+              <section className="event-draft-preview">
+                <h3>Affected settings</h3>
+                <ul>
+                  {selectedPreset.settingPreviews.length === 0 ? (
+                    <li><span>No readable settings matched this preset yet.</span></li>
+                  ) : null}
+                  {selectedPreset.settingPreviews.map((preview) => (
+                    <li key={`${selectedPreset.definition.id}:${preview.setting.key}:${preview.targetLabel}`}>
+                      <span>{preview.setting.label}</span>
+                      <span>{formatObservedSettingValue(preview.setting.value)} {'->'} {preview.canPreviewValue ? formatObservedSettingValue(preview.proposedValue) : 'cannot preview'}</span>
+                      <span className={`confidence-badge confidence-${preview.canPreviewValue ? getObservedSettingRiskTone(preview.setting.changeRisk) : 'low'}`}>
+                        {preview.targetLabel}
+                      </span>
+                      <span className="subtle">Uses current readable value from {observedSettings?.source ?? 'settings snapshot'} • {preview.multiplier}x draft target</span>
+                      <span className="subtle">{preview.setting.riskNote}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="event-draft-preview">
+                <h3>Needs manual verification</h3>
+                <ul>
+                  <li><span>Confirm whether each setting applies live or needs a Palworld restart.</span></li>
+                  <li><span>Confirm backup and rollback before Phase 10C adds any apply workflow.</span></li>
+                  <li><span>{runtimeAudit?.pathsMatch ? 'Active config path matches the selected file.' : 'Active config path still needs owner verification.'}</span></li>
+                  {selectedPreset.missingTargets.map((missing) => (
+                    <li key={missing}><span>{missing}</span></li>
+                  ))}
+                  {selectedPreset.unsupportedTargets.map((warning) => (
+                    <li key={warning}><span>{warning}</span></li>
+                  ))}
+                </ul>
+              </section>
+
+              <div className="trust-warning-row">
+                <span>Preview only. No config file will be changed.</span>
+                <span>No restart controls are exposed.</span>
+                <span>Only actual readable settings are shown as affected settings.</span>
+              </div>
+            </>
+          ) : (
+            <p className="subtle">No preset definitions are available.</p>
+          )}
+        </section>
+      </div>
+    </article>
+  );
+}
+
 function SettingsCapabilityPanel({
   capabilities,
   observedSettings,
@@ -7083,6 +7422,11 @@ function App() {
                         {selectedServerSummary.palworldBackupReadiness ? (
                           <PalworldBackupReadinessPanel readiness={selectedServerSummary.palworldBackupReadiness} />
                         ) : null}
+                        <BoostPresetPanel
+                          observedSettings={selectedServerSummary.observedSettings}
+                          capabilities={selectedServerSummary.settingsCapabilities}
+                          runtimeAudit={selectedServerSummary.palworldRuntimeAudit}
+                        />
                         <EventTemplateDraftPanel
                           catalog={selectedServerSummary.eventTemplateDrafts}
                           onEditDraft={setSelectedEventTemplateDraft}
