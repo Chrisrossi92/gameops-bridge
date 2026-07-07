@@ -81,7 +81,7 @@ GPS 1.0C implementation note: Server Overview now uses the selected-server hero,
 - Relationships: guilds, characters, save identity, events.
 - Details: raw identity, telemetry, and confidence evidence.
 
-Players tab application rule: the tab should start with player activity summary, then a compact Review Next player list/table, then directory/context/evidence. Player rows should expose name, online/offline state, recent activity, and one useful inspection hint before lower-priority details.
+Players tab application rule: the tab must use master/detail. The player list browses compact player objects; the selected player detail inspects profile, telemetry, sessions, aliases, guild/save evidence, and raw IDs only behind disclosure. Guilds use the same pattern: one scrollable guild list browses, and the selected guild detail inspects lifecycle, activity, confidence, and member evidence. Avoid rendering every player or guild detail inline; repeated player sets belong in quiet diagnostics only.
 
 ### Configuration
 

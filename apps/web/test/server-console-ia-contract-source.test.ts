@@ -141,7 +141,8 @@ test('server tabs expose the expected primary questions and hierarchy labels', (
 
   for (const label of [
     'Player Activity Summary',
-    'Player Directory',
+    'Players to inspect',
+    'Selected player detail',
     'Game-Specific Context',
     'Supporting Evidence',
     'Change Impact Summary',
@@ -398,7 +399,6 @@ test('game-specific player context stays separated from live player activity', (
   const valheimPlayersOrder = [
     'Player Activity Summary',
     '<PlayerObjectList',
-    'Player Directory',
     'Game-Specific Context',
     'Supporting Evidence'
   ].map((label) => valheimPlayerBlock.indexOf(label));
@@ -406,17 +406,19 @@ test('game-specific player context stays separated from live player activity', (
   assert.ok(valheimPlayersOrder[0] < valheimPlayersOrder[1]);
   assert.ok(valheimPlayersOrder[1] < valheimPlayersOrder[2]);
   assert.ok(valheimPlayersOrder[2] < valheimPlayersOrder[3]);
-  assert.ok(valheimPlayersOrder[3] < valheimPlayersOrder[4]);
   assert.ok(valheimPlayerBlock.indexOf('title="Who is here right now?"') < valheimPlayerBlock.indexOf('title="Valheim characters"'));
-  assert.ok(valheimPlayerBlock.indexOf('title="Valheim characters"') < valheimPlayerBlock.indexOf('title="Valheim player evidence"'));
+  assert.ok(valheimPlayerBlock.indexOf('title="Valheim characters"') < valheimPlayerBlock.indexOf('title="Valheim diagnostics"'));
   assert.ok(contractSource.includes('aria-label="Player object list"'));
+  assert.ok(contractSource.includes('aria-label="Selected player detail"'));
   assert.ok(contractSource.includes('<span className="summary-label">Player List</span>'));
   assert.ok(contractSource.includes('<h2>Players to inspect</h2>'));
+  assert.ok(contractSource.includes('player-master-detail-layout'));
+  assert.ok(contractSource.includes('player-object-list-scroll'));
+  assert.ok(contractSource.includes('Player directory diagnostics'));
 
   const palworldPlayersOrder = [
     'Player Activity Summary',
     '<PlayerObjectList',
-    'Player Directory',
     'Game-Specific Context',
     'Supporting Evidence'
   ].map((label) => palworldPlayerBlock.indexOf(label));
@@ -424,9 +426,14 @@ test('game-specific player context stays separated from live player activity', (
   assert.ok(palworldPlayersOrder[0] < palworldPlayersOrder[1]);
   assert.ok(palworldPlayersOrder[1] < palworldPlayersOrder[2]);
   assert.ok(palworldPlayersOrder[2] < palworldPlayersOrder[3]);
-  assert.ok(palworldPlayersOrder[3] < palworldPlayersOrder[4]);
   assert.ok(palworldPlayerBlock.indexOf('title="Who is here right now?"') < palworldPlayerBlock.indexOf('title="Palworld guilds and bases"'));
-  assert.ok(palworldPlayerBlock.indexOf('title="Palworld guilds and bases"') < palworldPlayerBlock.indexOf('title="Palworld player evidence"'));
+  assert.ok(palworldPlayerBlock.indexOf('title="Palworld guilds and bases"') < palworldPlayerBlock.indexOf('title="Palworld diagnostics"'));
+  assert.ok(palworldPlayerBlock.includes('Player telemetry diagnostics'));
+  assert.ok(palworldPlayerBlock.includes('Save-link review list'));
+  assert.ok(contractSource.includes('aria-label="Guild object list"'));
+  assert.ok(contractSource.includes('aria-label="Selected guild detail"'));
+  assert.ok(contractSource.includes('guild-master-detail-layout'));
+  assert.ok(!palworldPlayerBlock.includes('palworld-guild-grid'));
 });
 
 test('GPS console consistency keeps review paths navigational and diagnostics lower priority', () => {

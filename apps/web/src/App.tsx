@@ -275,37 +275,45 @@ interface PlayerObjectListRow {
 
 interface PlayerObjectListProps {
   rows: PlayerObjectListRow[];
+  detail: ReactNode;
 }
 
-function PlayerObjectList({ rows }: PlayerObjectListProps) {
+function PlayerObjectList({ rows, detail }: PlayerObjectListProps) {
   return (
-    <article className="card player-object-list-card">
+    <article className="card player-object-list-card player-master-detail-card">
       <div className="command-panel-heading">
         <div>
           <span className="summary-label">Player List</span>
           <h2>Players to inspect</h2>
         </div>
       </div>
-      <ul className="player-object-list" aria-label="Player object list">
-        {rows.length === 0 ? <li className="empty-line">No player objects are available for this view yet.</li> : null}
-        {rows.map((row) => (
-          <li key={row.id}>
-            <button
-              type="button"
-              className={`player-object-row ${row.selected ? 'selected' : ''}`}
-              onClick={row.onSelect}
-            >
-              <span className="player-object-identity">
-                <strong>{row.name}</strong>
-                <span className={`state-pill state-${row.statusTone}`}>{row.statusLabel}</span>
-              </span>
-              <span>{row.activityLabel}</span>
-              <span>{row.summaryLabel}</span>
-              <span className="player-object-hint">{row.attentionLabel}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div className="player-master-detail-layout">
+        <div className="player-object-list-scroll">
+          <ul className="player-object-list" aria-label="Player object list">
+            {rows.length === 0 ? <li className="empty-line">No player objects are available for this view yet.</li> : null}
+            {rows.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  className={`player-object-row ${row.selected ? 'selected' : ''}`}
+                  onClick={row.onSelect}
+                >
+                  <span className="player-object-identity">
+                    <strong>{row.name}</strong>
+                    <span className={`state-pill state-${row.statusTone}`}>{row.statusLabel}</span>
+                  </span>
+                  <span>{row.activityLabel}</span>
+                  <span>{row.summaryLabel}</span>
+                  <span className="player-object-hint">{row.attentionLabel}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <aside className="player-object-detail-panel" aria-label="Selected player detail">
+          {detail}
+        </aside>
+      </div>
     </article>
   );
 }
@@ -1245,9 +1253,10 @@ interface PlayerIntelligencePanelProps {
 interface PlayerEngagementPanelProps {
   engagement: PlayerEngagementSummary;
   onSelectPlayer: (playerId: string) => void;
+  compact?: boolean;
 }
 
-function PlayerEngagementPanel({ engagement, onSelectPlayer }: PlayerEngagementPanelProps) {
+function PlayerEngagementPanel({ engagement, onSelectPlayer, compact = false }: PlayerEngagementPanelProps) {
   const peakHourLabel = engagement.activity.peakHourUtc === null
     ? 'not enough sessions'
     : formatEasternClockHourFromUtc(engagement.activity.peakHourUtc);
@@ -1264,7 +1273,24 @@ function PlayerEngagementPanel({ engagement, onSelectPlayer }: PlayerEngagementP
         </span>
       </div>
 
-      <div className="detail-grid">
+      {compact ? (
+        <div className="detail-grid player-engagement-summary-grid">
+          <section className="detail-block">
+            <h3>Player Summary</h3>
+            <ul className="list compact">
+              <li><span>Online now</span><span>{engagement.activity.activeNowCount}</span></li>
+              <li><span>Today</span><span>{engagement.activity.today.sessions} sessions / {formatDurationFromSeconds(engagement.activity.today.trackedSeconds)}</span></li>
+              <li><span>7 days</span><span>{engagement.activity.sevenDays.sessions} sessions / {formatDurationFromSeconds(engagement.activity.sevenDays.trackedSeconds)}</span></li>
+              <li><span>30 days</span><span>{engagement.activity.thirtyDays.sessions} sessions / {formatDurationFromSeconds(engagement.activity.thirtyDays.trackedSeconds)}</span></li>
+              <li><span>Server alive around</span><span>{peakHourLabel}</span></li>
+            </ul>
+          </section>
+        </div>
+      ) : null}
+
+      <details className="player-diagnostics-disclosure" open={!compact}>
+        <summary>{compact ? 'Engagement cohorts' : 'Engagement detail'}</summary>
+        <div className="detail-grid">
         <section className="detail-block">
           <h3>Who is playing?</h3>
           <ul className="list compact">
@@ -1328,7 +1354,8 @@ function PlayerEngagementPanel({ engagement, onSelectPlayer }: PlayerEngagementP
             ))}
           </ul>
         </section>
-      </div>
+        </div>
+      </details>
 
       {engagement.dataWarnings.length > 0 ? (
         <div className="trust-warning-row">
@@ -3685,11 +3712,12 @@ interface PlayerDetailPanelProps {
   detail: PlayerDetailResponse | null;
   loading: boolean;
   error: string | null;
+  embedded?: boolean;
 }
 
-function PlayerDetailPanel({ detail, loading, error }: PlayerDetailPanelProps) {
+function PlayerDetailPanel({ detail, loading, error, embedded = false }: PlayerDetailPanelProps) {
   return (
-    <article className="card player-detail-card">
+    <article className={embedded ? 'player-detail-card player-detail-card-embedded' : 'card player-detail-card'}>
       <h2>Player Detail</h2>
       {loading ? <p className="subtle">Loading player detail...</p> : null}
       {error ? <p className="subtle">{error}</p> : null}
@@ -4008,13 +4036,15 @@ interface PalworldGuildIntelligencePanelProps {
 }
 
 function PalworldGuildIntelligencePanel({ guilds, selectedGuildName, reviewedGuildNames, onOpenGuild }: PalworldGuildIntelligencePanelProps) {
+  const selectedGuild = guilds.find((entry) => entry.guild.guildName === selectedGuildName) ?? guilds[0] ?? null;
+
   return (
     <article className="card palworld-guild-intelligence-card">
       <div className="command-panel-heading">
         <div>
           <span className="summary-label">Guilds</span>
-          <h2>Guilds Shaping This World</h2>
-          <p className="subtle">Guild activity is based on matched save data and tracked player activity for this server.</p>
+          <h2>Guilds to inspect</h2>
+          <p className="subtle">Browse guilds first, then inspect lifecycle and member evidence for the selected guild.</p>
         </div>
         <span className="state-pill state-online">{guilds.length} guilds</span>
       </div>
@@ -4023,29 +4053,91 @@ function PalworldGuildIntelligencePanel({ guilds, selectedGuildName, reviewedGui
         <p className="empty-line">This archipelago is still building its history. Guild activity will appear as players establish themselves.</p>
       ) : null}
 
-      <ul className="palworld-guild-grid">
-        {guilds.map(({ guild, confidence, activeMemberCount, activityState, lifecycleState, lifecycleDetail }) => (
-          <li key={guild.guildName} className={`palworld-guild-card ${selectedGuildName === guild.guildName ? 'selected' : ''}`}>
-            <button type="button" onClick={() => onOpenGuild(guild.guildName)}>
-              <div className="palworld-guild-card-top">
-                <strong>{guild.guildName}</strong>
-                <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{activityState}</span>
+      <div className="guild-master-detail-layout">
+        <div className="guild-object-list-scroll">
+          <ul className="guild-object-list" aria-label="Guild object list">
+            {guilds.map(({ guild, confidence, activeMemberCount, activityState, lifecycleState }) => (
+              <li key={guild.guildName}>
+                <button
+                  type="button"
+                  className={`guild-object-row ${selectedGuild?.guild.guildName === guild.guildName ? 'selected' : ''}`}
+                  onClick={() => onOpenGuild(guild.guildName)}
+                >
+                  <span className="guild-object-identity">
+                    <strong>{guild.guildName}</strong>
+                    <span className={`guild-risk-badge guild-risk-${guild.riskLevel}`}>{activityState}</span>
+                  </span>
+                  <span>{guild.memberCount} members / {activeMemberCount} active</span>
+                  <span className="player-object-hint">
+                    <span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>{confidence.shortLabel}</span>
+                    {lifecycleState}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <aside className="guild-object-detail-panel" aria-label="Selected guild detail">
+          {!selectedGuild ? <p className="subtle">Select a guild to inspect lifecycle and member evidence.</p> : null}
+          {selectedGuild ? (
+            <>
+              <div className="player-selected-detail-heading">
+                <div>
+                  <span className="summary-label">Selected Guild</span>
+                  <h2>{selectedGuild.guild.guildName}</h2>
+                </div>
+                <span className={`guild-risk-badge guild-risk-${selectedGuild.guild.riskLevel}`}>{selectedGuild.activityState}</span>
               </div>
-              <div className="palworld-guild-card-stats">
-                <span><strong>{guild.memberCount}</strong> members</span>
-                <span><strong>{activeMemberCount}</strong> active</span>
-                <span>{guild.lastMemberSeenAt ? formatRelativeTime(guild.lastMemberSeenAt) : 'No activity yet'}</span>
+              <div className="detail-grid">
+                <section className="detail-block">
+                  <h3>Readiness</h3>
+                  <ul className="list compact">
+                    <li><span>Members</span><span>{selectedGuild.guild.memberCount}</span></li>
+                    <li><span>Active</span><span>{selectedGuild.activeMemberCount}</span></li>
+                    <li><span>Confidence</span><span className={`guild-confidence-pill guild-confidence-${selectedGuild.confidence.tone}`}>{selectedGuild.confidence.label}</span></li>
+                    <li><span>Lifecycle</span><span>{selectedGuild.lifecycleState}</span></li>
+                    <li><span>Reviewed</span><span>{reviewedGuildNames.has(selectedGuild.guild.guildName) ? 'Yes' : 'No'}</span></li>
+                  </ul>
+                </section>
+                <section className="detail-block">
+                  <h3>Activity</h3>
+                  <ul className="list compact">
+                    <li><span>Last activity</span><span>{selectedGuild.guild.lastMemberSeenAt ? formatTimestamp(selectedGuild.guild.lastMemberSeenAt) : 'Unknown'}</span></li>
+                    <li><span>Last member</span><span>{selectedGuild.guild.lastSeenMemberName ?? 'Unknown'}</span></li>
+                    <li><span>Inactive</span><span>{selectedGuild.guild.daysInactive !== null ? `${selectedGuild.guild.daysInactive} days` : 'Unknown'}</span></li>
+                    <li><span>Palbox risk</span><span>{selectedGuild.guild.daysUntilPalboxRisk !== null ? `${selectedGuild.guild.daysUntilPalboxRisk} days` : 'Unknown'}</span></li>
+                  </ul>
+                </section>
               </div>
-              <div className="palworld-guild-card-meta">
-                <span className={`guild-confidence-pill guild-confidence-${confidence.tone}`}>{confidence.label}</span>
-                <span>{lifecycleState}</span>
-                {reviewedGuildNames.has(guild.guildName) ? <span>Reviewed</span> : null}
-              </div>
-              <p>{lifecycleDetail}</p>
-            </button>
-          </li>
-        ))}
-      </ul>
+              <p className="subtle">{selectedGuild.lifecycleDetail}</p>
+              <details className="player-detail-disclosure">
+                <summary>Guild members</summary>
+                <ul className="guild-member-list">
+                  {selectedGuild.guild.members.length === 0 ? <li className="empty-line">No members listed in guild data</li> : null}
+                  {selectedGuild.guild.members.map((member, index) => (
+                    <li key={`${member.memberName}:${index}`} className="guild-member-row">
+                      <div>
+                        <span className="guild-member-name">{member.memberName}</span>
+                        <span className={`guild-member-match ${member.matched ? 'matched' : 'unmatched'}`}>
+                          {member.matched ? 'tracked' : 'no player data'}
+                        </span>
+                      </div>
+                      <div className="guild-member-meta">
+                        {!member.matched ? <span>never seen</span> : null}
+                        {member.matched && member.lastSeenAt ? <span>{formatTimestamp(member.lastSeenAt)}</span> : null}
+                        {member.matched && member.daysSinceSeen !== null ? <span>{member.daysSinceSeen}d ago</span> : null}
+                        {member.matched && member.level !== null ? <span>lvl {member.level}</span> : null}
+                        {member.matched && member.saveLinked !== null ? <span>{member.saveLinked ? 'Save linked' : 'Save link needed'}</span> : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </>
+          ) : null}
+        </aside>
+      </div>
     </article>
   );
 }
@@ -6760,6 +6852,26 @@ function App() {
   }, [filteredServers, selectedServerId]);
 
   const selectedServerSummary = selectedServer ? fleetByServerId[selectedServer.id] ?? null : null;
+
+  useEffect(() => {
+    if (!selectedServer || selectedServer.game !== 'valheim' || !selectedServerSummary) {
+      return;
+    }
+
+    setSelectedPlayerIntelligenceId((current) => {
+      if (current && selectedServerSummary.playerIntelligence.some((player) => player.playerId === current)) {
+        return current;
+      }
+
+      const firstPlayer = selectedServerSummary.playerIntelligence[0];
+      if (firstPlayer) {
+        setSelectedValheimPlayerLookupKey(normalizePlayerKey(firstPlayer.displayName));
+      }
+
+      return firstPlayer?.playerId ?? null;
+    });
+  }, [selectedServer, selectedServerSummary]);
+
   const selectedWorldMemory = useMemo(() => {
     if (!selectedServer || !selectedServerSummary) {
       return createWorldMemoryRegistry({ serverId: selectedServerId || 'unselected' });
@@ -7626,7 +7738,9 @@ function App() {
         summaryLabel: `lvl ${player.level ?? 'N/A'} · ${player.region ?? 'unknown region'}`,
         attentionLabel: identityState === 'approved' ? 'linked' : identityState,
         selected: selectedPalworldPlayerKey === player.lookupKey,
-        onSelect: () => setSelectedPalworldPlayerKey(player.lookupKey)
+        onSelect: () => {
+          setSelectedPalworldPlayerKey(player.lookupKey);
+        }
       }));
     }
 
@@ -7641,7 +7755,10 @@ function App() {
         ? 'review identity'
         : `${player.identityConfidence} confidence`,
       selected: selectedPlayerIntelligenceId === player.playerId,
-      onSelect: () => setSelectedPlayerIntelligenceId(player.playerId)
+      onSelect: () => {
+        setSelectedPlayerIntelligenceId(player.playerId);
+        setSelectedValheimPlayerLookupKey(normalizePlayerKey(player.displayName));
+      }
     }));
   }, [
     palworldPlayerList,
@@ -8958,42 +9075,94 @@ function App() {
                           <PlayerEngagementPanel
                             engagement={selectedServerSummary.playerEngagement}
                             onSelectPlayer={setSelectedEngagementPlayerId}
+                            compact
                           />
-                          <PlayerObjectList rows={selectedPlayerObjectRows} />
-                        </PlayersSurfaceSection>
+                          <PlayerObjectList
+                            rows={selectedPlayerObjectRows}
+                            detail={(
+                              <>
+                                <PlayerDetailPanel
+                                  detail={selectedPlayerDetail}
+                                  loading={selectedPlayerDetailLoading}
+                                  error={selectedPlayerDetailError}
+                                  embedded
+                                />
 
-                        <PlayersSurfaceSection
-                          eyebrow="Player Directory"
-                          title="Who do we know?"
-                          description="Known players and player intelligence remain separate from character and evidence-heavy context."
-                        >
-                          <PlayerIntelligencePanel
-                            players={selectedServerSummary.playerIntelligence}
-                            explanation={selectedServerSummary.playerIntelligenceExplanation}
-                            freshness={selectedServerSummary.dataFreshness}
-                            selectedPlayerId={selectedPlayerIntelligenceId}
-                            onSelectPlayer={setSelectedPlayerIntelligenceId}
+                                <section className="player-selected-detail-section">
+                                  <h2>Character Evidence</h2>
+                                  {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a character to inspect session and identity evidence for this realm.</p> : null}
+                                  {selectedValheimPlayerProfile?.player ? (
+                                    <>
+                                      <div className="detail-grid">
+                                        <div className="detail-block">
+                                          <h3>Identity</h3>
+                                          <ul className="list compact">
+                                            <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
+                                            <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
+                                            <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
+                                            <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
+                                            <li><span>Observations</span><span>{selectedValheimPlayerProfile.player.observationCount}</span></li>
+                                          </ul>
+                                        </div>
+                                        <div className="detail-block">
+                                          <h3>Recent Adventures</h3>
+                                          <ul className="list compact">
+                                            <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                            {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
+                                            {selectedValheimPlayerProfile.recentSessions.slice(0, 5).map((session, index) => (
+                                              <li key={`${session.startedAt}:${index}`}>
+                                                <span>{formatTimestamp(session.startedAt)}</span>
+                                                <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      </div>
+                                      {selectedValheimCharacterMemoryDetail ? (
+                                        <WorldMemoryLivingTimeline
+                                          items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
+                                          emptyMessage="This story is just beginning."
+                                        />
+                                      ) : null}
+                                      {selectedValheimCharacterMemoryDetail ? (
+                                        <WorldMemoryRelationshipPanel
+                                          detail={selectedValheimCharacterMemoryDetail}
+                                          records={selectedWorldMemory.records}
+                                          title="Related Memories"
+                                          emptyMessage="No related memories have been recorded for this character yet."
+                                        />
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                  {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
+                                    <>
+                                      <WorldMemoryLivingTimeline
+                                        items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
+                                        emptyMessage="This story is just beginning."
+                                      />
+                                      <WorldMemoryRelationshipPanel
+                                        detail={selectedValheimCharacterMemoryDetail}
+                                        records={selectedWorldMemory.records}
+                                        title="Related Memories"
+                                        emptyMessage="No related memories have been recorded for this character yet."
+                                      />
+                                    </>
+                                  ) : null}
+                                </section>
+                              </>
+                            )}
                           />
 
-                          <article className="card">
-                            <h2>Known Player Details</h2>
-                            <ul className="list">
-                              {selectedServerSummary.knownPlayers.length === 0 ? <li>No named Valheim identity records yet.</li> : null}
-                              {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
-                                <li
-                                  key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
-                                  className={`clickable-row ${selectedValheimPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
-                                  onClick={() => setSelectedValheimPlayerLookupKey(player.normalizedPlayerKey)}
-                                >
-                                  <span>{player.displayName}</span>
-                                  <span className="known-meta">
-                                    <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
-                                    <span className="subtle">obs {player.observationCount}</span>
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </article>
+                          <details className="player-diagnostics-disclosure">
+                            <summary>Player directory diagnostics</summary>
+                            <PlayerIntelligencePanel
+                              players={selectedServerSummary.playerIntelligence}
+                              explanation={selectedServerSummary.playerIntelligenceExplanation}
+                              freshness={selectedServerSummary.dataFreshness}
+                              selectedPlayerId={selectedPlayerIntelligenceId}
+                              onSelectPlayer={setSelectedPlayerIntelligenceId}
+                            />
+                          </details>
                         </PlayersSurfaceSection>
                       </>
                     ) : null}
@@ -9016,77 +9185,32 @@ function App() {
 
                         <PlayersSurfaceSection
                           eyebrow="Supporting Evidence"
-                          title="Valheim player evidence"
-                          description="Session, identity, and memory relationship details stay available after the operator chooses a player or character."
+                          title="Valheim diagnostics"
+                          description="Raw player evidence stays quiet after the selected-player detail panel."
                           quiet
                         >
-                          <PlayerDetailPanel
-                            detail={selectedPlayerDetail}
-                            loading={selectedPlayerDetailLoading}
-                            error={selectedPlayerDetailError}
-                          />
-
-                          <article className="card">
-                            <h2>Character Evidence</h2>
-                            {!selectedValheimPlayerProfile?.player ? <p className="subtle">Select a character to inspect session and identity evidence for this realm.</p> : null}
-                            {selectedValheimPlayerProfile?.player ? (
-                              <>
-                                <div className="detail-grid">
-                                  <div className="detail-block">
-                                    <h3>Identity</h3>
-                                    <ul className="list compact">
-                                      <li><span>Name</span><span>{selectedValheimPlayerProfile.player.displayName}</span></li>
-                                      <li><span>Confidence</span><span className={`confidence-badge confidence-${selectedValheimPlayerProfile.player.confidence}`}>{selectedValheimPlayerProfile.player.confidence}</span></li>
-                                      <li><span>First Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.firstSeenAt)}</span></li>
-                                      <li><span>Last Seen</span><span>{formatTimestamp(selectedValheimPlayerProfile.player.lastSeenAt)}</span></li>
-                                      <li><span>Observations</span><span>{selectedValheimPlayerProfile.player.observationCount}</span></li>
-                                    </ul>
-                                  </div>
-                                  <div className="detail-block">
-                                    <h3>Recent Adventures</h3>
-                                    <ul className="list compact">
-                                      <li><span>Status</span><span>{selectedValheimPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                                      {selectedValheimPlayerProfile.recentSessions.length === 0 ? <li><span>History</span><span>This character has not recorded enough session history yet.</span></li> : null}
-                                      {selectedValheimPlayerProfile.recentSessions.slice(0, 5).map((session, index) => (
-                                        <li key={`${session.startedAt}:${index}`}>
-                                          <span>{formatTimestamp(session.startedAt)}</span>
-                                          <span className="subtle">{formatDurationFromSeconds(session.durationSeconds ?? 0)}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                </div>
-                                {selectedValheimCharacterMemoryDetail ? (
-                                  <WorldMemoryLivingTimeline
-                                    items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
-                                    emptyMessage="This story is just beginning."
-                                  />
-                                ) : null}
-                                {selectedValheimCharacterMemoryDetail ? (
-                                  <WorldMemoryRelationshipPanel
-                                    detail={selectedValheimCharacterMemoryDetail}
-                                    records={selectedWorldMemory.records}
-                                    title="Related Memories"
-                                    emptyMessage="No related memories have been recorded for this character yet."
-                                  />
-                                ) : null}
-                              </>
-                            ) : null}
-                            {!selectedValheimPlayerProfile?.player && selectedValheimCharacterMemoryDetail ? (
-                              <>
-                                <WorldMemoryLivingTimeline
-                                  items={buildMemoryTimeline(selectedValheimCharacterMemoryDetail)}
-                                  emptyMessage="This story is just beginning."
-                                />
-                                <WorldMemoryRelationshipPanel
-                                  detail={selectedValheimCharacterMemoryDetail}
-                                  records={selectedWorldMemory.records}
-                                  title="Related Memories"
-                                  emptyMessage="No related memories have been recorded for this character yet."
-                                />
-                              </>
-                            ) : null}
-                          </article>
+                          <details className="player-diagnostics-disclosure">
+                            <summary>Known player records</summary>
+                            <article className="player-diagnostics-panel">
+                              <h2>Known Player Details</h2>
+                              <ul className="list">
+                                {selectedServerSummary.knownPlayers.length === 0 ? <li>No named Valheim identity records yet.</li> : null}
+                                {selectedServerSummary.knownPlayers.slice(0, 10).map((player) => (
+                                  <li
+                                    key={`${player.normalizedPlayerKey}:${player.lastSeenAt}`}
+                                    className={`clickable-row ${selectedValheimPlayerLookupKey === player.normalizedPlayerKey ? 'selected' : ''}`}
+                                    onClick={() => setSelectedValheimPlayerLookupKey(player.normalizedPlayerKey)}
+                                  >
+                                    <span>{player.displayName}</span>
+                                    <span className="known-meta">
+                                      <span className={`confidence-badge confidence-${player.confidence}`}>{player.confidence}</span>
+                                      <span className="subtle">obs {player.observationCount}</span>
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </article>
+                          </details>
                         </PlayersSurfaceSection>
                       </>
                     ) : null}
@@ -9269,11 +9393,77 @@ function App() {
                           <PlayerEngagementPanel
                             engagement={selectedServerSummary.playerEngagement}
                             onSelectPlayer={setSelectedEngagementPlayerId}
+                            compact
                           />
-                          <PlayerObjectList rows={selectedPlayerObjectRows} />
+                          <PlayerObjectList
+                            rows={selectedPlayerObjectRows}
+                            detail={(
+                              <>
+                                <section className="player-selected-detail-section">
+                                  <h2>Selected player profile</h2>
+                                  {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect live/save identity evidence and recent snapshots.</p> : null}
+                                  {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
+                                  {selectedPalworldPlayerProfile ? (
+                                    <div className="detail-grid">
+                                      <div className="detail-block">
+                                        <h3>Profile</h3>
+                                        <ul className="list compact">
+                                          <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
+                                          <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
+                                          <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
+                                          <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds ?? undefined)}</span></li>
+                                          <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
+                                          <li><span>Save File</span><span>{selectedPalworldPlayerProfile.saveArtifact.present ? (selectedPalworldPlayerProfile.saveArtifact.savePlayerFileName ?? 'present') : 'Not found'}</span></li>
+                                        </ul>
+                                        <details className="player-detail-disclosure">
+                                          <summary>Raw identity</summary>
+                                          <ul className="list compact">
+                                            <li><span>Name</span><span>{selectedPalworldPlayerProfile.playerName ?? 'Unknown'}</span></li>
+                                            <li><span>Account</span><span>{selectedPalworldPlayerProfile.accountName ?? 'Unknown'}</span></li>
+                                            <li><span>Player ID</span><span>{selectedPalworldPlayerProfile.playerId}</span></li>
+                                            <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
+                                            <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping ?? undefined)}</span></li>
+                                            <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
+                                            <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>
+                                            <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
+                                          </ul>
+                                        </details>
+                                      </div>
+                                      <div className="detail-block">
+                                        <h3>History</h3>
+                                        <ul className="list compact">
+                                          {selectedPalworldHistory.length === 0 ? <li>This player does not have enough snapshot history yet.</li> : null}
+                                          {selectedPalworldHistory.map((snapshot) => (
+                                            <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
+                                              <div className="history-entry">
+                                                <span>{formatTimestamp(snapshot.observedAt)}</span>
+                                                <span className="subtle">lvl {snapshot.level ?? 'N/A'} • {snapshot.region ?? 'unknown region'} • ping {formatMetric(snapshot.ping)}</span>
+                                                <span className="subtle">x {formatCoordinate(snapshot.locationX)} • y {formatCoordinate(snapshot.locationY)}</span>
+                                              </div>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                        <div className="milestone-block">
+                                          <h4>Player Signals</h4>
+                                          <ul className="list compact">
+                                            <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
+                                            <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
+                                            <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
+                                            <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
+                                            <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
+                                            <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
+                                          </ul>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </section>
+                              </>
+                            )}
+                          />
 
-                          <article className="card">
-                            <h2>Palworld Telemetry</h2>
+                          <details className="player-diagnostics-disclosure">
+                            <summary>Player telemetry diagnostics</summary>
                             {palworldPlayerProfilesLoading ? <p className="subtle">Refreshing player intelligence...</p> : null}
                             <ul className="list telemetry-list">
                               {palworldLatestPlayers.length === 0 ? <li>This Palworld server has not recorded player activity for this view yet.</li> : null}
@@ -9301,21 +9491,7 @@ function App() {
                                 </li>
                               ))}
                             </ul>
-                          </article>
-                        </PlayersSurfaceSection>
-
-                        <PlayersSurfaceSection
-                          eyebrow="Player Directory"
-                          title="Who do we know?"
-                          description="Directory intelligence stays focused on known players and profile entry points."
-                        >
-                          <PlayerIntelligencePanel
-                            players={selectedServerSummary.playerIntelligence}
-                            explanation={selectedServerSummary.playerIntelligenceExplanation}
-                            freshness={selectedServerSummary.dataFreshness}
-                            selectedPlayerId={selectedPlayerIntelligenceId}
-                            onSelectPlayer={setSelectedPlayerIntelligenceId}
-                          />
+                          </details>
                         </PlayersSurfaceSection>
 
                       </>
@@ -9412,107 +9588,45 @@ function App() {
                     {selectedDashboardTab === 'players' ? (
                       <PlayersSurfaceSection
                         eyebrow="Supporting Evidence"
-                        title="Palworld player evidence"
-                        description="Profile history, save identity, and confidence evidence remain available after current activity, directory, and guild context."
+                        title="Palworld diagnostics"
+                        description="Save-link and raw player evidence stays below the selected-player detail panel."
                         quiet
                       >
-                        <article className="card review-saves-card">
-                          <div className="command-panel-heading">
-                            <div>
-                              <h2>Review Saves</h2>
-                              <p className="subtle">Active 7-day players without linked saves.</p>
+                        <details className="player-diagnostics-disclosure">
+                          <summary>Save-link review list</summary>
+                          <article className="player-diagnostics-panel review-saves-card">
+                            <div className="command-panel-heading">
+                              <div>
+                                <h2>Review Saves</h2>
+                                <p className="subtle">Active 7-day players without linked saves.</p>
+                              </div>
+                              <span className="state-pill state-warning">{reviewSavePlayerProfiles.length} needed</span>
                             </div>
-                            <span className="state-pill state-warning">{reviewSavePlayerProfiles.length} needed</span>
-                          </div>
-                          <ul className="list review-list review-saves-list">
-                            {reviewSavePlayerProfiles.length === 0 ? <li className="empty-line">No active players need save links.</li> : null}
-                            {reviewSavePlayerProfiles.map((profile) => (
-                              <li key={`review-save:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} className="review-save-item">
-                                <button
-                                  type="button"
-                                  className="review-save-row"
-                                  onClick={() => setSelectedPlayerProfile(profile)}
-                                >
-                                  <span className="review-save-main">
-                                    <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
-                                    <span className="homepage-player-meta">
-                                      {profile.profile.level !== null ? <span>lvl {profile.profile.level}</span> : null}
-                                      {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
-                                      <span>{formatDurationFromSeconds(profile.trackedSeconds7d)} 7d playtime</span>
-                                      <span>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'last seen N/A'}</span>
+                            <ul className="list review-list review-saves-list">
+                              {reviewSavePlayerProfiles.length === 0 ? <li className="empty-line">No active players need save links.</li> : null}
+                              {reviewSavePlayerProfiles.map((profile) => (
+                                <li key={`review-save:${profile.playerId}:${profile.lookupKey ?? 'profile'}`} className="review-save-item">
+                                  <button
+                                    type="button"
+                                    className="review-save-row"
+                                    onClick={() => setSelectedPlayerProfile(profile)}
+                                  >
+                                    <span className="review-save-main">
+                                      <span className="homepage-player-name">{getProfileDisplayName(profile)}</span>
+                                      <span className="homepage-player-meta">
+                                        {profile.profile.level !== null ? <span>lvl {profile.profile.level}</span> : null}
+                                        {profile.inferredGuildName ? <span>{profile.inferredGuildName}</span> : null}
+                                        <span>{formatDurationFromSeconds(profile.trackedSeconds7d)} 7d playtime</span>
+                                        <span>{profile.profile.lastSeenAt ? formatTimestamp(profile.profile.lastSeenAt) : 'last seen N/A'}</span>
+                                      </span>
                                     </span>
-                                  </span>
-                                  <span className="homepage-player-detail-button" aria-hidden="true">Details</span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </article>
-
-                        <PlayerDetailPanel
-                          detail={selectedPlayerDetail}
-                          loading={selectedPlayerDetailLoading}
-                          error={selectedPlayerDetailError}
-                        />
-
-                        <article className="card">
-                          <h2>Player Profile / History</h2>
-                          {!selectedPalworldPlayerProfile && !palworldPlayerDetailLoading ? <p className="subtle">Select a Palworld player to inspect live/save identity evidence and recent snapshots.</p> : null}
-                          {palworldPlayerDetailLoading ? <p className="subtle">Loading selected player telemetry...</p> : null}
-                          {selectedPalworldPlayerProfile ? (
-                            <div className="detail-grid">
-                              <div className="detail-block">
-                                <h3>Unified Profile</h3>
-                                <ul className="list compact">
-                                  <li><span>Name</span><span>{selectedPalworldPlayerProfile.playerName ?? 'Unknown'}</span></li>
-                                  <li><span>Account</span><span>{selectedPalworldPlayerProfile.accountName ?? 'Unknown'}</span></li>
-                                  <li><span>Player ID</span><span>{selectedPalworldPlayerProfile.playerId}</span></li>
-                                  <li><span>User ID</span><span>{selectedPalworldPlayerProfile.userId ?? 'N/A'}</span></li>
-                                  <li><span>Level</span><span>{selectedPalworldPlayerProfile.level ?? 'N/A'}</span></li>
-                                  <li><span>Region</span><span>{selectedPalworldPlayerProfile.region ?? 'Unknown'}</span></li>
-                                  <li><span>Ping</span><span>{formatMetric(selectedPalworldPlayerProfile.ping ?? undefined)}</span></li>
-                                  <li><span>Session</span><span>{formatDurationMaybe(selectedPalworldPlayerProfile.currentSessionDurationSeconds ?? undefined)}</span></li>
-                                  <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.sessionTier ?? 'N/A'}</span></li>
-                                  <li><span>Status</span><span>{selectedPalworldPlayerProfile.isOnline ? 'Online' : 'Offline'}</span></li>
-                                  <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.levelTier ?? 'N/A'}</span></li>
-                                  <li><span>Identity</span><span className={`confidence-badge confidence-${selectedPalworldPlayerProfile.identityState === 'approved' ? 'high' : selectedPalworldPlayerProfile.identityState === 'rejected' ? 'low' : 'medium'}`}>{selectedPalworldPlayerProfile.identityState}</span></li>
-                                  <li><span>Reviewed By</span><span>{selectedPalworldPlayerProfile.review.reviewedBy ?? 'N/A'}</span></li>
-                                  <li><span>Reviewed At</span><span>{selectedPalworldPlayerProfile.review.reviewedAt ? formatTimestamp(selectedPalworldPlayerProfile.review.reviewedAt) : 'N/A'}</span></li>
-                                  <li><span>Save File</span><span>{selectedPalworldPlayerProfile.saveArtifact.present ? (selectedPalworldPlayerProfile.saveArtifact.savePlayerFileName ?? 'present') : 'Not found'}</span></li>
-                                  <li><span>Save Parse</span><span>{selectedPalworldPlayerProfile.saveArtifact.parseStatus ?? 'N/A'}</span></li>
-                                </ul>
-                              </div>
-                              <div className="detail-block">
-                                <h3>History</h3>
-                                <ul className="list compact">
-                                  {selectedPalworldHistory.length === 0 ? <li>This player does not have enough snapshot history yet.</li> : null}
-                                  {selectedPalworldHistory.map((snapshot) => (
-                                    <li key={`${snapshot.lookupKey}:${snapshot.observedAt}`}>
-                                      <div className="history-entry">
-                                        <span>{formatTimestamp(snapshot.observedAt)}</span>
-                                        <span className="subtle">lvl {snapshot.level ?? 'N/A'} • {snapshot.region ?? 'unknown region'} • ping {formatMetric(snapshot.ping)}</span>
-                                        <span className="subtle">x {formatCoordinate(snapshot.locationX)} • y {formatCoordinate(snapshot.locationY)}</span>
-                                      </div>
-                                    </li>
-                                  ))}
-                                </ul>
-                                <div className="milestone-block">
-                                  <h4>Player Signals</h4>
-                                  <ul className="list compact">
-                                    <li><span>Likely Guild</span><span>{selectedPalworldPlayerProfile.playerIntelligence.likelyGuildName ?? 'N/A'}</span></li>
-                                    <li><span>Guild Member Count</span><span>{selectedPalworldPlayerProfile.playerIntelligence.guildMemberCount ?? 'N/A'}</span></li>
-                                    <li><span>Identity State</span><span>{selectedPalworldPlayerProfile.playerIntelligence.identityState}</span></li>
-                                    <li><span>Level Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.levelTier ?? 'N/A'}</span></li>
-                                    <li><span>Session Tier</span><span>{selectedPalworldPlayerProfile.playerIntelligence.sessionTier ?? 'N/A'}</span></li>
-                                    <li><span>Tracked activity</span><span>{selectedPalworldPlayerProfile.playerIntelligence.engagementScore}</span></li>
-                                    <li><span>Classification</span><span>{selectedPalworldPlayerProfile.playerIntelligence.classification}</span></li>
-                                    <li><span>Impact Level</span><span>{selectedPalworldPlayerProfile.playerIntelligence.impactLevel}</span></li>
-                                  </ul>
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                        </article>
+                                    <span className="homepage-player-detail-button" aria-hidden="true">Details</span>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </article>
+                        </details>
                       </PlayersSurfaceSection>
                     ) : null}
 

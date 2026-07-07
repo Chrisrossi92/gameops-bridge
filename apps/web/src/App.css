@@ -2991,6 +2991,27 @@
   gap: 0.46rem;
 }
 
+.player-master-detail-card {
+  grid-column: 1 / -1;
+}
+
+.player-master-detail-layout,
+.guild-master-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.78fr) minmax(22rem, 1.22fr);
+  gap: 0.72rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.player-object-list-scroll,
+.guild-object-list-scroll {
+  max-height: 29rem;
+  overflow: auto;
+  padding-right: 0.18rem;
+  scrollbar-width: thin;
+}
+
 .player-object-list {
   display: grid;
   gap: 0.28rem;
@@ -3016,24 +3037,57 @@
   cursor: pointer;
 }
 
+.guild-object-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guild-object-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.15fr) minmax(8rem, 0.75fr) minmax(8rem, 0.8fr);
+  gap: 0.48rem;
+  align-items: center;
+  border: 1px solid #e5ebf3;
+  border-radius: 0.5rem;
+  padding: 0.42rem 0.56rem;
+  background: #ffffff;
+  color: #334155;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
 .player-object-row:hover {
   border-color: #cbd5e1;
   background: #f8fbff;
 }
 
-.player-object-row.selected {
+.player-object-row.selected,
+.guild-object-row.selected {
   border-color: #1f2937;
   background: #f8fbff;
   box-shadow: inset 3px 0 0 #1f2937;
 }
 
-.player-object-row:focus-visible {
+.guild-object-row:hover {
+  border-color: #cbd5e1;
+  background: #f8fbff;
+}
+
+.player-object-row:focus-visible,
+.guild-object-row:focus-visible {
   outline: none;
   border-color: #1f2937;
   box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.14);
 }
 
-.player-object-row > span {
+.player-object-row > span,
+.guild-object-row > span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -3056,9 +3110,102 @@
   min-width: 0;
   overflow-wrap: anywhere;
   color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.24rem;
   font-size: 0.76rem;
   font-weight: 780;
   line-height: 1.25;
+}
+
+.player-object-detail-panel,
+.guild-object-detail-panel {
+  min-width: 0;
+  max-height: 29rem;
+  overflow: auto;
+  display: grid;
+  gap: 0.68rem;
+  border: 1px solid #e5ebf3;
+  border-radius: 0.58rem;
+  background: #fbfdff;
+  padding: 0.72rem;
+}
+
+.player-detail-card-embedded,
+.player-selected-detail-section {
+  min-width: 0;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.player-detail-card-embedded h2,
+.player-selected-detail-section h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.player-selected-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.player-selected-detail-heading h2 {
+  margin: 0.08rem 0 0;
+  font-size: 1rem;
+}
+
+.player-detail-disclosure,
+.player-diagnostics-disclosure {
+  min-width: 0;
+  border: 1px solid #edf2f7;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  padding: 0.34rem 0.48rem;
+}
+
+.player-diagnostics-disclosure {
+  grid-column: 1 / -1;
+  background: #ffffff;
+}
+
+.player-detail-disclosure summary,
+.player-diagnostics-disclosure summary {
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.player-detail-disclosure[open],
+.player-diagnostics-disclosure[open] {
+  background: #f8fbff;
+}
+
+.player-detail-disclosure > :not(summary),
+.player-diagnostics-disclosure > :not(summary) {
+  margin-top: 0.5rem;
+}
+
+.player-diagnostics-panel {
+  display: grid;
+  gap: 0.58rem;
+}
+
+.guild-object-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.34rem;
+}
+
+.guild-object-identity strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 0.9rem;
 }
 
 .command-card-grid .card:not(.server-health-card) {
@@ -6071,6 +6218,21 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .player-master-detail-layout,
+  .guild-master-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .player-object-list-scroll,
+  .guild-object-list-scroll {
+    max-height: 18rem;
+  }
+
+  .player-object-detail-panel,
+  .guild-object-detail-panel {
+    max-height: none;
+  }
+
   .backup-health-strip,
   .backup-next-review-card .next-action-list,
   .backup-object-row {
@@ -6088,12 +6250,14 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .player-object-row {
+  .player-object-row,
+  .guild-object-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.24rem;
   }
 
-  .player-object-identity {
+  .player-object-identity,
+  .guild-object-identity {
     align-items: flex-start;
     gap: 0.24rem;
   }
