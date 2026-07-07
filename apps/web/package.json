@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:production": "VITE_API_BASE_URL=https://api.servers.cdawgbot.xyz npm run build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
