@@ -260,6 +260,55 @@ interface PlayerRowProps extends PlayerProfileCardProps {
   onDetails: () => void;
 }
 
+interface PlayerObjectListRow {
+  id: string;
+  name: string;
+  statusLabel: string;
+  statusTone: 'online' | 'offline' | 'unknown';
+  activityLabel: string;
+  summaryLabel: string;
+  attentionLabel: string;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+interface PlayerObjectListProps {
+  rows: PlayerObjectListRow[];
+}
+
+function PlayerObjectList({ rows }: PlayerObjectListProps) {
+  return (
+    <article className="card player-object-list-card">
+      <div className="command-panel-heading">
+        <div>
+          <span className="summary-label">Player List</span>
+          <h2>Players to inspect</h2>
+        </div>
+      </div>
+      <ul className="player-object-list" aria-label="Player object list">
+        {rows.length === 0 ? <li className="empty-line">No player objects are available for this view yet.</li> : null}
+        {rows.map((row) => (
+          <li key={row.id}>
+            <button
+              type="button"
+              className={`player-object-row ${row.selected ? 'selected' : ''}`}
+              onClick={row.onSelect}
+            >
+              <span className="player-object-identity">
+                <strong>{row.name}</strong>
+                <span className={`state-pill state-${row.statusTone}`}>{row.statusLabel}</span>
+              </span>
+              <span>{row.activityLabel}</span>
+              <span>{row.summaryLabel}</span>
+              <span className="player-object-hint">{row.attentionLabel}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 function OnlinePlayerRow({ profile, onDetails }: PlayerRowProps) {
   return (
     <li className="homepage-player-row homepage-player-row-interactive">
@@ -2297,6 +2346,28 @@ function SettingsCapabilityPanel({
     || runtimeAudit?.runtimeAuditStatus !== 'matched_active_config'
     || differingCount > 0;
   const canOpenObservedSettings = capabilities.canReadSettings === 'yes';
+  const readStateLabel = capabilities.canReadSettings === 'yes'
+    ? 'Readable'
+    : capabilities.canReadSettings === 'unknown'
+      ? 'Verify read path'
+      : 'Not readable';
+  const editStateLabel = capabilities.canWriteSettings === 'yes'
+    ? 'Editing available'
+    : capabilities.writePathStatus === 'possible_needs_validation'
+      ? 'Needs proof'
+      : 'Disabled';
+  const primaryBlocker = capabilities.canWriteSettings !== 'yes'
+    ? formatWritePathStatus(capabilities.writePathStatus)
+    : capabilities.requiresRestart !== 'no'
+      ? 'restart behavior needs verification'
+      : runtimeAudit?.runtimeAuditStatus !== 'matched_active_config' || differingCount > 0
+        ? 'runtime config needs verification'
+        : 'no blocker reported';
+  const reviewNext = editableCandidates.length > 0
+    ? 'review candidates'
+    : canOpenObservedSettings
+      ? 'review readable settings'
+      : 'verify read path';
 
   return (
     <article
@@ -2304,13 +2375,13 @@ function SettingsCapabilityPanel({
     >
       <div className="panel-title-row">
         <div>
-          <span className="summary-label">Palworld 1.0 readiness</span>
-          <h2>Settings Control Center</h2>
-          <p className="subtle">{capabilities.serverName ?? capabilities.serverId} • {capabilities.nextSafeStep}</p>
+          <span className="summary-label">Configuration Health</span>
+          <h2>Configuration Health</h2>
+          <p className="subtle">Read access is summarized first. Editing remains unavailable until safety evidence is proven.</p>
         </div>
         <div className="settings-readiness-badges" aria-label="Settings readiness">
           <span className={`confidence-badge confidence-${capabilities.canReadSettings === 'yes' ? 'high' : capabilities.canReadSettings === 'unknown' ? 'medium' : 'low'}`}>
-            Can read settings: {formatCapabilityState(capabilities.canReadSettings)}
+            {readStateLabel}
           </span>
           <span className={`confidence-badge confidence-${readyForBoostSetup ? 'high' : hasBoostDrafts ? 'medium' : 'low'}`}>
             {readyForBoostSetup ? 'Ready for boost event setup' : hasBoostDrafts ? 'Boost drafts available' : 'Needs manual verification'}
@@ -2318,28 +2389,40 @@ function SettingsCapabilityPanel({
         </div>
       </div>
 
+      <div className="settings-primary-state-grid" aria-label="Configuration read and edit state">
+        <section className={`settings-primary-state settings-primary-state-${capabilities.canReadSettings === 'yes' ? 'ready' : capabilities.canReadSettings === 'unknown' ? 'review' : 'blocked'}`}>
+          <span className="summary-label">Read state</span>
+          <strong>{readStateLabel}</strong>
+          <span>{allObservedSettings.length} settings loaded</span>
+        </section>
+        <section className={`settings-primary-state settings-primary-state-${capabilities.canWriteSettings === 'yes' ? 'ready' : capabilities.writePathStatus === 'possible_needs_validation' ? 'review' : 'blocked'}`}>
+          <span className="summary-label">Edit state</span>
+          <strong>{editStateLabel}</strong>
+          <span>{primaryBlocker}</span>
+        </section>
+      </div>
+
       <div className="settings-readiness-strip">
         <div>
-          <span className="summary-label">Selected server</span>
-          <strong>{capabilities.serverName ?? capabilities.serverId}</strong>
+          <span className="summary-label">Candidates</span>
+          <strong>{editableCandidates.length}</strong>
         </div>
         <div>
-          <span className="summary-label">Settings source</span>
-          <strong>{capabilities.readSource}</strong>
+          <span className="summary-label">Runtime</span>
+          <strong>{runtimeAudit?.runtimeAuditStatus === 'matched_active_config' && differingCount === 0 ? 'aligned' : 'required'}</strong>
         </div>
         <div>
-          <span className="summary-label">Settings file found</span>
-          <strong>{configFileFound ? 'yes' : 'no'}</strong>
-        </div>
-        <div>
-          <span className="summary-label">Restart likely required</span>
-          <strong>{formatCapabilityState(capabilities.requiresRestart)}</strong>
+          <span className="summary-label">Review next</span>
+          <strong>{reviewNext}</strong>
         </div>
       </div>
 
-      <div className="detail-grid settings-readiness-grid">
-        <section className="detail-block">
-          <h3>Can read settings</h3>
+      <div className="settings-disclosure-list">
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Read evidence</span>
+            <span>{formatCapabilityState(capabilities.canReadSettings)}</span>
+          </summary>
           <ul className="list compact">
             <li><span>Status</span><span>{formatCapabilityState(capabilities.canReadSettings)}</span></li>
             <li><span>Source</span><span>{capabilities.readSource}</span></li>
@@ -2347,40 +2430,52 @@ function SettingsCapabilityPanel({
             <li><span>Last observed values</span><span>{capabilities.lastSettingsSnapshotAt ? formatTimestamp(capabilities.lastSettingsSnapshotAt) : 'None'}</span></li>
             <li><span>Readable settings</span><span>{allObservedSettings.length}</span></li>
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Can safely edit</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Edit blockers</span>
+            <span>{formatWritePathStatus(capabilities.writePathStatus)}</span>
+          </summary>
           <ul className="list compact">
             <li><span>Status</span><span>{formatCapabilityState(capabilities.canWriteSettings)}</span></li>
             <li><span>Readiness</span><span>{formatWritePathStatus(capabilities.writePathStatus)}</span></li>
             <li><span>Editable candidates</span><span>{editableCandidates.length}</span></li>
             <li><span>Connector</span><span>{capabilities.connectorMode ?? 'unknown'}</span></li>
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Safest future route</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Future route</span>
+            <span>{capabilities.candidateWritePaths.length}</span>
+          </summary>
           <ul className="list compact">
             {capabilities.candidateWritePaths.length === 0 ? <li>No future edit route reported.</li> : null}
             {capabilities.candidateWritePaths.map((path) => (
               <li key={path}><span>{formatCandidateWritePath(path)}</span></li>
             ))}
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Config and REST match</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Runtime match</span>
+            <span>{formatRuntimeAlignment(configAudit, runtimeAudit)}</span>
+          </summary>
           <ul className="list compact">
             <li><span>Status</span><span>{formatRuntimeAlignment(configAudit, runtimeAudit)}</span></li>
             <li><span>Same values</span><span>{matchingCount}</span></li>
             <li><span>Different values</span><span>{differingCount}</span></li>
             <li><span>Runtime config</span><span>{runtimeAudit?.pathsMatch ? 'matches selected file' : 'needs manual verification'}</span></li>
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Editable candidates</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Editable candidates</span>
+            <span>{editableCandidates.length}</span>
+          </summary>
           <ul className="list compact">
             {editableCandidates.length === 0 ? <li>No boost-event setting candidates found yet.</li> : null}
             {editableCandidates.slice(0, 5).map((setting) => (
@@ -2391,10 +2486,13 @@ function SettingsCapabilityPanel({
               </li>
             ))}
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Last observed values</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Observed values</span>
+            <span>{lastObservedSettings.length}</span>
+          </summary>
           <ul className="list compact">
             {lastObservedSettings.length === 0 ? <li>No readable setting values are loaded yet.</li> : null}
             {lastObservedSettings.map((setting) => (
@@ -2405,10 +2503,13 @@ function SettingsCapabilityPanel({
               </li>
             ))}
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Restart and rollback notes</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Restart and rollback</span>
+            <span>{formatCapabilityState(capabilities.requiresRestart)}</span>
+          </summary>
           <ul className="list compact">
             {capabilities.validationSteps.slice(0, 2).map((step) => (
               <li key={step}><span>{step}</span></li>
@@ -2417,17 +2518,20 @@ function SettingsCapabilityPanel({
               <li key={requirement}><span>{requirement}</span></li>
             ))}
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Safety warnings</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Safety notes</span>
+            <span>{needsManualVerification ? 'review' : 'aligned'}</span>
+          </summary>
           <ul className="list compact">
             {!needsManualVerification ? <li>Read-only checks are aligned. Server change controls are still intentionally unavailable.</li> : null}
             {[...capabilities.safetyNotes, ...(configAudit?.safetyWarnings ?? []), ...(runtimeAudit?.safetyWarnings ?? [])].slice(0, 5).map((warning) => (
               <li key={warning}><span>{warning}</span></li>
             ))}
           </ul>
-        </section>
+        </details>
       </div>
 
       <div className="settings-readiness-actions">
@@ -2829,24 +2933,103 @@ function getBackupReadinessTone(readiness: PalworldBackupReadiness): string {
   return 'low';
 }
 
+function formatBackupReadinessLabel(readiness: PalworldBackupReadiness | null | undefined): string {
+  if (!readiness) {
+    return 'Unknown';
+  }
+
+  if (readiness.readinessStatus === 'ready_for_manual_backup_plan') {
+    return 'Evidence available';
+  }
+
+  return 'Needs review';
+}
+
+function BackupLatestCard({ readiness }: PalworldBackupReadinessPanelProps) {
+  return (
+    <article className="card backup-latest-card">
+      <div className="command-panel-heading">
+        <div>
+          <span className="summary-label">Latest Backup</span>
+          <h2>No created backup recorded</h2>
+        </div>
+        <span className={`confidence-badge confidence-${getBackupReadinessTone(readiness)}`}>
+          {formatBackupReadinessLabel(readiness)}
+        </span>
+      </div>
+      <div className="backup-health-strip" aria-label="Latest backup status">
+        <div>
+          <span className="summary-label">Latest backup</span>
+          <strong>Not created here</strong>
+        </div>
+        <div>
+          <span className="summary-label">Destination</span>
+          <strong>{readiness.proposedBackupDirectory ?? 'unknown'}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Filename</span>
+          <strong>{readiness.proposedBackupFilenamePattern ?? 'unknown'}</strong>
+        </div>
+      </div>
+      <p className="subtle">This screen exposes readiness evidence only. It does not create backups or restore files.</p>
+    </article>
+  );
+}
+
+function BackupHistoryList({ readiness }: PalworldBackupReadinessPanelProps) {
+  return (
+    <article className="card backup-history-card">
+      <div className="command-panel-heading">
+        <div>
+          <span className="summary-label">Backup History</span>
+          <h2>Backup source list</h2>
+        </div>
+      </div>
+      <ol className="backup-object-list" aria-label="Backup history list">
+        <li className="backup-object-row backup-object-empty-row">
+          <span className="backup-object-main">
+            <strong>No created backup history loaded</strong>
+            <span>GameOps has not recorded a completed backup for this server in the current data.</span>
+          </span>
+          <span className="backup-object-status">Evidence only</span>
+        </li>
+        {readiness.filesToBackup.map((file) => (
+          <li key={file.path} className="backup-object-row">
+            <span className="backup-object-main">
+              <strong>{file.path}</strong>
+              <span>{file.reason}</span>
+            </span>
+            <span className="backup-object-meta">{file.exists ? 'exists' : 'missing'}</span>
+            <span className="backup-object-meta">{file.readable ? 'readable' : 'not readable'}</span>
+          </li>
+        ))}
+      </ol>
+    </article>
+  );
+}
+
 function PalworldBackupReadinessPanel({ readiness }: PalworldBackupReadinessPanelProps) {
   const primaryFile = readiness.filesToBackup[0] ?? null;
 
   return (
-    <article className="card settings-capability-card">
+    <article className="card settings-capability-card backup-details-card">
       <div className="panel-title-row">
         <div>
-          <h2>Backup & Rollback Readiness</h2>
-          <p className="subtle">No backup has been created.</p>
+          <span className="summary-label">Backup Details</span>
+          <h2>Recovery evidence</h2>
+          <p className="subtle">Source files, target paths, rollback needs, and validation steps remain available for inspection.</p>
         </div>
         <span className={`confidence-badge confidence-${getBackupReadinessTone(readiness)}`}>
           {readiness.readinessStatus}
         </span>
       </div>
 
-      <div className="detail-grid">
-        <section className="detail-block">
-          <h3>File to back up</h3>
+      <div className="settings-disclosure-list">
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>File to back up</span>
+            <span>{primaryFile?.exists ? 'found' : 'review'}</span>
+          </summary>
           <ul className="list compact">
             <li><span>Path</span><span>{primaryFile?.path ?? 'none selected'}</span></li>
             <li><span>Active runtime config</span><span>{readiness.activeRuntimeConfigPath ?? 'unknown'}</span></li>
@@ -2854,34 +3037,43 @@ function PalworldBackupReadinessPanel({ readiness }: PalworldBackupReadinessPane
             <li><span>Exists</span><span>{primaryFile ? (primaryFile.exists ? 'yes' : 'no') : 'unknown'}</span></li>
             <li><span>Readable</span><span>{primaryFile ? (primaryFile.readable ? 'yes' : 'no') : 'unknown'}</span></li>
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Backup target</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Backup target</span>
+            <span>{readiness.proposedBackupDirectory ? 'planned' : 'unknown'}</span>
+          </summary>
           <ul className="list compact">
             <li><span>Directory</span><span>{readiness.proposedBackupDirectory ?? 'unknown'}</span></li>
             <li><span>Filename</span><span>{readiness.proposedBackupFilenamePattern ?? 'unknown'}</span></li>
             <li><span>Can create backup</span><span>{readiness.canCreateBackup ? 'yes' : 'no'}</span></li>
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Restore validation</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Restore validation</span>
+            <span>{readiness.validationSteps.length} steps</span>
+          </summary>
           <ul className="list compact">
             {readiness.validationSteps.slice(0, 3).map((step) => (
               <li key={step}><span>{step}</span></li>
             ))}
           </ul>
-        </section>
+        </details>
 
-        <section className="detail-block">
-          <h3>Rollback needs</h3>
+        <details className="settings-detail-disclosure">
+          <summary>
+            <span>Rollback needs</span>
+            <span>{readiness.rollbackRequirements.length} items</span>
+          </summary>
           <ul className="list compact">
             {readiness.rollbackRequirements.slice(0, 3).map((requirement) => (
               <li key={requirement}><span>{requirement}</span></li>
             ))}
           </ul>
-        </section>
+        </details>
       </div>
 
       <div className="trust-warning-row">
@@ -7415,6 +7607,48 @@ function App() {
       ]
     };
   }, [selectedServerSummary]);
+
+  const selectedPlayerObjectRows = useMemo<PlayerObjectListRow[]>(() => {
+    if (!selectedServer || !selectedServerSummary) {
+      return [];
+    }
+
+    if (selectedServer.game === 'palworld' && palworldPlayerList.length > 0) {
+      return palworldPlayerList.slice(0, 12).map(({ player, identityState }) => ({
+        id: player.lookupKey,
+        name: player.playerName ?? player.accountName ?? player.lookupKey,
+        statusLabel: player.isOnline ? 'online' : 'offline',
+        statusTone: player.isOnline ? 'online' : 'offline',
+        activityLabel: player.isOnline
+          ? `session ${formatDurationMaybe(player.currentSessionDurationSeconds)}`
+          : `last seen ${formatTimestamp(player.lastSeenAt)}`,
+        summaryLabel: `lvl ${player.level ?? 'N/A'} · ${player.region ?? 'unknown region'}`,
+        attentionLabel: identityState === 'approved' ? 'linked' : identityState,
+        selected: selectedPalworldPlayerKey === player.lookupKey,
+        onSelect: () => setSelectedPalworldPlayerKey(player.lookupKey)
+      }));
+    }
+
+    return selectedServerSummary.playerIntelligence.slice(0, 12).map((player) => ({
+      id: player.playerId,
+      name: player.displayName,
+      statusLabel: player.isOnline ? 'online' : 'offline',
+      statusTone: player.isOnline ? 'online' : 'offline',
+      activityLabel: player.lastSeenAt ? `last seen ${formatTimestamp(player.lastSeenAt)}` : 'last seen unknown',
+      summaryLabel: `${player.sessionCount} sessions · ${formatDurationFromSeconds(player.totalTrackedSeconds)} tracked`,
+      attentionLabel: player.identityConfidence === 'unknown' || player.identityConfidence === 'low'
+        ? 'review identity'
+        : `${player.identityConfidence} confidence`,
+      selected: selectedPlayerIntelligenceId === player.playerId,
+      onSelect: () => setSelectedPlayerIntelligenceId(player.playerId)
+    }));
+  }, [
+    palworldPlayerList,
+    selectedPalworldPlayerKey,
+    selectedPlayerIntelligenceId,
+    selectedServer,
+    selectedServerSummary
+  ]);
   return (
     <main className="dashboard">
       <header className="dashboard-header">
@@ -7982,6 +8216,73 @@ function App() {
                   { label: 'Data', value: selectedServerSummary.dataFreshness.status }
                 ]}
               />
+              <section className="card command-panel-card server-overview-next-card" aria-label="Server overview review next">
+                <div className="command-panel-heading">
+                  <div>
+                    <span className="summary-label">Review Next</span>
+                    <h2>Server review path</h2>
+                  </div>
+                </div>
+                <ul className="next-action-list">
+                  <li>
+                    <button type="button" onClick={() => setSelectedDashboardTab('players')}>
+                      <span>Players</span>
+                      <small>Who is here</small>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
+                      <span>Configuration</span>
+                      <small>Readiness</small>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" onClick={() => setSelectedDashboardTab('backups')}>
+                      <span>Backups</span>
+                      <small>Recovery</small>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" onClick={() => setSelectedDashboardTab('history')}>
+                      <span>History</span>
+                      <small>Recent events</small>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
+                      <span>Capabilities</span>
+                      <small>Coverage</small>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section className="server-overview-object-grid" aria-label="Important server objects">
+                <article className="card server-overview-object-card">
+                  <span className="summary-label">Players</span>
+                  <strong>{selectedOnlinePlayerCount} online</strong>
+                  <span>{selectedServerSummary.knownPlayerCount} known players</span>
+                </article>
+                <article className="card server-overview-object-card">
+                  <span className="summary-label">Configuration</span>
+                  <strong>{selectedSettingsStatus.label}</strong>
+                  <span>{selectedReadableSettingsCount} readable settings</span>
+                </article>
+                <article className="card server-overview-object-card">
+                  <span className="summary-label">Backups</span>
+                  <strong>{selectedBackupStatus.label}</strong>
+                  <span>{selectedServerSummary.palworldBackupReadiness?.filesToBackup.length ?? 0} files tracked</span>
+                </article>
+                <article className="card server-overview-object-card">
+                  <span className="summary-label">Events / History</span>
+                  <strong>{activeHighlights.length} highlights</strong>
+                  <span>{selectedServerSummary.activityLog.length} activity records</span>
+                </article>
+                <article className="card server-overview-object-card">
+                  <span className="summary-label">Capabilities</span>
+                  <strong>{selectedCapabilitySummary?.statusLabel ?? selectedServerSummary.operationalStatus.connectorStatus}</strong>
+                  <span>{selectedServerSummary.operationalStatus.capabilities.length} capabilities</span>
+                </article>
+              </section>
               </>
             ) : (
             <section className="workspace-summary-strip" aria-label="World summary">
@@ -8020,12 +8321,70 @@ function App() {
                     details={selectedHistorySummary.details}
                     metrics={selectedHistorySummary.metrics}
                   />
+                  <article className="card command-panel-card history-next-review-card">
+                    <div className="command-panel-heading">
+                      <div>
+                        <span className="summary-label">Review Next</span>
+                        <h2>History review path</h2>
+                      </div>
+                    </div>
+                    <ul className="next-action-list">
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('players')}>
+                          <span>Players</span>
+                          <small>Who was involved</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
+                          <span>Configuration</span>
+                          <small>What changed</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('overview')}>
+                          <span>Overview</span>
+                          <small>Server health</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('backups')}>
+                          <span>Backups</span>
+                          <small>Recovery context</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
+                          <span>Capabilities</span>
+                          <small>Evidence coverage</small>
+                        </button>
+                      </li>
+                    </ul>
+                  </article>
                 </EvidenceSurfaceSection>
 
                 <EvidenceSurfaceSection
-                  eyebrow="Search / Exploration"
+                  eyebrow="Event Timeline"
+                  title="Recent events"
+                  description="History is presented as a scannable timeline before deeper search and evidence tools."
+                >
+                  <WorldHistoryTimeline
+                    events={selectedWorldEventHighlights.events}
+                    totalEventCount={selectedWorldEventHighlights.totalEvents}
+                    title={selectedWorldEventsArePreviewFallback ? 'World History Preview' : 'World History'}
+                    description={selectedWorldEventsArePreviewFallback
+                      ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
+                      : 'Trusted events from Chronicle and World Memory. Showing the most meaningful history first.'}
+                    previewFallback={selectedWorldEventsArePreviewFallback}
+                    onSelect={setSelectedWorldEventDetail}
+                  />
+                </EvidenceSurfaceSection>
+
+                <EvidenceSurfaceSection
+                  eyebrow="Event Detail / Exploration"
                   title="Explore world memory"
-                  description="Search, chronicle, and lookup tools stay close to the summary without competing with it."
+                  description="Search, chronicle, and lookup tools stay below the event list for deeper inspection."
+                  quiet
                 >
                   <WorldMemorySearch
                     game={selectedServer.game}
@@ -8048,21 +8407,13 @@ function App() {
                 </EvidenceSurfaceSection>
 
                 <EvidenceSurfaceSection
-                  eyebrow="Supporting Evidence"
-                  title="Trusted event evidence"
-                  description="Raw chronology and source-backed event evidence remain available after the operator timeline."
+                  eyebrow="Raw Diagnostics"
+                  title="Activity record"
+                  description="Session and activity logs stay available as lower-priority factual records."
                   quiet
                 >
-                  <WorldHistoryTimeline
-                    events={selectedWorldEventHighlights.events}
-                    totalEventCount={selectedWorldEventHighlights.totalEvents}
-                    title={selectedWorldEventsArePreviewFallback ? 'World History Preview' : 'World History'}
-                    description={selectedWorldEventsArePreviewFallback
-                      ? 'No trusted World Events are available for this world yet, so this development preview shows how evidence will appear.'
-                      : 'Trusted events from Chronicle and World Memory. Showing the most meaningful history first.'}
-                    previewFallback={selectedWorldEventsArePreviewFallback}
-                    onSelect={setSelectedWorldEventDetail}
-                  />
+                  <SessionTimelinePanel timeline={selectedServerSummary.sessionTimeline} freshness={selectedServerSummary.dataFreshness} />
+                  <ActivityLogPanel items={selectedServerSummary.activityLog} />
                 </EvidenceSurfaceSection>
               </section>
             ) : null}
@@ -8083,6 +8434,34 @@ function App() {
                     details={selectedCapabilitySummary.details}
                     metrics={selectedCapabilitySummary.metrics}
                   />
+                  <article className="card command-panel-card capability-next-review-card">
+                    <div className="command-panel-heading">
+                      <div>
+                        <span className="summary-label">Review Next</span>
+                        <h2>Capability review path</h2>
+                      </div>
+                    </div>
+                    <ul className="next-action-list">
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
+                          <span>Configuration evidence</span>
+                          <small>Settings</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('players')}>
+                          <span>Player and identity coverage</span>
+                          <small>Players</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('history')}>
+                          <span>Timeline evidence</span>
+                          <small>History</small>
+                        </button>
+                      </li>
+                    </ul>
+                  </article>
                 </EvidenceSurfaceSection>
 
                 <EvidenceSurfaceSection
@@ -8251,9 +8630,9 @@ function App() {
             {selectedDashboardTab === 'backups' ? (
               <section className="server-focused-tab-grid safety-surface" aria-label="Server backups">
                 <SafetySurfaceSection
-                  eyebrow="Recovery Readiness Summary"
-                  title="Can I safely recover?"
-                  description="Backups starts with recovery confidence before showing evidence or diagnostics."
+                  eyebrow="Backup Health"
+                  title="Am I protected?"
+                  description="Backups starts with recovery confidence, latest backup state, and restore readiness."
                 >
                   <SafetySummaryCard
                     eyebrow="Recovery safety"
@@ -8269,24 +8648,103 @@ function App() {
                       { label: 'Runtime alignment', value: selectedServerSummary.palworldBackupReadiness?.runtimeAlignmentStatus ?? 'unknown' }
                     ]}
                   />
+                  <div className="backup-health-strip" aria-label="Backup health">
+                    <div>
+                      <span className="summary-label">Latest backup</span>
+                      <strong>{selectedServerSummary.palworldBackupReadiness ? 'Not created here' : 'unknown'}</strong>
+                    </div>
+                    <div>
+                      <span className="summary-label">Backup status</span>
+                      <strong>{selectedBackupStatus.label}</strong>
+                    </div>
+                    <div>
+                      <span className="summary-label">Restore readiness</span>
+                      <strong>{selectedServerSummary.palworldBackupReadiness?.readinessStatus ?? 'unknown'}</strong>
+                    </div>
+                    <div>
+                      <span className="summary-label">Destination</span>
+                      <strong>{selectedServerSummary.palworldBackupReadiness?.proposedBackupDirectory ?? 'unknown'}</strong>
+                    </div>
+                  </div>
                 </SafetySurfaceSection>
 
                 <SafetySurfaceSection
-                  eyebrow="Recovery Actions / Existing Controls"
-                  title="Available recovery controls"
-                  description="No new backup or restore controls are introduced in this phase."
+                  eyebrow="Review Next"
+                  title="What should I review next?"
+                  description="Use existing server tabs to inspect related recovery context."
                 >
-                  <article className="card server-empty-state-card">
-                    <span className="summary-label">Existing controls</span>
-                    <h2>No backup or restore controls are exposed here</h2>
-                    <p className="subtle">Use the readiness evidence below to understand manual recovery prerequisites. This screen does not create backups or restore files.</p>
+                  <article className="card command-panel-card backup-next-review-card">
+                    <div className="command-panel-heading">
+                      <div>
+                        <span className="summary-label">Review Next</span>
+                        <h2>Backup review path</h2>
+                      </div>
+                    </div>
+                    <ul className="next-action-list">
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('overview')}>
+                          <span>Overview</span>
+                          <small>Server health</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('history')}>
+                          <span>History</span>
+                          <small>Recent events</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
+                          <span>Configuration</span>
+                          <small>Files to protect</small>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
+                          <span>Capabilities</span>
+                          <small>Recovery evidence</small>
+                        </button>
+                      </li>
+                    </ul>
                   </article>
                 </SafetySurfaceSection>
 
                 <SafetySurfaceSection
-                  eyebrow="Backup History / Evidence"
+                  eyebrow="Latest Backup"
+                  title="Newest recovery point"
+                  description="The latest backup state is explicit before backup evidence and diagnostics."
+                >
+                  {selectedServerSummary.palworldBackupReadiness ? (
+                    <BackupLatestCard readiness={selectedServerSummary.palworldBackupReadiness} />
+                  ) : (
+                    <article className="card server-empty-state-card">
+                      <span className="summary-label">Latest Backup</span>
+                      <h2>No backup state loaded</h2>
+                      <p className="subtle">Existing recovery evidence will appear here when the current data source provides it.</p>
+                    </article>
+                  )}
+                </SafetySurfaceSection>
+
+                <SafetySurfaceSection
+                  eyebrow="Backup History"
+                  title="Backup history"
+                  description="Completed backup history appears as a compact list when it is available."
+                >
+                  {selectedServerSummary.palworldBackupReadiness ? (
+                    <BackupHistoryList readiness={selectedServerSummary.palworldBackupReadiness} />
+                  ) : (
+                    <article className="card server-empty-state-card">
+                      <span className="summary-label">Backup History</span>
+                      <h2>No backup history loaded</h2>
+                      <p className="subtle">No completed backup records are available for this server in the current data.</p>
+                    </article>
+                  )}
+                </SafetySurfaceSection>
+
+                <SafetySurfaceSection
+                  eyebrow="Backup Details"
                   title="Recovery evidence"
-                  description="Backup diagnostics and rollback evidence stay available after the safety summary."
+                  description="Backup file, target, validation, and rollback details remain available after the recovery summary."
                   quiet
                 >
                   {selectedServerSummary.palworldBackupReadiness ? (
@@ -8298,6 +8756,19 @@ function App() {
                       <p className="subtle">Existing recovery evidence will appear here when the current data source provides it.</p>
                     </article>
                   )}
+                </SafetySurfaceSection>
+
+                <SafetySurfaceSection
+                  eyebrow="Diagnostics"
+                  title="Recovery diagnostics"
+                  description="No backup or restore controls are exposed here. Diagnostic status remains read-only."
+                  quiet
+                >
+                  <article className="card server-empty-state-card backup-diagnostics-card">
+                    <span className="summary-label">Read-only diagnostics</span>
+                    <h2>No operational controls</h2>
+                    <p className="subtle">This screen does not create backups, restore files, restart servers, or write configuration.</p>
+                  </article>
                 </SafetySurfaceSection>
               </section>
             ) : null}
@@ -8487,6 +8958,7 @@ function App() {
                             engagement={selectedServerSummary.playerEngagement}
                             onSelectPlayer={setSelectedEngagementPlayerId}
                           />
+                          <PlayerObjectList rows={selectedPlayerObjectRows} />
                         </PlayersSurfaceSection>
 
                         <PlayersSurfaceSection
@@ -8797,6 +9269,7 @@ function App() {
                             engagement={selectedServerSummary.playerEngagement}
                             onSelectPlayer={setSelectedEngagementPlayerId}
                           />
+                          <PlayerObjectList rows={selectedPlayerObjectRows} />
 
                           <article className="card">
                             <h2>Palworld Telemetry</h2>

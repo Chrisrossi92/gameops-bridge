@@ -2981,6 +2981,80 @@
   background: #dbeafe;
 }
 
+.player-object-list-card {
+  gap: 0.46rem;
+}
+
+.player-object-list {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.player-object-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.15fr) minmax(8rem, 0.85fr) minmax(9rem, 0.95fr) minmax(6rem, 0.65fr);
+  gap: 0.52rem;
+  align-items: center;
+  border: 1px solid #e5ebf3;
+  border-radius: 0.5rem;
+  padding: 0.42rem 0.56rem;
+  background: #ffffff;
+  color: #334155;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.player-object-row:hover {
+  border-color: #cbd5e1;
+  background: #f8fbff;
+}
+
+.player-object-row.selected {
+  border-color: #1f2937;
+  background: #f8fbff;
+  box-shadow: inset 3px 0 0 #1f2937;
+}
+
+.player-object-row:focus-visible {
+  outline: none;
+  border-color: #1f2937;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.14);
+}
+
+.player-object-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.player-object-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+}
+
+.player-object-identity strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 0.92rem;
+}
+
+.player-object-hint {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 780;
+  line-height: 1.25;
+}
+
 .command-card-grid .card:not(.server-health-card) {
   min-height: 0;
 }
@@ -3140,17 +3214,63 @@
   gap: 0.45rem;
 }
 
+.settings-primary-state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.settings-primary-state {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+  border: 1px solid #dbe3ef;
+  border-radius: 0.58rem;
+  padding: 0.7rem 0.78rem;
+  background: #ffffff;
+}
+
+.settings-primary-state strong {
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 1.08rem;
+  line-height: 1.18;
+}
+
+.settings-primary-state > span:last-child {
+  overflow-wrap: anywhere;
+  color: #526174;
+  font-size: 0.8rem;
+  font-weight: 750;
+  line-height: 1.28;
+}
+
+.settings-primary-state-ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.settings-primary-state-review {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.settings-primary-state-blocked {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
 .settings-readiness-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0.55rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.46rem;
 }
 
 .settings-readiness-strip > div {
   min-width: 0;
   border: 1px solid #e5ebf3;
   border-radius: 0.5rem;
-  padding: 0.55rem 0.65rem;
+  padding: 0.48rem 0.58rem;
   background: #f8fafc;
 }
 
@@ -3158,12 +3278,57 @@
   display: block;
   overflow-wrap: anywhere;
   color: #172033;
-  font-size: 0.94rem;
+  font-size: 0.88rem;
   line-height: 1.25;
 }
 
 .settings-readiness-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+}
+
+.settings-disclosure-list {
+  display: grid;
+  gap: 0.36rem;
+}
+
+.settings-detail-disclosure {
+  border: 1px solid #e5ebf3;
+  border-radius: 0.52rem;
+  background: #ffffff;
+}
+
+.settings-detail-disclosure[open] {
+  background: #fbfdff;
+}
+
+.settings-detail-disclosure summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.48rem 0.64rem;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 850;
+  list-style-position: inside;
+}
+
+.settings-detail-disclosure summary > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-detail-disclosure summary > span:last-child {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.settings-detail-disclosure .list {
+  border-top: 1px solid #edf2f7;
+  padding: 0.5rem 0.68rem 0.66rem;
 }
 
 .settings-readiness-actions {
@@ -3919,6 +4084,108 @@
   gap: 0.16rem;
 }
 
+.backup-health-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.48rem;
+}
+
+.backup-health-strip > div {
+  min-width: 0;
+  border: 1px solid #e5ebf3;
+  border-radius: 0.5rem;
+  padding: 0.52rem 0.62rem;
+  background: #ffffff;
+}
+
+.backup-health-strip strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 0.88rem;
+  line-height: 1.24;
+}
+
+.backup-next-review-card,
+.backup-latest-card,
+.backup-history-card,
+.backup-details-card,
+.backup-diagnostics-card {
+  grid-column: 1 / -1;
+}
+
+.backup-next-review-card .next-action-list {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.backup-latest-card {
+  gap: 0.55rem;
+  background: #ffffff;
+}
+
+.backup-latest-card .backup-health-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.backup-object-list {
+  display: grid;
+  gap: 0.34rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.backup-object-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.52rem;
+  align-items: center;
+  border: 1px solid #e5ebf3;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.62rem;
+  background: #ffffff;
+}
+
+.backup-object-empty-row {
+  border-color: #dbeafe;
+  background: #f8fbff;
+}
+
+.backup-object-main {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.backup-object-main strong,
+.backup-object-main span {
+  overflow-wrap: anywhere;
+}
+
+.backup-object-main strong {
+  color: #111827;
+  font-size: 0.88rem;
+  line-height: 1.24;
+}
+
+.backup-object-main span,
+.backup-object-meta,
+.backup-object-status {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 780;
+  line-height: 1.25;
+}
+
+.backup-object-meta,
+.backup-object-status {
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 0.14rem 0.42rem;
+  white-space: nowrap;
+}
+
 .next-action-list {
   margin: 0.55rem 0 0;
   padding: 0;
@@ -3980,6 +4247,68 @@
   font-size: 0.7rem;
   font-weight: 800;
   line-height: 1;
+}
+
+.capability-next-review-card {
+  gap: 0.45rem;
+}
+
+.capability-next-review-card .next-action-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.capability-next-review-card .next-action-list button {
+  min-height: 3rem;
+}
+
+.backup-next-review-card .next-action-list button,
+.history-next-review-card .next-action-list button {
+  min-height: 3rem;
+}
+
+.server-overview-next-card {
+  gap: 0.45rem;
+}
+
+.server-overview-next-card .next-action-list {
+  grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+  margin-top: 0;
+}
+
+.server-overview-next-card .next-action-list button {
+  padding: 0.44rem 0.54rem;
+  min-height: 3rem;
+}
+
+.server-overview-object-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  gap: 0.48rem;
+}
+
+.server-overview-object-card {
+  min-height: 0;
+  gap: 0.2rem;
+  border-color: #e5ebf3;
+  padding: 0.68rem 0.72rem;
+  background: #fbfdff;
+  box-shadow: none;
+}
+
+.server-overview-object-card strong {
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.server-overview-object-card > span:last-child {
+  overflow-wrap: anywhere;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.28;
 }
 
 .player-drawer-shell {
@@ -5002,10 +5331,17 @@
 .world-event-preview-card {
   grid-column: 1 / -1;
   margin-bottom: 1rem;
-  background:
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.11), transparent 34%),
-    linear-gradient(180deg, #f8fbff 0%, #ffffff 68%);
+  background: #ffffff;
   border-color: rgba(14, 116, 144, 0.16);
+}
+
+.history-next-review-card {
+  grid-column: 1 / -1;
+  background: #ffffff;
+}
+
+.history-next-review-card .next-action-list {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .world-event-preview-heading {
@@ -5112,8 +5448,9 @@
 .world-event-preview-row {
   border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: 0.5rem;
-  padding: 0.58rem 0.65rem;
+  padding: 0;
   background: rgba(255, 255, 255, 0.76);
+  overflow: hidden;
 }
 
 .world-event-preview-main {
@@ -5134,6 +5471,12 @@
   color: #1f2937;
 }
 
+.world-event-preview-time {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .world-event-preview-main p,
 .world-event-preview-button p {
   margin: 0;
@@ -5144,6 +5487,50 @@
   color: #64748b;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.world-event-preview-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.58rem 0.65rem 0.48rem;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.world-event-preview-button:hover {
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.world-event-preview-button:disabled {
+  cursor: default;
+}
+
+.world-event-preview-button:focus-visible {
+  outline: 2px solid rgba(14, 116, 144, 0.38);
+  outline-offset: -2px;
+}
+
+.world-event-preview-details {
+  border-top: 1px solid rgba(226, 232, 240, 0.86);
+  padding: 0.34rem 0.65rem 0.44rem;
+}
+
+.world-event-preview-details summary {
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.world-event-preview-details[open] {
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.world-event-preview-details .world-event-preview-meta {
+  margin-top: 0.32rem;
 }
 
 .world-event-significance {
@@ -5646,6 +6033,7 @@
   }
 
   .boost-preset-layout,
+  .settings-primary-state-grid,
   .settings-readiness-grid,
   .detail-grid,
   .control-capability-grid,
@@ -5656,6 +6044,45 @@
   .settings-readiness-badges,
   .settings-readiness-actions {
     justify-content: flex-start;
+  }
+
+  .settings-detail-disclosure summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-detail-disclosure summary > span:last-child {
+    text-align: left;
+  }
+
+  .capability-next-review-card .next-action-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backup-health-strip,
+  .backup-next-review-card .next-action-list,
+  .backup-object-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backup-object-meta,
+  .backup-object-status {
+    justify-self: start;
+  }
+
+  .server-overview-next-card .next-action-list,
+  .history-next-review-card .next-action-list,
+  .server-overview-object-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .player-object-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.24rem;
+  }
+
+  .player-object-identity {
+    align-items: flex-start;
+    gap: 0.24rem;
   }
 
   .operator-community-grid,

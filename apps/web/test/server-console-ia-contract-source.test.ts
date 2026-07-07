@@ -8,7 +8,12 @@ const serverAttentionSummarySource = readFileSync(
   join(process.cwd(), 'apps/web/src/server-attention-summary.tsx'),
   'utf8'
 );
-const contractSource = `${appSource}\n${serverAttentionSummarySource}`;
+const worldEventRendererSource = readFileSync(
+  join(process.cwd(), 'apps/web/src/world-event-renderer.tsx'),
+  'utf8'
+);
+const appCssSource = readFileSync(join(process.cwd(), 'apps/web/src/App.css'), 'utf8');
+const contractSource = `${appSource}\n${serverAttentionSummarySource}\n${worldEventRendererSource}\n${appCssSource}`;
 
 function sourceBetween(start: string, end: string): string {
   const startIndex = appSource.indexOf(start);
@@ -142,11 +147,15 @@ test('server tabs expose the expected primary questions and hierarchy labels', (
     'Change Impact Summary',
     'Active Configuration',
     'Configuration Evidence',
-    'Recovery Readiness Summary',
-    'Recovery Actions / Existing Controls',
-    'Backup History / Evidence',
+    'Backup Health',
+    'Latest Backup',
+    'Backup History',
+    'Backup Details',
+    'Diagnostics',
     'Operator Timeline Summary',
-    'Search / Exploration',
+    'Event Timeline',
+    'Event Detail / Exploration',
+    'Raw Diagnostics',
     'Console Coverage Summary',
     'Available Capability Areas',
     'Technical Evidence / Diagnostics'
@@ -162,12 +171,118 @@ test('overview uses ServerAttentionSummary and excludes technical default conten
   );
 
   assert.ok(overviewBlock.includes('<ServerAttentionSummary'));
+  assert.ok(overviewBlock.includes('Review Next'));
+  assert.ok(overviewBlock.includes('Server review path'));
+  assert.ok(overviewBlock.includes('Important server objects'));
+  assert.ok(overviewBlock.includes('<span>Players</span>'));
+  assert.ok(overviewBlock.includes('<span>Configuration</span>'));
+  assert.ok(overviewBlock.includes('<span>Backups</span>'));
+  assert.ok(overviewBlock.includes('<span>History</span>'));
+  assert.ok(overviewBlock.includes('<span>Capabilities</span>'));
+  assert.ok(overviewBlock.includes('<small>Who is here</small>'));
+  assert.ok(overviewBlock.includes('<small>Readiness</small>'));
+  assert.ok(overviewBlock.includes('<small>Recovery</small>'));
+  assert.ok(overviewBlock.includes('<small>Recent events</small>'));
+  assert.ok(overviewBlock.includes('<small>Coverage</small>'));
+  assert.ok(overviewBlock.indexOf('<ServerAttentionSummary') < overviewBlock.indexOf('Server review path'));
+  assert.ok(overviewBlock.indexOf('Server review path') < overviewBlock.indexOf('Important server objects'));
   assert.ok(overviewBlock.includes('currentActivity='));
   assert.ok(overviewBlock.includes('recommendedAction='));
+  assert.ok(overviewBlock.includes("setSelectedDashboardTab('players')"));
+  assert.ok(overviewBlock.includes("setSelectedDashboardTab('settings')"));
+  assert.ok(overviewBlock.includes("setSelectedDashboardTab('backups')"));
+  assert.ok(overviewBlock.includes("setSelectedDashboardTab('history')"));
+  assert.ok(overviewBlock.includes("setSelectedDashboardTab('capabilities')"));
   assert.ok(!overviewBlock.includes('Settings Control Center'));
   assert.ok(!overviewBlock.includes('Server Control Capability Map'));
   assert.ok(!overviewBlock.includes('Connector Status'));
   assert.ok(!overviewBlock.includes('Backup & Rollback Readiness'));
+  assert.ok(!overviewBlock.includes('restart'));
+  assert.ok(!overviewBlock.includes('write'));
+});
+
+test('backups tab follows the GPS object template sequence', () => {
+  const backupsBlock = sourceBetween(
+    "{selectedDashboardTab === 'backups' ? (",
+    '<section className="game-section">'
+  );
+
+  for (const label of [
+    'Backup Health',
+    'Am I protected?',
+    'Review Next',
+    'What should I review next?',
+    'Backup review path',
+    'Latest Backup',
+    'Newest recovery point',
+    'Backup History',
+    'Backup history',
+    'Backup Details',
+    'Recovery evidence',
+    'Diagnostics',
+    'Recovery diagnostics'
+  ]) {
+    assert.ok(backupsBlock.includes(label), `Missing Backups object-template label: ${label}`);
+  }
+
+  assert.ok(backupsBlock.indexOf('Backup Health') < backupsBlock.indexOf('Review Next'));
+  assert.ok(backupsBlock.indexOf('Review Next') < backupsBlock.indexOf('Latest Backup'));
+  assert.ok(backupsBlock.indexOf('Latest Backup') < backupsBlock.indexOf('Backup History'));
+  assert.ok(backupsBlock.indexOf('Backup History') < backupsBlock.indexOf('Backup Details'));
+  assert.ok(backupsBlock.indexOf('Backup Details') < backupsBlock.indexOf('Diagnostics'));
+  assert.ok(backupsBlock.includes('backup-health-strip'));
+  assert.ok(backupsBlock.includes('<BackupLatestCard'));
+  assert.ok(backupsBlock.includes('<BackupHistoryList'));
+  assert.ok(backupsBlock.includes('<PalworldBackupReadinessPanel'));
+  assert.ok(contractSource.includes('aria-label="Backup history list"'));
+  assert.ok(contractSource.includes('No created backup history loaded'));
+  assert.ok(backupsBlock.includes("setSelectedDashboardTab('overview')"));
+  assert.ok(backupsBlock.includes("setSelectedDashboardTab('history')"));
+  assert.ok(backupsBlock.includes("setSelectedDashboardTab('settings')"));
+  assert.ok(backupsBlock.includes("setSelectedDashboardTab('capabilities')"));
+  assert.ok(!backupsBlock.includes("setSelectedDashboardTab('players')"));
+  assert.ok(!backupsBlock.includes('onCreateBackup'));
+  assert.ok(!backupsBlock.includes('onRestore'));
+});
+
+test('history tab follows the GPS object template sequence', () => {
+  const historyBlock = sourceBetween(
+    "{selectedDashboardTab === 'history' && selectedHistorySummary ? (",
+    "{selectedDashboardTab === 'capabilities' && selectedCapabilitySummary ? ("
+  );
+
+  for (const label of [
+    'Operator Timeline Summary',
+    'Review Next',
+    'History review path',
+    'Event Timeline',
+    'Recent events',
+    'Event Detail / Exploration',
+    'Explore world memory',
+    'Raw Diagnostics',
+    'Activity record'
+  ]) {
+    assert.ok(historyBlock.includes(label), `Missing History object-template label: ${label}`);
+  }
+
+  assert.ok(historyBlock.indexOf('Operator Timeline Summary') < historyBlock.indexOf('Review Next'));
+  assert.ok(historyBlock.indexOf('Review Next') < historyBlock.indexOf('Event Timeline'));
+  assert.ok(historyBlock.indexOf('Event Timeline') < historyBlock.indexOf('Event Detail / Exploration'));
+  assert.ok(historyBlock.indexOf('Event Detail / Exploration') < historyBlock.indexOf('Raw Diagnostics'));
+  assert.ok(historyBlock.includes('<WorldHistoryTimeline'));
+  assert.ok(historyBlock.includes('<WorldMemorySearch'));
+  assert.ok(historyBlock.includes('<SessionTimelinePanel'));
+  assert.ok(historyBlock.includes('<ActivityLogPanel'));
+  assert.ok(historyBlock.includes("setSelectedDashboardTab('players')"));
+  assert.ok(historyBlock.includes("setSelectedDashboardTab('settings')"));
+  assert.ok(historyBlock.includes("setSelectedDashboardTab('overview')"));
+  assert.ok(historyBlock.includes("setSelectedDashboardTab('backups')"));
+  assert.ok(historyBlock.includes("setSelectedDashboardTab('capabilities')"));
+  assert.ok(worldEventRendererSource.includes('world-event-preview-details'));
+  assert.ok(worldEventRendererSource.includes('Event details'));
+  assert.ok(worldEventRendererSource.indexOf('world-event-preview-time') < worldEventRendererSource.indexOf('world-event-preview-details'));
+  assert.ok(!historyBlock.includes('restart'));
+  assert.ok(!historyBlock.includes('write'));
 });
 
 test('Palworld-only readiness and control panels stay scoped to Palworld surfaces', () => {
@@ -201,6 +316,74 @@ test('Palworld-only readiness and control panels stay scoped to Palworld surface
   assert.ok(palworldCapabilityBlock.includes('<SettingsCapabilityPanel'));
 });
 
+test('settings evidence uses an OX summary before detailed configuration evidence', () => {
+  const settingsCapabilityBlock = sourceBetween(
+    'function SettingsCapabilityPanel({',
+    'interface ServerSettingsReferencePanelProps'
+  );
+
+  assert.ok(settingsCapabilityBlock.includes('<h2>Configuration Health</h2>'));
+  assert.ok(settingsCapabilityBlock.includes('settings-primary-state-grid'));
+  assert.ok(settingsCapabilityBlock.includes('Read state'));
+  assert.ok(settingsCapabilityBlock.includes('Edit state'));
+  assert.ok(settingsCapabilityBlock.includes('Candidates'));
+  assert.ok(settingsCapabilityBlock.includes('Runtime'));
+  assert.ok(settingsCapabilityBlock.includes('Review next'));
+  assert.ok(settingsCapabilityBlock.includes('settings-disclosure-list'));
+
+  for (const label of [
+    'Read evidence',
+    'Edit blockers',
+    'Future route',
+    'Runtime match',
+    'Editable candidates',
+    'Observed values',
+    'Restart and rollback',
+    'Safety notes'
+  ]) {
+    assert.ok(settingsCapabilityBlock.includes(label), `Missing settings detail disclosure: ${label}`);
+  }
+
+  assert.ok(settingsCapabilityBlock.indexOf('Read state') < settingsCapabilityBlock.indexOf('Read evidence'));
+  assert.ok(settingsCapabilityBlock.indexOf('Edit state') < settingsCapabilityBlock.indexOf('Edit blockers'));
+  assert.ok(settingsCapabilityBlock.indexOf('<h2>Configuration Health</h2>') < settingsCapabilityBlock.indexOf('Read evidence'));
+  assert.ok(!settingsCapabilityBlock.includes('<h3>Can read settings</h3>'));
+  assert.ok(!settingsCapabilityBlock.includes('<h3>Can safely edit</h3>'));
+  assert.ok(!settingsCapabilityBlock.includes('<h3>Safest future route</h3>'));
+  assert.ok(!settingsCapabilityBlock.includes('<h3>Config and REST match</h3>'));
+  assert.ok(!settingsCapabilityBlock.includes('<h3>Safety warnings</h3>'));
+  assert.ok(settingsCapabilityBlock.includes('No apply, write, restart, or schedule controls are exposed.'));
+});
+
+test('capabilities tab follows the GPS object template sequence', () => {
+  const capabilitiesBlock = sourceBetween(
+    "{selectedDashboardTab === 'capabilities' && selectedCapabilitySummary ? (",
+    "{selectedDashboardTab === 'overview' ? ("
+  );
+
+  for (const label of [
+    'Console Coverage Summary',
+    'Review Next',
+    'Capability review path',
+    'Configuration evidence',
+    'Player and identity coverage',
+    'Timeline evidence',
+    'Available Capability Areas',
+    'Technical Evidence / Diagnostics'
+  ]) {
+    assert.ok(capabilitiesBlock.includes(label), `Missing capabilities object-template label: ${label}`);
+  }
+
+  assert.ok(capabilitiesBlock.indexOf('Console Coverage Summary') < capabilitiesBlock.indexOf('Review Next'));
+  assert.ok(capabilitiesBlock.indexOf('Review Next') < capabilitiesBlock.indexOf('Available Capability Areas'));
+  assert.ok(capabilitiesBlock.indexOf('Available Capability Areas') < capabilitiesBlock.indexOf('Technical Evidence / Diagnostics'));
+  assert.ok(capabilitiesBlock.includes("setSelectedDashboardTab('settings')"));
+  assert.ok(capabilitiesBlock.includes("setSelectedDashboardTab('players')"));
+  assert.ok(capabilitiesBlock.includes("setSelectedDashboardTab('history')"));
+  assert.ok(!capabilitiesBlock.includes('restart'));
+  assert.ok(!capabilitiesBlock.includes('write'));
+});
+
 test('game-specific player context stays separated from live player activity', () => {
   const valheimPlayerBlock = sourceBetween(
     'eyebrow="Player Activity Summary"',
@@ -214,6 +397,7 @@ test('game-specific player context stays separated from live player activity', (
 
   const valheimPlayersOrder = [
     'Player Activity Summary',
+    '<PlayerObjectList',
     'Player Directory',
     'Game-Specific Context',
     'Supporting Evidence'
@@ -222,11 +406,16 @@ test('game-specific player context stays separated from live player activity', (
   assert.ok(valheimPlayersOrder[0] < valheimPlayersOrder[1]);
   assert.ok(valheimPlayersOrder[1] < valheimPlayersOrder[2]);
   assert.ok(valheimPlayersOrder[2] < valheimPlayersOrder[3]);
+  assert.ok(valheimPlayersOrder[3] < valheimPlayersOrder[4]);
   assert.ok(valheimPlayerBlock.indexOf('title="Who is here right now?"') < valheimPlayerBlock.indexOf('title="Valheim characters"'));
   assert.ok(valheimPlayerBlock.indexOf('title="Valheim characters"') < valheimPlayerBlock.indexOf('title="Valheim player evidence"'));
+  assert.ok(contractSource.includes('aria-label="Player object list"'));
+  assert.ok(contractSource.includes('<span className="summary-label">Player List</span>'));
+  assert.ok(contractSource.includes('<h2>Players to inspect</h2>'));
 
   const palworldPlayersOrder = [
     'Player Activity Summary',
+    '<PlayerObjectList',
     'Player Directory',
     'Game-Specific Context',
     'Supporting Evidence'
@@ -235,6 +424,39 @@ test('game-specific player context stays separated from live player activity', (
   assert.ok(palworldPlayersOrder[0] < palworldPlayersOrder[1]);
   assert.ok(palworldPlayersOrder[1] < palworldPlayersOrder[2]);
   assert.ok(palworldPlayersOrder[2] < palworldPlayersOrder[3]);
+  assert.ok(palworldPlayersOrder[3] < palworldPlayersOrder[4]);
   assert.ok(palworldPlayerBlock.indexOf('title="Who is here right now?"') < palworldPlayerBlock.indexOf('title="Palworld guilds and bases"'));
   assert.ok(palworldPlayerBlock.indexOf('title="Palworld guilds and bases"') < palworldPlayerBlock.indexOf('title="Palworld player evidence"'));
+});
+
+test('GPS console consistency keeps review paths navigational and diagnostics lower priority', () => {
+  const overviewBlock = sourceBetween(
+    "{selectedDashboardTab === 'overview' ? (",
+    "{selectedDashboardTab === 'history'"
+  );
+  const backupsBlock = sourceBetween(
+    "{selectedDashboardTab === 'backups' ? (",
+    '<section className="game-section">'
+  );
+  const historyBlock = sourceBetween(
+    "{selectedDashboardTab === 'history' && selectedHistorySummary ? (",
+    "{selectedDashboardTab === 'capabilities' && selectedCapabilitySummary ? ("
+  );
+  const capabilitiesBlock = sourceBetween(
+    "{selectedDashboardTab === 'capabilities' && selectedCapabilitySummary ? (",
+    "{selectedDashboardTab === 'overview' ? ("
+  );
+
+  for (const block of [overviewBlock, backupsBlock, historyBlock, capabilitiesBlock]) {
+    assert.ok(block.includes('Review Next') || block.includes('review path'), 'Expected a navigational review path.');
+    assert.ok(!block.includes('onRestore'), 'Review paths must not expose restore controls.');
+    assert.ok(!block.includes('onCreateBackup'), 'Review paths must not expose backup creation controls.');
+    assert.ok(!block.includes('onWrite'), 'Review paths must not expose write controls.');
+  }
+
+  assert.ok(backupsBlock.indexOf('Backup Details') < backupsBlock.indexOf('Diagnostics'));
+  assert.ok(historyBlock.indexOf('Event Detail / Exploration') < historyBlock.indexOf('Raw Diagnostics'));
+  assert.ok(capabilitiesBlock.indexOf('Available Capability Areas') < capabilitiesBlock.indexOf('Technical Evidence / Diagnostics'));
+  assert.ok(contractSource.includes('.backup-next-review-card .next-action-list button'));
+  assert.ok(contractSource.includes('.history-next-review-card .next-action-list button'));
 });

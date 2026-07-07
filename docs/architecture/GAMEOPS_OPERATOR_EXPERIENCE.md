@@ -1252,6 +1252,104 @@ Intentionally out of scope:
 
 The model still scales because visible game grouping works for a small fleet, horizontal/internal scrolling prevents mobile page overflow, and the documented next step for dozens of servers is to promote the same hierarchy into a persistent sidebar or drawer without changing the server tab contract.
 
+## OX 1.0 Operator Experience Reset
+
+OX 1.0 moves GameOps from "show everything the system knows" toward "show what the operator needs to understand and do next." This is a product-language and frontend-organization pass. It does not add backend capability, write behavior, automation, route migrations, connector changes, Palworld changes, or Valheim changes.
+
+Reference design language:
+
+- docs/architecture/GAMEOPS_OPERATOR_DESIGN_SYSTEM.md
+
+### OX 1.0A: Design System Documentation
+
+Improve:
+
+- define the reusable product language for summaries, evidence, diagnostics, status chips, metadata strips, disclosures, drawers, and action surfaces
+- document current anti-patterns so future work has a shared review standard
+
+Must not touch:
+
+- backend APIs
+- routes
+- operational capabilities
+- connector behavior
+
+### OX 1.0B: Configuration Screen Signal-To-Noise Reduction
+
+Improve:
+
+- make Settings answer "What happens if I change this?" before showing capability evidence
+- merge tiny capability cards into a single configuration-health summary
+- keep read/edit/source/runtime/safety data available behind details
+- keep raw setting keys and config paths out of the first read
+
+Must not touch:
+
+- setting mutation
+- restart controls
+- persistence
+- Palworld or Valheim behavior
+
+### OX 1.0C: Capabilities Screen Object Cleanup
+
+Improve:
+
+- treat Capabilities as read-only coverage and trust evidence
+- replace large equal-weight matrices with compact capability groups
+- disclose raw diagnostics only after the operator asks for technical evidence
+
+Must not touch:
+
+- capability detection logic
+- collector behavior
+- API contracts
+
+### OX 1.0D: Overview Screen Decision Hierarchy
+
+Improve:
+
+- keep global health, current attention, and next action above all other content
+- reduce repeated cards and paragraphs
+- route investigation to existing server tabs instead of expanding diagnostics on Overview
+
+Must not touch:
+
+- server selection behavior
+- server tab contract
+- data-fetching behavior
+
+### OX 1.0E: Player And History List Consistency
+
+Improve:
+
+- use lists for browsing players, sessions, guilds, and history events
+- keep entity detail in drawers
+- make confidence and source metadata secondary to the entity/event title
+
+Must not touch:
+
+- player identity logic
+- world-event contracts
+- historical data persistence
+
+### OX 1.0F: Mobile Density Pass
+
+Improve:
+
+- ensure compact rows, disclosures, metadata strips, and tabs remain readable at mobile widths
+- avoid page-level horizontal overflow
+- keep the selected server and current tab recognizable
+
+Must not touch:
+
+- routing
+- top-level IA
+- backend data shape
+
+### First POC Boundary
+
+The first OX 1.0 proof of concept should target the Settings evidence area. The expected result is a smaller operator-facing Configuration Health summary followed by detail disclosures for read path, edit limits, future route, runtime alignment, editable candidates, observed values, and safety notes. It must preserve all existing data and expose no new operational capability.
+
 ## Phase 11A Boundary
 
 This architecture does not add backend capabilities, Palworld behavior, connectors, automation, write actions, or server functionality. It reorganizes how existing and future functionality should be presented so GameOps can grow without becoming a wall of cards.

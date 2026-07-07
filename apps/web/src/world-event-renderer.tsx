@@ -352,19 +352,24 @@ export function WorldHistoryTimeline({
                         <div className="world-event-preview-title">
                           <span className="source-badge">{getWorldEventTypeLabel(event.eventType)}</span>
                           <strong>{entry.title}</strong>
+                          <span className="world-event-preview-time">{formatEventTime(entry.occurredAt)}</span>
                         </div>
                         {entry.detail ? <p>{entry.detail}</p> : null}
                         <div className="world-event-preview-meta">
-                          <span>Occurred {formatEventTime(entry.occurredAt)}</span>
-                          <span>Discovered {formatEventTime(entry.discoveredAt)}</span>
                           <span>{entry.sourceLabel || getWorldEventSourceLabel(entry.sourceKind)}</span>
-                          <span>{entry.evidenceCount} evidence</span>
                           <span className={`confidence-badge confidence-${entry.confidence}`}>
                             {getWorldEventConfidenceLabel(event.confidence)}
                           </span>
                           <span className={`world-event-significance world-event-significance-${entry.significance}`}>
                             {entry.significance}
                           </span>
+                        </div>
+                      </button>
+                      <details className="world-event-preview-details">
+                        <summary>Event details</summary>
+                        <div className="world-event-preview-meta">
+                          <span>Discovered {formatEventTime(entry.discoveredAt)}</span>
+                          <span>{entry.evidenceCount} evidence</span>
                           <span>{getWorldEventRelevanceLabel(event)}</span>
                           <span>Inspect evidence</span>
                         </div>
@@ -373,7 +378,7 @@ export function WorldHistoryTimeline({
                             <span>Evidence: {entry.evidenceLabels.slice(0, 3).join(', ')}</span>
                           </div>
                         ) : null}
-                      </button>
+                      </details>
                     </li>
                   );
                 })}
