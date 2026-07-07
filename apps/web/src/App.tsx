@@ -7140,13 +7140,13 @@ function App() {
 
   const detailTabs = useMemo(() => {
     return [
-      { key: 'overview', label: 'Overview' },
-      { key: 'players', label: 'Players' },
-      { key: 'settings', label: 'Settings' },
-      { key: 'backups', label: 'Backups' },
-      { key: 'history', label: 'History' },
-      { key: 'capabilities', label: 'Capabilities' }
-    ] satisfies Array<{ key: DashboardTab; label: string }>;
+      { key: 'overview', label: 'Overview', workflow: 'Monitor' },
+      { key: 'players', label: 'Players', workflow: 'Investigate' },
+      { key: 'settings', label: 'Settings', workflow: 'Configure' },
+      { key: 'backups', label: 'Backups', workflow: 'Recover' },
+      { key: 'history', label: 'History', workflow: 'Investigate' },
+      { key: 'capabilities', label: 'Capabilities', workflow: 'Maintain' }
+    ] satisfies Array<{ key: DashboardTab; label: string; workflow: string }>;
   }, []);
 
   useEffect(() => {
@@ -7969,7 +7969,8 @@ function App() {
                   onClick={() => setSelectedDashboardTab(tab.key)}
                   onKeyDown={(event) => handleDashboardTabKeyDown(event, tab.key)}
                 >
-                  {tab.label}
+                  <span>{tab.label}</span>
+                  <small>{tab.workflow}</small>
                 </button>
               ))}
             </div>

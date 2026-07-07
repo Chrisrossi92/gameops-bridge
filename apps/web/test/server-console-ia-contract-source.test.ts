@@ -47,10 +47,17 @@ test('server console exposes the focused tab contract with accessible tab semant
     assert.ok(appSource.includes(`label: '${label}'`), `Missing server tab label: ${label}`);
   }
 
+  for (const workflow of ['Monitor', 'Investigate', 'Configure', 'Recover', 'Maintain']) {
+    assert.ok(appSource.includes(`workflow: '${workflow}'`), `Missing server tab workflow hint: ${workflow}`);
+  }
+
   assert.ok(appSource.includes('role="tablist"'));
   assert.ok(appSource.includes('role="tab"'));
   assert.ok(appSource.includes('aria-selected={selectedDashboardTab === tab.key}'));
   assert.ok(appSource.includes('aria-controls="server-detail-panel"'));
+  assert.ok(appSource.includes('<small>{tab.workflow}</small>'));
+  assert.ok(contractSource.includes('.dashboard-tab-row .review-button small'));
+  assert.ok(contractSource.includes('.dashboard-tab-row .review-button small {\n    display: none;\n  }'));
   assert.ok(appSource.includes("role={selectedServer && selectedServerSummary ? 'tabpanel' : undefined}"));
   assert.ok(appSource.includes('aria-labelledby={selectedServer && selectedServerSummary ? `server-tab-${selectedDashboardTab}` : undefined}'));
 });
@@ -261,6 +268,39 @@ test('GPS 2.0 design system defines decision layers, panel types, budgets, and a
   assert.ok(operatorDesignSystemSource.includes('Use `Guild List -> Selected Guild`.'));
   assert.ok(operatorDesignSystemSource.includes('1 decision panel, 1 object list/review path, 1 evidence strip, 1 timeline or activity panel.'));
   assert.ok(operatorDesignSystemSource.includes('The initial local POC is the Server Overview decision spine.'));
+});
+
+test('GPS 2.1 workflow navigation study documents jobs, tab audit, comparison, and POC', () => {
+  for (const label of [
+    'GPS 2.1 Workflow Navigation Study',
+    'Operator Workflow Audit',
+    'Current Server Tab Navigation Audit',
+    'Model Comparison',
+    'Recommendation',
+    'GPS 2.1 Small POC'
+  ]) {
+    assert.ok(operatorDesignSystemSource.includes(label), `Missing GPS 2.1 section: ${label}`);
+  }
+
+  for (const job of ['Monitor', 'Investigate', 'Configure', 'Recover', 'Maintain', 'Review Change']) {
+    assert.ok(operatorDesignSystemSource.includes(`| ${job} |`), `Missing GPS 2.1 workflow job: ${job}`);
+  }
+
+  for (const tabRead of [
+    '| Overview | Yes: Monitor.',
+    '| Players | Partly: Investigate people/activity.',
+    '| Settings | Yes: Configure.',
+    '| Backups | Yes: Recover.',
+    '| History | Yes: Investigate/Review Change.',
+    '| Capabilities | Partly: Maintain.'
+  ]) {
+    assert.ok(operatorDesignSystemSource.includes(tabRead), `Missing GPS 2.1 tab audit row: ${tabRead}`);
+  }
+
+  assert.ok(operatorDesignSystemSource.includes('Do not replace the current server tabs yet.'));
+  assert.ok(operatorDesignSystemSource.includes('workflow-aware object navigation'));
+  assert.ok(operatorDesignSystemSource.includes('workflow entry, object workspace, evidence detail'));
+  assert.ok(operatorDesignSystemSource.includes('It changes no routes, no tab keys, no backend behavior'));
 });
 
 test('backups tab follows the GPS object template sequence', () => {

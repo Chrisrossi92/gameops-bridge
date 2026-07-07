@@ -353,6 +353,15 @@
   font-size: 0.8rem;
 }
 
+.dashboard-tab-row .review-button small {
+  color: #64748b;
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .dashboard-tab-button {
   min-width: max-content;
   border-color: transparent;
@@ -2888,6 +2897,9 @@
 }
 
 .dashboard-tab-row .dashboard-tab-button {
+  display: grid;
+  gap: 0.12rem;
+  justify-items: start;
   border-color: transparent;
   background: transparent;
   color: #475569;
@@ -2904,6 +2916,10 @@
   background: #111827;
   color: #f8fafc;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.dashboard-tab-row .dashboard-tab-button-active small {
+  color: rgba(248, 250, 252, 0.72);
 }
 
 .success-message {
@@ -6308,6 +6324,10 @@
 
   .dashboard-tab-row .review-button {
     flex: 0 0 auto;
+  }
+
+  .dashboard-tab-row .review-button small {
+    display: none;
   }
 
   .console-surface-grid {

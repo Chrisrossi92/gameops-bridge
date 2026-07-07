@@ -422,3 +422,78 @@ The initial local POC is the Server Overview decision spine. It places the selec
 3. Evidence: the minimal proof behind the recommendation.
 
 The POC is intentionally small and reversible. It adds no backend capability, connector behavior, persistence, route migration, automation, Palworld behavior, Valheim behavior, deployment change, write action, restore action, restart action, or new data source.
+
+## GPS 2.1 Workflow Navigation Study
+
+GPS 2.1 asks whether the selected-server console should remain organized by object tabs or eventually move toward operator workflow navigation. This is a study, not a migration plan. Current routes and tabs remain stable until a future release proves that workflow navigation improves operator speed without hiding important objects.
+
+### Operator Workflow Audit
+
+| Job | Operator goal | Objects involved | Existing tabs involved | Frequency | Decision being made |
+| --- | --- | --- | --- | --- | --- |
+| Monitor | Understand whether the selected server needs attention now. | Server, current players, warnings, latest activity, freshness. | Overview, Capabilities, History. | Every visit. | Should I keep watching, investigate, or act elsewhere? |
+| Investigate | Find who or what explains a signal. | Players, guilds, events, sessions, world memories, warnings. | Players, History, Overview. | Frequent when activity or alerts exist. | Which player, guild, or event deserves inspection? |
+| Configure | Decide whether settings can be safely reviewed or changed later. | Configuration, setting candidates, templates, runtime evidence. | Settings, Capabilities, Backups. | Occasional. | Can I safely modify this server, or is the path blocked? |
+| Recover | Understand recovery confidence before relying on backups. | Backup readiness, latest backup, files, runtime config, history. | Backups, Settings, History, Capabilities. | Rare but high stakes. | Am I protected, and what evidence supports recovery? |
+| Maintain | Check coverage, connector health, data freshness, and platform limits. | Capabilities, connector, telemetry, settings coverage, diagnostics. | Capabilities, Overview, Administration. | Periodic and after setup changes. | What can GameOps currently observe or support? |
+| Review Change | Understand what changed recently and whether follow-up is needed. | Events, timeline records, players, configuration, backups. | History, Players, Settings, Backups. | Frequent during active worlds. | What changed, and which object should I inspect next? |
+
+The jobs are workflow-oriented, but the objects are still essential. A workflow without clear object selection would make investigation slower because operators still need to land on a player, guild, event, backup, or configuration detail.
+
+### Current Server Tab Navigation Audit
+
+| Current tab | Workflow? | Object? | Implementation? | GPS 2.1 read |
+| --- | --- | --- | --- | --- |
+| Overview | Yes: Monitor. | Yes: selected server. | No. | Keep as the default server decision surface. It should keep answering "Does this server need attention?" |
+| Players | Partly: Investigate people/activity. | Yes: players, characters, guilds. | No. | Keep as an object tab, but frame it as investigation. Future workflow navigation could route Investigate to this object area. |
+| Settings | Yes: Configure. | Yes: configuration. | Slightly: "settings" is an implementation-flavored label compared with "Configuration." | Long term, rename or group under Configure/Configuration when route migration is planned. Do not change route now. |
+| Backups | Yes: Recover. | Yes: backup/recovery evidence. | No. | Keep as an object tab with a clear Recover workflow role. |
+| History | Yes: Investigate/Review Change. | Yes: events and timeline. | No. | Keep as evidence-heavy object navigation. Future workflow navigation may combine History with Investigate entry points. |
+| Capabilities | Partly: Maintain. | Yes: capability areas and connector coverage. | Somewhat: capability coverage is partly product/platform evidence. | Keep as a lower-frequency Maintain surface; avoid making it a daily operating tab unless it produces active attention. |
+
+The current tabs are mostly object navigation with workflow intent embedded in each screen. They are not purely implementation tabs, but Settings and Capabilities are closest to implementation language.
+
+### Model Comparison
+
+Current object navigation:
+
+| Advantage | Disadvantage | Migration risk |
+| --- | --- | --- |
+| Stable, predictable, and already maps to GameOps objects. | Operators must infer the job from object labels. | Low if kept; users already understand the model. |
+| Makes selected-object detail easy to locate. | Investigation crosses Players, History, Capabilities, and sometimes Settings. | Low. |
+| Supports game-specific objects without changing permanent workflows. | Settings and Capabilities can feel like feature buckets. | Low. |
+| Fits GPS 2.0 object/detail/evidence hierarchy. | Repeated review paths are needed to guide operators between tabs. | Low. |
+
+Workflow navigation:
+
+| Advantage | Disadvantage | Migration risk |
+| --- | --- | --- |
+| Matches operator intent: Monitor, Investigate, Configure, Recover, Maintain. | Can hide concrete objects behind abstract verbs. | Medium to high because routes, deep links, tests, and operator muscle memory would change. |
+| Reduces "which tab do I need?" uncertainty for common jobs. | Some workflows share the same objects, especially Investigate and Review Change. | Medium. |
+| Makes future AI/operator guidance easier to explain. | Could duplicate existing object views unless carefully composed. | High if implemented before object duplication is reduced. |
+| Better fit for decision-first product language. | Capability and diagnostics evidence may be harder to place cleanly. | Medium. |
+
+### Recommendation
+
+Do not replace the current server tabs yet. The long-term direction should be workflow-aware object navigation:
+
+1. Keep the existing object tabs as stable destinations.
+2. Continue adding workflow language inside the tabs and review paths.
+3. Reduce object duplication first, especially Players/Guilds/Events.
+4. Later, test a workflow shell where Monitor, Investigate, Configure, Recover, and Maintain are entry points that route to the same underlying object surfaces.
+5. Migrate routes only when workflow entry points can preserve deep links, keyboard behavior, tests, and operator muscle memory.
+
+The recommended future model is not pure workflow navigation and not pure object navigation. It is workflow entry, object workspace, evidence detail.
+
+### GPS 2.1 Small POC
+
+The GPS 2.1 POC adds quiet workflow labels to the existing server tab buttons:
+
+- Overview -> Monitor
+- Players -> Investigate
+- Settings -> Configure
+- Backups -> Recover
+- History -> Investigate
+- Capabilities -> Maintain
+
+This is intentionally reversible. It changes no routes, no tab keys, no backend behavior, no connector behavior, no persistence, no operational controls, and no navigation state. Its purpose is only to test whether workflow language helps the existing object tabs read as operator jobs.
