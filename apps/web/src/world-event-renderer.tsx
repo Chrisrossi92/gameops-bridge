@@ -14,6 +14,7 @@ import {
   WORLD_EVENT_TYPE_LABELS,
   worldEventsToChronicleEntries
 } from './world-events.ts';
+import { formatEasternShortTimestamp, formatEasternTimestamp } from './time-format.ts';
 
 interface WorldEventRendererProps {
   events: WorldEvent[];
@@ -48,19 +49,11 @@ function getWorldHistoryFilterEmptyText(filter: WorldHistoryFilter): string {
 }
 
 function formatEventTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
-  }).format(new Date(value));
+  return formatEasternShortTimestamp(value);
 }
 
 function formatEventDateTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(new Date(value));
+  return formatEasternTimestamp(value);
 }
 
 function formatRelatedList(values: string[]): string {

@@ -1,6 +1,7 @@
 /* @jsxRuntime classic */
 import { playerDetailResponseSchema, type PlayerDetailResponse, type PlayerIntelligenceSummaryResponse, type PlayerIntelligenceSummaryRow } from '@gameops/shared';
 import React, { useEffect, useState } from 'react';
+import { formatEasternShortTimestamp } from './time-format.ts';
 
 export interface OperatorPlayerIntelligenceEntry {
   displayName: string;
@@ -37,16 +38,7 @@ function playerLabel(player: PlayerIntelligenceSummaryRow | null): string {
 }
 
 function formatTimestamp(value: string | null): string {
-  if (!value) {
-    return 'Unknown';
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
-  }).format(new Date(value));
+  return formatEasternShortTimestamp(value);
 }
 
 function formatEventLabel(eventType: PlayerDetailResponse['recentEvents'][number]['eventType']): string {

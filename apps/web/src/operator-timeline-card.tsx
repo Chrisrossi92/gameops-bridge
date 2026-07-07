@@ -1,6 +1,7 @@
 /* @jsxRuntime classic */
 import type { OperatorTimelineEvent } from '@gameops/shared';
 import React from 'react';
+import { formatEasternTimestamp } from './time-format.ts';
 
 interface OperatorTimelineCardProps {
   events: OperatorTimelineEvent[];
@@ -9,13 +10,7 @@ interface OperatorTimelineCardProps {
 }
 
 function formatTimestamp(value: string): string {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
+  return formatEasternTimestamp(value);
 }
 
 function getOperatorTimelineTone(severity: OperatorTimelineEvent['severity']): string {

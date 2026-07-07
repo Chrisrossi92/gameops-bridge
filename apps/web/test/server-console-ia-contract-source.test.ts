@@ -460,3 +460,12 @@ test('GPS console consistency keeps review paths navigational and diagnostics lo
   assert.ok(contractSource.includes('.backup-next-review-card .next-action-list button'));
   assert.ok(contractSource.includes('.history-next-review-card .next-action-list button'));
 });
+
+test('GPS overview presentation prevents compressed cards and summary overflow', () => {
+  assert.ok(contractSource.includes('repeat(auto-fit, minmax(13rem, 1fr))'));
+  assert.ok(contractSource.includes('repeat(auto-fit, minmax(14rem, 1fr))'));
+  assert.ok(contractSource.includes('repeat(auto-fit, minmax(10.5rem, 1fr))'));
+  assert.ok(contractSource.includes('overflow-wrap: anywhere;'));
+  assert.ok(contractSource.includes('white-space: normal;'));
+  assert.ok(contractSource.includes('flex-wrap: wrap;'));
+});

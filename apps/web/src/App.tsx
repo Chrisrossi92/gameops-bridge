@@ -116,6 +116,7 @@ import {
 } from './palworld-control-capabilities.ts';
 import { WorldEventDetailDrawer, WorldHistoryTimeline } from './world-event-renderer.tsx';
 import { ServerAttentionSummary, type ServerAttentionStatus } from './server-attention-summary.tsx';
+import { formatEasternClockHourFromUtc, formatEasternShortTimestamp, formatEasternTimestamp } from './time-format.ts';
 import {
   createWorldEventRegistry,
   scoreWorldEventRelevance,
@@ -1249,7 +1250,7 @@ interface PlayerEngagementPanelProps {
 function PlayerEngagementPanel({ engagement, onSelectPlayer }: PlayerEngagementPanelProps) {
   const peakHourLabel = engagement.activity.peakHourUtc === null
     ? 'not enough sessions'
-    : `${String(engagement.activity.peakHourUtc).padStart(2, '0')}:00 UTC`;
+    : formatEasternClockHourFromUtc(engagement.activity.peakHourUtc);
 
   return (
     <article className="card player-engagement-card">
@@ -1409,7 +1410,7 @@ function ServerAliveRhythmPanel({ rhythm }: ServerAliveRhythmPanelProps) {
             {rhythm.hourlyPattern.status === 'available' ? (
               rhythm.hourlyPattern.busiestUtcHours.slice(0, 3).map((hour) => (
                 <li key={`hour:${hour.hourUtc}`}>
-                  <span>{String(hour.hourUtc).padStart(2, '0')}:00 UTC</span>
+                  <span>{formatEasternClockHourFromUtc(hour.hourUtc)}</span>
                   <span>{hour.sessions} starts / {formatDurationFromSeconds(hour.trackedSeconds)}</span>
                 </li>
               ))
@@ -9877,17 +9878,16 @@ function formatClock(value: string): string {
     return value;
   }
 
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  }).format(date);
 }
 
 function formatTimestamp(value: string): string {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
+  return formatEasternTimestamp(value);
 }
 
 function formatRelativeTime(value: string): string {
@@ -9920,7 +9920,7 @@ function formatRelativeTime(value: string): string {
     return `${elapsedDays}d ago`;
   }
 
-  return formatTimestamp(value);
+  return formatEasternShortTimestamp(value);
 }
 
 function formatDurationFromSeconds(totalSeconds: number): string {

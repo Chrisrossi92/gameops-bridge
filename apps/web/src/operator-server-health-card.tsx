@@ -1,6 +1,7 @@
 /* @jsxRuntime classic */
 import type { ServerHealthSummary } from '@gameops/shared';
 import React from 'react';
+import { formatEasternTimestamp } from './time-format.ts';
 
 export interface OperatorServerHealthEntry {
   displayName: string;
@@ -17,7 +18,7 @@ function formatHealthTime(value: string | null): string {
     return 'never';
   }
 
-  return value.replace(/\.\d{3}Z$/, 'Z').replace('T', ' ');
+  return formatEasternTimestamp(value);
 }
 
 export function OperatorServerHealthCard({ servers }: OperatorServerHealthCardProps) {

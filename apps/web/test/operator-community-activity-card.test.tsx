@@ -78,7 +78,8 @@ test('operator community activity card renders compact community facts', () => {
   assert.match(html, /Today/);
   assert.match(html, /Quiet Players/);
   assert.match(html, /Last seen 30 days ago/);
-  assert.match(html, /20:00 UTC/);
+  assert.match(html, /3:00 PM EST/);
+  assert.doesNotMatch(html, /UTC/);
   assert.match(html, /\+2 sessions/);
 });
 

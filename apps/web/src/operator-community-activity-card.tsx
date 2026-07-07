@@ -1,6 +1,7 @@
 /* @jsxRuntime classic */
 import type { CommunityActivityResponse } from '@gameops/shared';
 import React from 'react';
+import { formatEasternClockHourFromUtc } from './time-format.ts';
 
 export interface OperatorCommunityActivityEntry {
   displayName: string;
@@ -37,8 +38,7 @@ function formatDelta(value: number, formatter: (input: number) => string = Strin
 }
 
 function formatHour(hourUtc: number): string {
-  const hour = String(hourUtc).padStart(2, '0');
-  return `${hour}:00 UTC`;
+  return formatEasternClockHourFromUtc(hourUtc);
 }
 
 function EmptyLine({ children }: { children: React.ReactNode }) {
