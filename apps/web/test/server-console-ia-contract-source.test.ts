@@ -13,7 +13,11 @@ const worldEventRendererSource = readFileSync(
   'utf8'
 );
 const appCssSource = readFileSync(join(process.cwd(), 'apps/web/src/App.css'), 'utf8');
-const contractSource = `${appSource}\n${serverAttentionSummarySource}\n${worldEventRendererSource}\n${appCssSource}`;
+const operatorDesignSystemSource = readFileSync(
+  join(process.cwd(), 'docs/architecture/GAMEOPS_OPERATOR_DESIGN_SYSTEM.md'),
+  'utf8'
+);
+const contractSource = `${appSource}\n${serverAttentionSummarySource}\n${worldEventRendererSource}\n${appCssSource}\n${operatorDesignSystemSource}`;
 
 function sourceBetween(start: string, end: string): string {
   const startIndex = appSource.indexOf(start);
@@ -172,6 +176,19 @@ test('overview uses ServerAttentionSummary and excludes technical default conten
   );
 
   assert.ok(overviewBlock.includes('<ServerAttentionSummary'));
+  assert.ok(overviewBlock.includes('Decision object evidence path'));
+  assert.ok(overviewBlock.includes('Decision'));
+  assert.ok(overviewBlock.includes('Next step'));
+  assert.ok(overviewBlock.includes('Review next'));
+  assert.ok(overviewBlock.includes('Choose the object to inspect.'));
+  assert.ok(overviewBlock.includes('Evidence'));
+  assert.ok(overviewBlock.includes('Why this read?'));
+  assert.ok(overviewBlock.includes('selectedDecisionTargetTab'));
+  assert.ok(overviewBlock.includes('selectedDecisionTargetLabel'));
+  assert.ok(overviewBlock.includes('decision-spine-primary-action'));
+  assert.ok(overviewBlock.includes('Keep watching Overview'));
+  assert.ok(overviewBlock.includes('<dt>State</dt>'));
+  assert.ok(overviewBlock.includes('<dt>Data</dt>'));
   assert.ok(overviewBlock.includes('Review Next'));
   assert.ok(overviewBlock.includes('Server review path'));
   assert.ok(overviewBlock.includes('Important server objects'));
@@ -185,7 +202,8 @@ test('overview uses ServerAttentionSummary and excludes technical default conten
   assert.ok(overviewBlock.includes('<small>Recovery</small>'));
   assert.ok(overviewBlock.includes('<small>Recent events</small>'));
   assert.ok(overviewBlock.includes('<small>Coverage</small>'));
-  assert.ok(overviewBlock.indexOf('<ServerAttentionSummary') < overviewBlock.indexOf('Server review path'));
+  assert.ok(overviewBlock.indexOf('Decision object evidence path') < overviewBlock.indexOf('<ServerAttentionSummary'));
+  assert.ok(overviewBlock.indexOf('<ServerAttentionSummary') < overviewBlock.indexOf('Supporting review path and object counts'));
   assert.ok(overviewBlock.indexOf('Server review path') < overviewBlock.indexOf('Important server objects'));
   assert.ok(overviewBlock.includes('currentActivity='));
   assert.ok(overviewBlock.includes('recommendedAction='));
@@ -200,6 +218,49 @@ test('overview uses ServerAttentionSummary and excludes technical default conten
   assert.ok(!overviewBlock.includes('Backup & Rollback Readiness'));
   assert.ok(!overviewBlock.includes('restart'));
   assert.ok(!overviewBlock.includes('write'));
+});
+
+test('GPS 2.0 design system defines decision layers, panel types, budgets, and audits', () => {
+  for (const label of [
+    'GPS 2.0: Operator Decision System',
+    'GPS 2.0 Global Decision Audit',
+    'GPS 2.0 Three-Layer Model',
+    'GPS 2.0 Duplication Audit',
+    'GPS 2.0 Panel Types',
+    'GPS 2.0 Information Budgets',
+    'GPS 2.0 Proof Of Concept'
+  ]) {
+    assert.ok(operatorDesignSystemSource.includes(label), `Missing GPS 2.0 section: ${label}`);
+  }
+
+  for (const decision of [
+    'Does this server need attention?',
+    'Which player deserves investigation?',
+    'What changed?',
+    'Am I protected?',
+    'Can I safely modify this server?',
+    'What can GameOps currently perform?'
+  ]) {
+    assert.ok(operatorDesignSystemSource.includes(decision), `Missing GPS 2.0 decision: ${decision}`);
+  }
+
+  for (const panelType of [
+    'Decision Panel',
+    'Summary Panel',
+    'Object List',
+    'Detail Panel',
+    'Timeline',
+    'Table',
+    'Inspector',
+    'Diagnostics'
+  ]) {
+    assert.ok(operatorDesignSystemSource.includes(panelType), `Missing GPS 2.0 panel type: ${panelType}`);
+  }
+
+  assert.ok(operatorDesignSystemSource.includes('Use `Player List -> Selected Player`.'));
+  assert.ok(operatorDesignSystemSource.includes('Use `Guild List -> Selected Guild`.'));
+  assert.ok(operatorDesignSystemSource.includes('1 decision panel, 1 object list/review path, 1 evidence strip, 1 timeline or activity panel.'));
+  assert.ok(operatorDesignSystemSource.includes('The initial local POC is the Server Overview decision spine.'));
 });
 
 test('backups tab follows the GPS object template sequence', () => {

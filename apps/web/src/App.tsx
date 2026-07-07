@@ -7216,6 +7216,26 @@ function App() {
 
     return selectedWarningSummary[0]?.snippet ?? 'No immediate action needed';
   }, [palworldNextActions, selectedServer?.game, selectedServerSummary, selectedWarningSummary]);
+  const selectedDecisionTargetTab = useMemo<DashboardTab>(() => {
+    if (!selectedServerSummary) {
+      return 'overview';
+    }
+
+    if (selectedServer?.game === 'palworld') {
+      return palworldNextActions[0]?.targetTab ?? 'overview';
+    }
+
+    if (selectedAlertCount > 0) {
+      return 'history';
+    }
+
+    if (selectedServerSummary.settingsCapabilities.canReadSettings !== 'yes') {
+      return 'capabilities';
+    }
+
+    return 'players';
+  }, [palworldNextActions, selectedAlertCount, selectedServer?.game, selectedServerSummary]);
+  const selectedDecisionTargetLabel = detailTabs.find((tab) => tab.key === selectedDecisionTargetTab)?.label ?? 'Overview';
 
   const selectedOnlinePlayerCount = selectedServer?.game === 'palworld'
     ? palworldLatestPlayers.filter((player) => player.isOnline).length || selectedServerSummary?.activePlayers || 0
@@ -8314,6 +8334,76 @@ function App() {
                 <span>Alerts: {selectedAlertCount}</span>
                 <span>Configured: {selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
               </div>
+              <section className="server-decision-spine" aria-label="Decision object evidence path">
+                <article className="decision-spine-panel decision-spine-decision">
+                  <span className="summary-label">Decision</span>
+                  <h2>Next step</h2>
+                  <p>{selectedRecommendedAction}</p>
+                  <button type="button" className="decision-spine-primary-action" onClick={() => setSelectedDashboardTab(selectedDecisionTargetTab)}>
+                    {selectedDecisionTargetTab === 'overview' ? 'Keep watching Overview' : `Open ${selectedDecisionTargetLabel}`}
+                  </button>
+                </article>
+
+                <article className="decision-spine-panel decision-spine-objects">
+                  <span className="summary-label">Review next</span>
+                  <h2>Choose the object to inspect.</h2>
+                  <ul className="next-action-list">
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('players')}>
+                        <span>Players</span>
+                        <small>{selectedOnlinePlayerCount} online</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
+                        <span>Configuration</span>
+                        <small>{selectedSettingsStatus.label}</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('backups')}>
+                        <span>Backups</span>
+                        <small>{selectedBackupStatus.label}</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('history')}>
+                        <span>History</span>
+                        <small>{activeHighlights.length} highlights</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
+                        <span>Capabilities</span>
+                        <small>{selectedCapabilitySummary?.statusLabel ?? selectedServerSummary.operationalStatus.connectorStatus}</small>
+                      </button>
+                    </li>
+                  </ul>
+                </article>
+
+                <article className="decision-spine-panel decision-spine-evidence">
+                  <span className="summary-label">Evidence</span>
+                  <h2>Why this read?</h2>
+                  <dl>
+                    <div>
+                      <dt>State</dt>
+                      <dd>{selectedServerSummary.state}</dd>
+                    </div>
+                    <div>
+                      <dt>Alerts</dt>
+                      <dd>{selectedAlertCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Activity</dt>
+                      <dd>{getLatestActivityLabel(selectedServerSummary)}</dd>
+                    </div>
+                    <div>
+                      <dt>Data</dt>
+                      <dd>{selectedServerSummary.dataFreshness.status}</dd>
+                    </div>
+                  </dl>
+                </article>
+              </section>
               <ServerAttentionSummary
                 gameLabel={getGameLabel(selectedServer.game)}
                 gameSymbol={getGameSymbol(selectedServer.game)}
@@ -8334,73 +8424,76 @@ function App() {
                   { label: 'Data', value: selectedServerSummary.dataFreshness.status }
                 ]}
               />
-              <section className="card command-panel-card server-overview-next-card" aria-label="Server overview review next">
-                <div className="command-panel-heading">
-                  <div>
-                    <span className="summary-label">Review Next</span>
-                    <h2>Server review path</h2>
+              <details className="server-overview-disclosure">
+                <summary>Supporting review path and object counts</summary>
+                <section className="card command-panel-card server-overview-next-card" aria-label="Server overview review next">
+                  <div className="command-panel-heading">
+                    <div>
+                      <span className="summary-label">Review Next</span>
+                      <h2>Server review path</h2>
+                    </div>
                   </div>
-                </div>
-                <ul className="next-action-list">
-                  <li>
-                    <button type="button" onClick={() => setSelectedDashboardTab('players')}>
-                      <span>Players</span>
-                      <small>Who is here</small>
-                    </button>
-                  </li>
-                  <li>
-                    <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
-                      <span>Configuration</span>
-                      <small>Readiness</small>
-                    </button>
-                  </li>
-                  <li>
-                    <button type="button" onClick={() => setSelectedDashboardTab('backups')}>
-                      <span>Backups</span>
-                      <small>Recovery</small>
-                    </button>
-                  </li>
-                  <li>
-                    <button type="button" onClick={() => setSelectedDashboardTab('history')}>
-                      <span>History</span>
-                      <small>Recent events</small>
-                    </button>
-                  </li>
-                  <li>
-                    <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
-                      <span>Capabilities</span>
-                      <small>Coverage</small>
-                    </button>
-                  </li>
-                </ul>
-              </section>
-              <section className="server-overview-object-grid" aria-label="Important server objects">
-                <article className="card server-overview-object-card">
-                  <span className="summary-label">Players</span>
-                  <strong>{selectedOnlinePlayerCount} online</strong>
-                  <span>{selectedServerSummary.knownPlayerCount} known players</span>
-                </article>
-                <article className="card server-overview-object-card">
-                  <span className="summary-label">Configuration</span>
-                  <strong>{selectedSettingsStatus.label}</strong>
-                  <span>{selectedReadableSettingsCount} readable settings</span>
-                </article>
-                <article className="card server-overview-object-card">
-                  <span className="summary-label">Backups</span>
-                  <strong>{selectedBackupStatus.label}</strong>
-                  <span>{selectedServerSummary.palworldBackupReadiness?.filesToBackup.length ?? 0} files tracked</span>
-                </article>
-                <article className="card server-overview-object-card">
-                  <span className="summary-label">Events / History</span>
-                  <strong>{activeHighlights.length} highlights</strong>
-                  <span>{selectedServerSummary.activityLog.length} activity records</span>
-                </article>
-                <article className="card server-overview-object-card">
-                  <span className="summary-label">Capabilities</span>
-                  <strong>{selectedCapabilitySummary?.statusLabel ?? selectedServerSummary.operationalStatus.connectorStatus}</strong>
-                  <span>{selectedServerSummary.operationalStatus.capabilities.length} capabilities</span>
-                </article>
-              </section>
+                  <ul className="next-action-list">
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('players')}>
+                        <span>Players</span>
+                        <small>Who is here</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
+                        <span>Configuration</span>
+                        <small>Readiness</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('backups')}>
+                        <span>Backups</span>
+                        <small>Recovery</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('history')}>
+                        <span>History</span>
+                        <small>Recent events</small>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
+                        <span>Capabilities</span>
+                        <small>Coverage</small>
+                      </button>
+                    </li>
+                  </ul>
+                </section>
+                <section className="server-overview-object-grid" aria-label="Important server objects">
+                  <article className="card server-overview-object-card">
+                    <span className="summary-label">Players</span>
+                    <strong>{selectedOnlinePlayerCount} online</strong>
+                    <span>{selectedServerSummary.knownPlayerCount} known players</span>
+                  </article>
+                  <article className="card server-overview-object-card">
+                    <span className="summary-label">Configuration</span>
+                    <strong>{selectedSettingsStatus.label}</strong>
+                    <span>{selectedReadableSettingsCount} readable settings</span>
+                  </article>
+                  <article className="card server-overview-object-card">
+                    <span className="summary-label">Backups</span>
+                    <strong>{selectedBackupStatus.label}</strong>
+                    <span>{selectedServerSummary.palworldBackupReadiness?.filesToBackup.length ?? 0} files tracked</span>
+                  </article>
+                  <article className="card server-overview-object-card">
+                    <span className="summary-label">Events / History</span>
+                    <strong>{activeHighlights.length} highlights</strong>
+                    <span>{selectedServerSummary.activityLog.length} activity records</span>
+                  </article>
+                  <article className="card server-overview-object-card">
+                    <span className="summary-label">Capabilities</span>
+                    <strong>{selectedCapabilitySummary?.statusLabel ?? selectedServerSummary.operationalStatus.connectorStatus}</strong>
+                    <span>{selectedServerSummary.operationalStatus.capabilities.length} capabilities</span>
+                  </article>
+                </section>
+              </details>
               </>
             ) : (
             <section className="workspace-summary-strip" aria-label="World summary">

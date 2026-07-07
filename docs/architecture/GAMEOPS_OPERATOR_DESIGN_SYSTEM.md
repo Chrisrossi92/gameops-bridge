@@ -307,3 +307,118 @@ Rules reinforced:
 - Empty states should state what data is missing and what that means, without inventing activity or controls.
 
 Intentionally out of scope before deploy: backend/API changes, connector changes, Palworld or Valheim behavior changes, persistence changes, route migration, live backup/restore/write controls, automation, and deployment.
+
+## GPS 2.0: Operator Decision System
+
+GPS 2.0 changes the product question from "What information do we have?" to "What should the operator do next?" Information is still necessary, but it is no longer the first-class shape of a screen. Every screen starts with a decision, then exposes the object that decision applies to, then gives evidence only as needed.
+
+The required hierarchy for every major surface is:
+
+1. Decision: the operator answer or state.
+2. Objects: the thing the operator should inspect, select, or compare.
+3. Evidence: the telemetry, source, diagnostic, or raw record that supports the decision.
+
+If a feature cannot be placed in one of those layers, it is probably too early, too broad, or duplicating another surface.
+
+### GPS 2.0 Product Rules
+
+1. One screen answers one operator decision.
+2. The first visible region should be an answer, not a collection of facts.
+3. The primary object is selected once and inspected once.
+4. Repeated objects collapse into list-to-detail flows.
+5. Evidence supports decisions; it does not compete with them.
+6. Diagnostics are third-layer material unless they create active attention.
+7. Review paths navigate to existing surfaces only.
+8. New features must use an approved panel type before inventing a new presentation style.
+9. Screens have information budgets; overflow moves into disclosure, drawer, modal, or inspector.
+10. Missing data must explain operator impact, not implementation failure alone.
+
+## GPS 2.0 Global Decision Audit
+
+| Screen | Primary decision | Primary object | Secondary object | Next action | Lowest priority information |
+| --- | --- | --- | --- | --- | --- |
+| Overview | Is everything okay across the operation? | Fleet | Servers needing attention | Open the server or Operations item with the highest attention signal. | Per-server connector metadata, raw event counts, implementation source labels. |
+| Servers | Which server needs attention? | Server | Game grouping and fleet navigation | Select a server, then open its decision tab. | Fleet-wide totals once a server is selected. |
+| Server Overview | Does this server need attention? | Selected server | Players, configuration, backups, history, capabilities | Follow the recommended review path. | Raw connector details, full activity logs, raw telemetry values. |
+| Players | Which player deserves investigation? | Selected player | Guild, character, identity profile | Select a player, inspect detail, then review sessions or identity evidence. | Raw IDs, aliases, save filenames, low-confidence diagnostics. |
+| Guilds | Which guild deserves investigation? | Selected guild | Members and activity signals | Select a guild, inspect activity/risk detail, then mark review when appropriate. | Full member dumps, missing activity internals, raw confidence inputs. |
+| Settings / Configuration | Can I safely modify this server? | Configuration state | Candidate settings and event-template drafts | Review safety state, inspect readable settings, or stop if blocked. | Raw keys, paths, runtime audit internals, write-path diagnostics. |
+| Backups | Am I protected? | Backup readiness | Latest backup and backup history | Review latest recovery state, then related history/settings/capabilities. | Proposed paths, file lists, validation notes, rollback diagnostics. |
+| History | What changed? | Timeline event | Related players, settings, backups, capabilities | Open the most meaningful event or route to the related object. | Raw session timelines, activity log internals, source timestamps. |
+| Capabilities | What can GameOps currently perform? | Capability area | Connector/freshness evidence | Open the object whose coverage is missing or risky. | Heartbeat details, modes, raw capability arrays, diagnostic panels. |
+| Operations | What work is happening right now? | Current work item | Owning server | Open the owning server tab for the highest-priority work item. | Long-term reference information and quiet healthy objects. |
+| Automation | What will happen automatically? | Planned automation capability | Schedules and rules when real data exists | Keep planned until real loaded automation exists. | Placeholder controls and speculative automation configuration. |
+| Administration | What can I configure or maintain? | Maintenance reference | Server settings, backups, capabilities | Open Settings or Capabilities for the selected server. | Deep diagnostics, raw connector fields, unrelated player/history data. |
+
+## GPS 2.0 Three-Layer Model
+
+Layer 1 is Decision. It contains states such as Healthy, Needs Attention, Offline, Review Required, Read-only, Blocked, Unknown, or Evidence Available. Existing components that belong here include `ServerAttentionSummary`, `SafetySummaryCard`, `EvidenceSummaryCard`, top-level Operations work summaries, and the GPS 2.0 server overview decision spine.
+
+Layer 2 is Objects. It contains selectable or comparable objects such as Servers, Players, Guilds, Configuration, Events, Backups, Capability Areas, and Current Work. Existing components that belong here include grouped server navigation, world cards, `PlayerObjectList`, guild master/detail lists, backup latest/history lists, review-next action lists, and world history timeline rows.
+
+Layer 3 is Evidence. It contains telemetry, sources, aliases, raw IDs, connector status, freshness, confidence, diagnostics, and implementation proof. Existing components that belong here include `DataFreshnessBanner`, `OperatorDebugPanel`, observed settings drawers, activity/session log panels, runtime/config audits, identity diagnostics, source labels, and raw capability details.
+
+The layer rule is strict: a lower layer may support a higher layer, but it should not visually outrank it.
+
+## GPS 2.0 Duplication Audit
+
+Repeated objects should become one list plus one selected detail wherever possible.
+
+| Object | Current repetition pattern | GPS 2.0 direction |
+| --- | --- | --- |
+| Player | Player list, activity cards, telemetry rows, directory, profile, history, evidence, identity review, guild membership. | Use `Player List -> Selected Player`. Activity and identity evidence attach to the selected player or move to diagnostics. |
+| Guild | Guild risk, guild intelligence, activity filters, member evidence, base/lifecycle context. | Use `Guild List -> Selected Guild`. Risk state is list metadata; activity, members, and confidence are selected-guild detail. |
+| Event | Activity log, recent highlights, world history, chronicle, timeline, raw sessions. | Use `Timeline -> Selected Event`. Activity/session logs become evidence or diagnostics, not parallel histories. |
+| Backup | Backup health, latest backup, backup history, readiness details, diagnostics. | Keep the Backups sequence, but only one latest backup object and one history list should be primary. File/path detail stays evidence. |
+| Configuration | Settings safety, active controls, observed settings, audits, event template drafts, runtime/write-path evidence. | Use `Configuration Summary -> Candidate/Setting Detail`. Raw settings and paths belong in drawers or diagnostics. |
+| Capability | Capability summary, operator workspace, Palworld coverage panels, connector status, data freshness. | Use `Capability Area List -> Selected Area Evidence`. Connector/freshness detail supports the selected capability. |
+| Server | Fleet cards, grouped navigation, selected-server header, overview summary, operations/history/admin rows. | Cross-operation surfaces should route to a selected server rather than duplicating full server detail. |
+
+## GPS 2.0 Panel Types
+
+Future features should use these panel types:
+
+| Panel type | Purpose | Typical layer |
+| --- | --- | --- |
+| Decision Panel | State, answer, recommended next action. | Decision |
+| Summary Panel | Compact object health or state summary. | Decision or Objects |
+| Object List | Browse and select stable objects. | Objects |
+| Detail Panel | Inspect the selected object. | Objects |
+| Timeline | Show meaningful ordered events. | Objects |
+| Table | Compare many similar facts when scanning matters. | Objects or Evidence |
+| Inspector | Show structured evidence for one selected object. | Evidence |
+| Diagnostics | Show raw or troubleshooting information. | Evidence |
+| Disclosure | Hide lower-priority supporting material inline. | Evidence |
+| Drawer | Inspect rich detail without changing the primary workspace. | Objects or Evidence |
+| Modal | Confirm or perform a real action only when capability exists. | Decision or Action |
+
+Do not create new visual families for cards, rows, chips, forms, or panels unless an existing type cannot express the operator decision.
+
+## GPS 2.0 Information Budgets
+
+These budgets are defaults. A screen may be smaller, but exceeding the budget requires moving content into disclosure, drawer, modal, or inspector.
+
+| Screen | Recommended maximum visible budget |
+| --- | --- |
+| Overview | 3 summary panels, 1 server object list, 1 current-work list, 1 compact history list. |
+| Servers / Server Overview | 1 decision panel, 1 object list/review path, 1 evidence strip, 1 timeline or activity panel. |
+| Players | 1 player list, 1 selected-player detail, 1 timeline/session panel, 1 diagnostics disclosure. |
+| Guilds | 1 guild list, 1 selected-guild detail, 1 member/activity panel, 1 diagnostics disclosure. |
+| Settings / Configuration | 1 safety summary, 1 candidate/settings object list, 1 detail panel, 1 diagnostics disclosure/drawer. |
+| Backups | 1 backup health summary, 1 latest backup panel, 1 backup history list, 1 diagnostics disclosure. |
+| History | 1 timeline summary, 1 timeline, 1 selected-event drawer/detail, 1 raw diagnostics disclosure. |
+| Capabilities | 1 coverage summary, 1 capability area list, 1 selected-area evidence panel, 1 diagnostics disclosure. |
+| Operations | 1 current-work list, 1 selected work detail, 1 route/action list. |
+| Administration | 1 reference summary, 1 server/reference list, 1 selected reference detail. |
+
+Everything else should be hidden until the operator asks for it.
+
+## GPS 2.0 Proof Of Concept
+
+The initial local POC is the Server Overview decision spine. It places the selected server into the GPS 2.0 hierarchy:
+
+1. Decision: what the operator should do next.
+2. Objects: which object explains or resolves that decision.
+3. Evidence: the minimal proof behind the recommendation.
+
+The POC is intentionally small and reversible. It adds no backend capability, connector behavior, persistence, route migration, automation, Palworld behavior, Valheim behavior, deployment change, write action, restore action, restart action, or new data source.
