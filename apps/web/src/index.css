@@ -3,6 +3,37 @@
   line-height: 1.5;
   color: #0f172a;
   background: #f8fafc;
+
+  --go-space-page-x: clamp(1rem, 2.2vw, 2rem);
+  --go-space-page-y: clamp(1rem, 2.8vw, 2.4rem);
+  --go-space-section: clamp(1rem, 2vw, 1.55rem);
+  --go-space-card: clamp(0.85rem, 1.4vw, 1.1rem);
+  --go-radius-shell: 1.15rem;
+  --go-radius-card: 0.75rem;
+  --go-radius-control: 0.58rem;
+  --go-radius-pill: 999px;
+  --go-type-hero: clamp(2rem, 4.5vw, 4.8rem);
+  --go-type-title: clamp(1.15rem, 2vw, 1.55rem);
+  --go-type-body: 0.94rem;
+  --go-type-caption: 0.76rem;
+  --go-surface-bg: #050813;
+  --go-surface-panel: rgba(12, 18, 34, 0.86);
+  --go-surface-panel-strong: rgba(17, 27, 48, 0.94);
+  --go-surface-glass: rgba(255, 255, 255, 0.055);
+  --go-border-quiet: rgba(148, 163, 184, 0.22);
+  --go-border-strong: rgba(203, 213, 225, 0.34);
+  --go-shadow-shell: 0 28px 90px rgba(0, 0, 0, 0.42);
+  --go-shadow-card: 0 18px 44px rgba(0, 0, 0, 0.28);
+  --go-shadow-glow: 0 0 42px rgba(45, 212, 191, 0.16);
+  --go-motion-fast: 140ms;
+  --go-motion-base: 220ms;
+  --go-motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --go-accent-neutral: #94a3b8;
+  --go-accent-healthy: #2dd4bf;
+  --go-accent-warning: #f59e0b;
+  --go-accent-offline: #fb7185;
+  --go-accent-palworld: #38bdf8;
+  --go-accent-valheim: #f59e0b;
 }
 
 * {

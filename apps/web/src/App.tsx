@@ -95,9 +95,28 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
 import { EvidenceSurfaceSection, EvidenceSummaryCard } from './evidence-surface-section.tsx';
+import {
+  GameOpsActivityList,
+  GameOpsCard,
+  GameOpsHero,
+  GameOpsHeroMedia,
+  GameOpsPage,
+  GameOpsPrimaryAction,
+  GameOpsSection,
+  GameOpsShell,
+  GameOpsStatusPill,
+  type GameOpsActivityItem,
+  type GameOpsTimelineItem,
+  type GameOpsTone
+} from './gameops-v2.tsx';
 import { OperatorWorkspace } from './operator-workspace.tsx';
 import { PlayersSurfaceSection } from './players-surface-section.tsx';
 import { SafetySurfaceSection, SafetySummaryCard } from './safety-surface-section.tsx';
+import { CommunityPage } from './v2/pages/CommunityPage.tsx';
+import { EventsHistoryPage } from './v2/pages/EventsHistoryPage.tsx';
+import { PlayersHubPage } from './v2/pages/PlayersHubPage.tsx';
+import { ServerOverviewPage } from './v2/pages/ServerOverviewPage.tsx';
+import { SettingsMaintenancePage } from './v2/pages/SettingsMaintenancePage.tsx';
 import {
   buildPalworldActivityConfidenceReport,
   type PalworldActivityConfidenceArea,
@@ -115,7 +134,6 @@ import {
   type PalworldControlCapabilityStatus
 } from './palworld-control-capabilities.ts';
 import { WorldEventDetailDrawer, WorldHistoryTimeline } from './world-event-renderer.tsx';
-import { ServerAttentionSummary, type ServerAttentionStatus } from './server-attention-summary.tsx';
 import { formatEasternClockHourFromUtc, formatEasternShortTimestamp, formatEasternTimestamp } from './time-format.ts';
 import {
   createWorldEventRegistry,
@@ -279,23 +297,29 @@ interface PlayerObjectListProps {
 }
 
 function PlayerObjectList({ rows, detail }: PlayerObjectListProps) {
+  const selectedRow = rows.find((row) => row.selected) ?? null;
+
   return (
-    <article className="card player-object-list-card player-master-detail-card">
-      <div className="command-panel-heading">
+    <article className="player-object-list-card player-master-detail-card">
+      <div className="player-master-heading">
         <div>
-          <span className="summary-label">Player List</span>
+          <span className="gameops-eyebrow">Player list</span>
           <h2>Players to inspect</h2>
+          <p>Online and recently active players stay first. Detail evidence updates when a player is selected.</p>
         </div>
+        {selectedRow ? <span className={`gameops-status-pill gameops-status-pill-${selectedRow.statusTone === 'online' ? 'healthy' : selectedRow.statusTone === 'offline' ? 'neutral' : 'unknown'}`}>{selectedRow.statusLabel}</span> : null}
       </div>
       <div className="player-master-detail-layout">
         <div className="player-object-list-scroll">
           <ul className="player-object-list" aria-label="Player object list">
-            {rows.length === 0 ? <li className="empty-line">No player objects are available for this view yet.</li> : null}
+            {rows.length === 0 ? <li className="player-v2-empty">No player objects are available yet. Player data appears after sessions, telemetry, or known-player records are loaded for this world.</li> : null}
             {rows.map((row) => (
               <li key={row.id}>
                 <button
                   type="button"
                   className={`player-object-row ${row.selected ? 'selected' : ''}`}
+                  aria-pressed={row.selected}
+                  aria-label={`${row.name}, ${row.statusLabel}, ${row.activityLabel}, ${row.summaryLabel}`}
                   onClick={row.onSelect}
                 >
                   <span className="player-object-identity">
@@ -311,6 +335,11 @@ function PlayerObjectList({ rows, detail }: PlayerObjectListProps) {
           </ul>
         </div>
         <aside className="player-object-detail-panel" aria-label="Selected player detail">
+          <div className="player-detail-preview-heading">
+            <span className="gameops-eyebrow">Selected player</span>
+            <strong>{selectedRow?.name ?? 'No player selected'}</strong>
+            <p>{selectedRow ? `${selectedRow.activityLabel}. ${selectedRow.summaryLabel}.` : 'Select a player to inspect current status, sessions, identity, and raw evidence.'}</p>
+          </div>
           {detail}
         </aside>
       </div>
@@ -4061,6 +4090,8 @@ function PalworldGuildIntelligencePanel({ guilds, selectedGuildName, reviewedGui
                 <button
                   type="button"
                   className={`guild-object-row ${selectedGuild?.guild.guildName === guild.guildName ? 'selected' : ''}`}
+                  aria-pressed={selectedGuild?.guild.guildName === guild.guildName}
+                  aria-label={`${guild.guildName}, ${activityState}, ${guild.memberCount} members, ${activeMemberCount} active`}
                   onClick={() => onOpenGuild(guild.guildName)}
                 >
                   <span className="guild-object-identity">
@@ -4287,7 +4318,7 @@ interface PalworldBaseSignalHistoryEntry {
 
 type DashboardTab = 'overview' | 'players' | 'settings' | 'backups' | 'history' | 'capabilities';
 type WorkspaceView = 'overview' | 'valheim' | 'palworld';
-type TopLevelArea = 'overview' | 'servers' | 'operations' | 'automation' | 'history' | 'administration';
+type TopLevelArea = 'overview' | 'servers' | 'events' | 'players' | 'community' | 'settings';
 type CurrentOperationTone = 'ok' | 'warning' | 'offline' | 'unknown';
 type CrossOperationHistoryTone = 'ok' | 'warning' | 'offline' | 'unknown';
 type AdministrationReferenceTone = 'ok' | 'warning' | 'offline' | 'unknown';
@@ -4333,26 +4364,13 @@ const TOP_LEVEL_NAV_ITEMS: Array<{
   key: TopLevelArea;
   label: string;
   question: string;
-  status: 'live' | 'planned';
-  plannedIntent?: string;
 }> = [
-  { key: 'overview', label: 'Overview', question: 'Is everything okay?', status: 'live' },
-  { key: 'servers', label: 'Servers', question: 'Which server needs attention?', status: 'live' },
-  { key: 'operations', label: 'Operations', question: 'What work is happening right now?', status: 'live' },
-  {
-    key: 'automation',
-    label: 'Automation',
-    question: 'What will happen automatically?',
-    status: 'planned',
-    plannedIntent: 'Planned for real schedules, rules, and templates when loaded automation data exists.'
-  },
-  { key: 'history', label: 'History', question: 'What happened across the operation?', status: 'live' },
-  {
-    key: 'administration',
-    label: 'Administration',
-    question: 'What can I configure or maintain?',
-    status: 'live'
-  }
+  { key: 'overview', label: 'Overview', question: 'Is everything okay?' },
+  { key: 'servers', label: 'Servers', question: 'World health and server detail' },
+  { key: 'events', label: 'Events', question: 'Activity, history, and current work' },
+  { key: 'players', label: 'Players', question: 'Who is playing?' },
+  { key: 'community', label: 'Community', question: 'Community activity by world' },
+  { key: 'settings', label: 'Settings', question: 'Configuration and admin reference' }
 ];
 
 function getReviewedGuildsStorageKey(serverId: string): string {
@@ -4486,6 +4504,30 @@ function getLatestActivityLabel(summary: ServerSummary | undefined): string {
   return latestActivity || 'No recent activity yet';
 }
 
+function getGameOpsToneFromState(state: ServerSummary['state'] | undefined): GameOpsTone {
+  if (state === 'online') {
+    return 'healthy';
+  }
+
+  if (state === 'degraded' || state === 'starting' || state === 'stopping' || state === 'restarting') {
+    return 'warning';
+  }
+
+  if (state === 'offline') {
+    return 'offline';
+  }
+
+  return 'unknown';
+}
+
+function getGameOpsToneFromOperationTone(tone: CurrentOperationTone | CrossOperationHistoryTone | AdministrationReferenceTone): GameOpsTone {
+  if (tone === 'ok') {
+    return 'healthy';
+  }
+
+  return tone;
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [serverOptions, setServerOptions] = useState<ServerOption[]>([]);
@@ -4513,6 +4555,9 @@ function App() {
   const [operatorMemoryIndexLoading, setOperatorMemoryIndexLoading] = useState(false);
   const [operatorMemoryIndexError, setOperatorMemoryIndexError] = useState<string | null>(null);
   const [activeTopLevelArea, setActiveTopLevelArea] = useState<TopLevelArea>('overview');
+  const [gameOpsDesignMode, setGameOpsDesignMode] = useState(false);
+  const [selectedEventsTimelineItemId, setSelectedEventsTimelineItemId] = useState<string | null>(null);
+  const [selectedFleetPlayerId, setSelectedFleetPlayerId] = useState<string | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('overview');
   const [selectedGameFilter, setSelectedGameFilter] = useState<GameFilter>('all');
   const [selectedServerId, setSelectedServerId] = useState<string>('');
@@ -7078,6 +7123,78 @@ function App() {
       })
       .slice(0, 6);
   }, [worldCards]);
+  const eventTimelineItems = useMemo<GameOpsTimelineItem[]>(() => {
+    const currentWorkItems = currentOperationItems.map<GameOpsTimelineItem>((item) => ({
+      id: `work:${item.server.id}:${item.label}`,
+      title: item.label,
+      detail: `${item.summary?.displayName ?? item.server.displayName}: ${item.detail}`,
+      meta: item.activity,
+      groupLabel: item.tone === 'warning' || item.tone === 'offline' ? 'Needs attention' : item.tone === 'ok' ? 'Live now' : 'Waiting for data',
+      sourceLabel: 'Fleet summary',
+      typeLabel: 'Current work',
+      tone: getGameOpsToneFromOperationTone(item.tone),
+      action: (
+        <GameOpsPrimaryAction
+          variant="secondary"
+          onClick={() => {
+            setActiveTopLevelArea('servers');
+            pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'overview' };
+            setSelectedServerId(item.server.id);
+            setSelectedDashboardTab('overview');
+            setSelectedGameFilter(item.server.game);
+            setActiveWorkspace(item.server.game);
+          }}
+        >
+          Open server
+        </GameOpsPrimaryAction>
+      )
+    }));
+
+    const historyItems = crossOperationHistoryItems.map<GameOpsTimelineItem>((item) => ({
+      id: `history:${item.server.id}:${item.observedAt ?? item.label}`,
+      title: item.title,
+      detail: `${item.summary?.displayName ?? item.server.displayName}: ${item.detail}`,
+      meta: item.observedAt ? formatRelativeTime(item.observedAt) : 'time unknown',
+      groupLabel: item.observedAt ? getTimelineGroupLabel(item.observedAt) : 'Time unknown',
+      sourceLabel: item.source,
+      typeLabel: item.label,
+      tone: getGameOpsToneFromOperationTone(item.tone),
+      action: (
+        <GameOpsPrimaryAction
+          variant="secondary"
+          onClick={() => {
+            setActiveTopLevelArea('servers');
+            pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'history' };
+            setSelectedServerId(item.server.id);
+            setSelectedGameFilter(item.server.game);
+            setActiveWorkspace(item.server.game);
+            setSelectedDashboardTab('history');
+          }}
+        >
+          Open history
+        </GameOpsPrimaryAction>
+      )
+    }));
+
+    return [...currentWorkItems, ...historyItems];
+  }, [crossOperationHistoryItems, currentOperationItems]);
+  const eventScheduleDraftItems = useMemo(() => {
+    return worldCards.flatMap(({ server, summary }) => {
+      if (!summary) {
+        return [];
+      }
+
+      return summary.eventTemplateDrafts.drafts
+        .filter((draft) => draft.enabledInDashboard || draft.scheduleLabel)
+        .slice(0, 3)
+        .map((draft) => ({
+          id: `${server.id}:${draft.templateId}`,
+          server,
+          summary,
+          draft
+        }));
+    }).slice(0, 6);
+  }, [worldCards]);
   const administrationReferenceItems = useMemo(() => {
     return worldCards.map<AdministrationReferenceItem>(({ server, summary }) => {
       if (!summary) {
@@ -7150,6 +7267,19 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (eventTimelineItems.length === 0) {
+      if (selectedEventsTimelineItemId !== null) {
+        setSelectedEventsTimelineItemId(null);
+      }
+      return;
+    }
+
+    if (!selectedEventsTimelineItemId || !eventTimelineItems.some((item) => item.id === selectedEventsTimelineItemId)) {
+      setSelectedEventsTimelineItemId(eventTimelineItems[0].id);
+    }
+  }, [eventTimelineItems, selectedEventsTimelineItemId]);
+
+  useEffect(() => {
     if (!detailTabs.some((tab) => tab.key === selectedDashboardTab)) {
       setSelectedDashboardTab('overview');
     }
@@ -7187,6 +7317,15 @@ function App() {
       ? (currentIndex + 1) % detailTabs.length
       : (currentIndex - 1 + detailTabs.length) % detailTabs.length;
     focusDashboardTab(detailTabs[nextIndex].key);
+  }
+
+  function openServerTab(server: ServerOption, tab: DashboardTab): void {
+    setActiveTopLevelArea('servers');
+    pendingDashboardTabRef.current = { serverId: server.id, tab };
+    setSelectedServerId(server.id);
+    setSelectedGameFilter(server.game);
+    setActiveWorkspace(server.game);
+    setSelectedDashboardTab(tab);
   }
 
   const selectedAlertCount = useMemo(() => {
@@ -7442,6 +7581,31 @@ function App() {
   const activeHighlights = selectedServer?.game === 'palworld'
     ? palworldOverviewHighlights
     : valheimOverviewHighlights;
+  const selectedServerOverviewActivityItems = useMemo<GameOpsActivityItem[]>(() => {
+    if (!selectedServerSummary) {
+      return [];
+    }
+
+    const activityItems = selectedServerSummary.activityLog.slice(0, 5).map<GameOpsActivityItem>((item) => ({
+      id: `activity:${item.timestamp}:${item.title}`,
+      title: item.title,
+      detail: item.description,
+      meta: item.timestamp ? formatRelativeTime(item.timestamp) : item.confidence,
+      tone: item.severity === 'critical' ? 'offline' : item.severity === 'warning' ? 'warning' : 'healthy'
+    }));
+
+    if (activityItems.length > 0) {
+      return activityItems;
+    }
+
+    return selectedServerSummary.recentEvents.slice(0, 5).map<GameOpsActivityItem>((event) => ({
+      id: `event:${event.occurredAt}:${event.eventType}:${event.playerName ?? 'server'}`,
+      title: event.message ?? event.eventType.toLowerCase().replace(/_/g, ' '),
+      detail: event.playerName ? `Observed for ${event.playerName}.` : 'Observed in the loaded server event stream.',
+      meta: event.occurredAt ? formatRelativeTime(event.occurredAt) : 'time unknown',
+      tone: event.raw?.severity === 'critical' ? 'offline' : event.raw?.severity === 'warning' ? 'warning' : 'neutral'
+    }));
+  }, [selectedServerSummary]);
   const valheimCharacters = useMemo(() => {
     return selectedServer?.game === 'valheim' ? getValheimCharactersFromMemory(selectedWorldMemory) : [];
   }, [selectedServer?.game, selectedWorldMemory]);
@@ -7787,34 +7951,82 @@ function App() {
     selectedServer,
     selectedServerSummary
   ]);
+  const selectedPlayerSurfaceSummary = useMemo(() => {
+    if (!selectedServer || !selectedServerSummary) {
+      return {
+        onlineNow: 0,
+        recentlyActive: 0,
+        knownPlayers: 0,
+        attentionCount: 0,
+        attentionLabel: 'No player data loaded'
+      };
+    }
+
+    if (selectedServer.game === 'palworld') {
+      const unlinkedCount = palworldPlayerList.filter(({ identityState }) => identityState !== 'approved').length;
+
+      return {
+        onlineNow: selectedOnlinePlayerCount,
+        recentlyActive: playerProfiles.length || selectedServerSummary.serverAliveRhythm.sevenDays.uniqueActivePlayers,
+        knownPlayers: palworldPlayerList.length || selectedServerSummary.knownPlayerCount,
+        attentionCount: unlinkedCount,
+        attentionLabel: unlinkedCount > 0 ? `${unlinkedCount} identity review${unlinkedCount === 1 ? '' : 's'}` : 'No identity reviews visible'
+      };
+    }
+
+    const identityReviewCount = selectedServerSummary.playerIntelligence.filter((player) => (
+      player.identityConfidence === 'unknown' || player.identityConfidence === 'low'
+    )).length;
+
+    return {
+      onlineNow: selectedOnlinePlayerCount,
+      recentlyActive: selectedServerSummary.serverAliveRhythm.sevenDays.uniqueActivePlayers,
+      knownPlayers: selectedServerSummary.knownPlayerCount,
+      attentionCount: identityReviewCount,
+      attentionLabel: identityReviewCount > 0 ? `${identityReviewCount} identity review${identityReviewCount === 1 ? '' : 's'}` : 'No identity reviews visible'
+    };
+  }, [
+    palworldPlayerList,
+    playerProfiles.length,
+    selectedOnlinePlayerCount,
+    selectedServer,
+    selectedServerSummary
+  ]);
   return (
     <main className="dashboard">
       <header className="dashboard-header">
         <div className="dashboard-title-row">
-          <h1>GameOps Bridge</h1>
-          <span className="dashboard-kicker">Live server operations</span>
+          <div>
+            <h1>GameOps Bridge</h1>
+            <span className="dashboard-kicker">Game control center</span>
+          </div>
+          <div className="shell-status-cluster" aria-label="Control center status">
+            <span className="shell-status-dot" aria-hidden="true" />
+            <span>{apiHealthLabel}</span>
+          </div>
+          <button
+            type="button"
+            className={`gameops-design-mode-toggle ${gameOpsDesignMode ? 'gameops-design-mode-toggle-active' : ''}`}
+            aria-pressed={gameOpsDesignMode}
+            onClick={() => setGameOpsDesignMode((isEnabled) => !isEnabled)}
+          >
+            Design Mode
+          </button>
         </div>
 
         <div className="dashboard-control-rail">
           <nav className="top-level-nav" aria-label="Top-level operations console areas">
             {TOP_LEVEL_NAV_ITEMS.map((item) => {
               const isActive = activeTopLevelArea === item.key;
-              const isImplemented = item.status === 'live';
-              const isUnavailable = !isImplemented;
 
               return (
                 <button
                   key={item.key}
                   type="button"
-                  className={`top-level-nav-item ${isActive ? 'top-level-nav-item-active' : ''} ${isUnavailable ? 'top-level-nav-item-planned' : ''}`}
-                  aria-label={`${item.label}, ${item.status === 'live' ? 'live area' : 'planned area'}. ${item.question}`}
+                  className={`top-level-nav-item ${isActive ? 'top-level-nav-item-active' : ''}`}
+                  aria-label={`${item.label}. ${item.question}`}
                   aria-current={isActive ? 'page' : undefined}
-                  aria-disabled={isUnavailable ? 'true' : undefined}
                   onClick={() => {
-                    if (!isImplemented) {
-                      return;
-                    }
-
                     if (item.key === 'overview') {
                       setActiveTopLevelArea('overview');
                       setActiveWorkspace('overview');
@@ -7834,101 +8046,110 @@ function App() {
                       return;
                     }
 
-                    if (item.key === 'operations') {
-                      setActiveTopLevelArea('operations');
+                    if (item.key === 'events') {
+                      setActiveTopLevelArea('events');
                       return;
                     }
 
-                    if (item.key === 'history') {
-                      setActiveTopLevelArea('history');
+                    if (item.key === 'players') {
+                      setActiveTopLevelArea('players');
                       return;
                     }
 
-                    if (item.key === 'administration') {
-                      setActiveTopLevelArea('administration');
+                    if (item.key === 'community') {
+                      setActiveTopLevelArea('community');
+                      return;
+                    }
+
+                    if (item.key === 'settings') {
+                      setActiveTopLevelArea('settings');
                     }
                   }}
                 >
                   <span className="top-level-nav-label-row">
                     <span>{item.label}</span>
-                    <span className={`top-level-nav-status top-level-nav-status-${item.status}`}>
-                      {item.status === 'live' ? 'live' : 'planned'}
-                    </span>
                   </span>
                   <span className="top-level-nav-question">{item.question}</span>
-                  {isUnavailable && item.plannedIntent ? (
-                    <span className="top-level-nav-planned-intent">{item.plannedIntent}</span>
-                  ) : null}
                 </button>
               );
             })}
           </nav>
 
-          <nav className="workspace-nav server-navigation" aria-label="Fleet server navigation">
-            <button
-              type="button"
-              className={activeTopLevelArea === 'servers' && activeWorkspace === 'overview' ? 'workspace-nav-item workspace-nav-item-active server-nav-fleet-item' : 'workspace-nav-item server-nav-fleet-item'}
-              aria-current={activeTopLevelArea === 'servers' && activeWorkspace === 'overview' ? 'page' : undefined}
-              onClick={() => {
-                setActiveTopLevelArea('servers');
-                setActiveWorkspace('overview');
-                setSelectedGameFilter('all');
-              }}
-            >
-              <span className="workspace-nav-symbol" aria-hidden="true">O</span>
-              <span className="server-nav-item-copy">
-                <span>Fleet</span>
-                <span>All servers</span>
-              </span>
-            </button>
-
-            {groupedServerNavigation.map((group) => (
-              <div
-                key={group.game}
-                className={`server-nav-game-group server-nav-game-group-${group.game}`}
-                role="group"
-                aria-label={`${getGameLabel(group.game)} servers`}
-              >
-                <div className="server-nav-game-heading" aria-hidden="true">
-                  <span className="workspace-nav-symbol">{getGameSymbol(group.game)}</span>
-                  <span>{getGameLabel(group.game)}</span>
-                </div>
-                <div className="server-nav-server-list">
-                  {group.servers.map((server) => {
-                    const summary = fleetByServerId[server.id];
-                    const isActiveServer = activeTopLevelArea === 'servers' && selectedServerId === server.id && activeWorkspace !== 'overview';
-
-                    return (
-                      <button
-                        key={server.id}
-                        type="button"
-                        className={`workspace-nav-item server-nav-server-item workspace-nav-${server.game} ${isActiveServer ? 'workspace-nav-item-active' : ''}`}
-                        aria-current={isActiveServer ? 'page' : undefined}
-                        aria-label={`${summary?.displayName ?? server.displayName}, ${getGameLabel(server.game)} server, ${summary?.state ?? 'loading'}`}
-                        onClick={() => {
-                          setActiveTopLevelArea('servers');
-                          pendingDashboardTabRef.current = { serverId: server.id, tab: 'overview' };
-                          setSelectedServerId(server.id);
-                          setSelectedDashboardTab('overview');
-                          setSelectedGameFilter(server.game);
-                          setActiveWorkspace(server.game);
-                        }}
-                      >
-                        <span className={`server-nav-state-dot state-dot-${summary?.state ?? 'unknown'}`} aria-hidden="true" />
-                        <span className="server-nav-item-copy">
-                          <span>{summary?.displayName ?? server.displayName}</span>
-                          <span>
-                            {isActiveServer ? 'Selected · ' : ''}
-                            {summary?.state ?? 'loading'} · {summary?.activePlayers ?? 0} online
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+          <section className="world-switcher" aria-label="World switcher">
+            <div className="world-switcher-header">
+              <div>
+                <span className="summary-label">World switcher</span>
+                <strong>{selectedServerSummary?.displayName ?? 'Fleet'}</strong>
               </div>
-            ))}
-          </nav>
+              <span>{fleetCounts.activePlayers} online</span>
+            </div>
+
+            <nav className="workspace-nav server-navigation" aria-label="Fleet server navigation">
+              <button
+                type="button"
+                className={activeTopLevelArea === 'servers' && activeWorkspace === 'overview' ? 'workspace-nav-item workspace-nav-item-active server-nav-fleet-item' : 'workspace-nav-item server-nav-fleet-item'}
+                aria-current={activeTopLevelArea === 'servers' && activeWorkspace === 'overview' ? 'page' : undefined}
+                onClick={() => {
+                  setActiveTopLevelArea('servers');
+                  setActiveWorkspace('overview');
+                  setSelectedGameFilter('all');
+                }}
+              >
+                <span className="workspace-nav-symbol" aria-hidden="true">O</span>
+                <span className="server-nav-item-copy">
+                  <span>Fleet</span>
+                  <span>All servers</span>
+                </span>
+              </button>
+
+              {groupedServerNavigation.map((group) => (
+                <div
+                  key={group.game}
+                  className={`server-nav-game-group server-nav-game-group-${group.game}`}
+                  role="group"
+                  aria-label={`${getGameLabel(group.game)} servers`}
+                >
+                  <div className="server-nav-game-heading" aria-hidden="true">
+                    <span className="workspace-nav-symbol">{getGameSymbol(group.game)}</span>
+                    <span>{getGameLabel(group.game)}</span>
+                  </div>
+                  <div className="server-nav-server-list">
+                    {group.servers.map((server) => {
+                      const summary = fleetByServerId[server.id];
+                      const isActiveServer = activeTopLevelArea === 'servers' && selectedServerId === server.id && activeWorkspace !== 'overview';
+
+                      return (
+                        <button
+                          key={server.id}
+                          type="button"
+                          className={`workspace-nav-item server-nav-server-item workspace-nav-${server.game} ${isActiveServer ? 'workspace-nav-item-active' : ''}`}
+                          aria-current={isActiveServer ? 'page' : undefined}
+                          aria-label={`${summary?.displayName ?? server.displayName}, ${getGameLabel(server.game)} server, ${summary?.state ?? 'loading'}`}
+                          onClick={() => {
+                            setActiveTopLevelArea('servers');
+                            pendingDashboardTabRef.current = { serverId: server.id, tab: 'overview' };
+                            setSelectedServerId(server.id);
+                            setSelectedDashboardTab('overview');
+                            setSelectedGameFilter(server.game);
+                            setActiveWorkspace(server.game);
+                          }}
+                        >
+                          <span className={`server-nav-state-dot state-dot-${summary?.state ?? 'unknown'}`} aria-hidden="true" />
+                          <span className="server-nav-item-copy">
+                            <span>{summary?.displayName ?? server.displayName}</span>
+                            <span>
+                              {isActiveServer ? 'Selected · ' : ''}
+                              {summary?.state ?? 'loading'} · {summary?.activePlayers ?? 0} online
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </section>
 
           <div className="status-strip">
             <div className="status-pill">
@@ -7983,306 +8204,275 @@ function App() {
       </header>
 
       {activeTopLevelArea === 'overview' || (activeTopLevelArea === 'servers' && activeWorkspace === 'overview') ? (
-        <section className="overview-shell" aria-label={activeTopLevelArea === 'servers' ? 'Servers' : 'Global Overview'}>
-          <div className="overview-heading">
-            <div>
-              <span className="summary-label">{activeTopLevelArea === 'servers' ? 'Servers' : 'Overview'}</span>
-              <h2>{activeTopLevelArea === 'servers' ? 'Which server needs attention?' : 'How are all my worlds?'}</h2>
-              <p className="subtle">
-                {activeTopLevelArea === 'servers'
-                  ? 'Choose a world to open its focused server console.'
-                  : 'One card per world. Open a world to inspect community, players, world history, and operations.'}
-              </p>
-            </div>
-          </div>
-
-          {fleetLoading ? <p className="subtle">Loading world status...</p> : null}
-
-          <div className="world-card-grid">
-            {worldCards.length === 0 && !serverOptionsLoading ? (
-              <article className="card detail-card">
-                <p className="subtle">No configured Valheim or Palworld servers found.</p>
-              </article>
-            ) : null}
-            {worldCards.map(({ server, summary }) => {
-              const onlineNow = summary?.game === 'palworld'
-                ? summary.palworldLatestPlayers.filter((player) => player.isOnline).length || summary.activePlayers
-                : summary?.activePlayers ?? 0;
-              const activeThisWeek = summary?.serverAliveRhythm.sevenDays.uniqueActivePlayers ?? 0;
-
-              return (
-                <article
-                  key={server.id}
-                  className={`card world-card world-card-${server.game}`}
+        <GameOpsShell className="gameops-overview-shell">
+          <GameOpsPage aria-label={activeTopLevelArea === 'servers' ? 'Servers' : 'Global Overview'}>
+            <GameOpsHero
+              eyebrow={activeTopLevelArea === 'servers' ? 'Servers' : 'Overview'}
+              title={activeTopLevelArea === 'servers' ? 'Which server needs attention?' : 'How are all my worlds?'}
+              body={activeTopLevelArea === 'servers'
+                ? 'Choose the world that needs focus. Server detail stays one step deeper so this screen remains calm.'
+                : 'A control-center view of live worlds, current players, recent activity, and work that may need attention.'}
+              metricsLabel={activeTopLevelArea === 'servers' ? 'Servers fleet summary' : 'Overview fleet summary'}
+              media={(
+                <GameOpsHeroMedia
+                  preset={activeTopLevelArea === 'servers' ? 'vanilla' : 'overview'}
+                  designMode={gameOpsDesignMode}
+                  label={activeTopLevelArea === 'servers' ? 'Servers atmosphere' : 'Overview atmosphere'}
+                  themeClassName={activeTopLevelArea === 'servers' ? 'gameops-theme-servers' : 'gameops-theme-overview'}
+                  focalPoint={activeTopLevelArea === 'servers' ? '50% 54%' : '50% 48%'}
+                />
+              )}
+              status={<GameOpsStatusPill tone={fleetCounts.degraded > 0 ? 'warning' : fleetCounts.online > 0 ? 'healthy' : 'unknown'}>{fleetCounts.degraded > 0 ? `${fleetCounts.degraded} need attention` : `${fleetCounts.online} online`}</GameOpsStatusPill>}
+              primaryAction={(
+                <GameOpsPrimaryAction
+                  onClick={() => {
+                    setActiveTopLevelArea('servers');
+                    setActiveWorkspace('overview');
+                    setSelectedGameFilter('all');
+                  }}
                 >
-                  <div className="world-card-top">
-                    <div>
-                      <span className="world-card-identity">
-                        <span className="world-card-symbol" aria-hidden="true">{getGameSymbol(server.game)}</span>
-                        <span className="summary-label">{getGameLabel(server.game)}</span>
-                      </span>
-                      <h3>{summary?.displayName ?? server.displayName}</h3>
-                    </div>
-                    <span className={`state-pill state-${summary?.state ?? 'offline'}`}>
-                      {summary?.state ?? 'loading'}
-                    </span>
-                  </div>
-                  <div className="world-card-stats">
-                    <div>
-                      <span className="world-stat-value">{onlineNow}</span>
-                      <span className="world-stat-label">Online now</span>
-                    </div>
-                    <div>
-                      <span className="world-stat-value">{activeThisWeek}</span>
-                      <span className="world-stat-label">Active this week</span>
-                    </div>
-                  </div>
-                  <div className="world-card-activity">
-                    <span className="summary-label">Last activity</span>
-                    <p>{getLatestActivityLabel(summary)}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="world-card-entry"
-                    onClick={() => {
-                      setActiveTopLevelArea('servers');
-                      pendingDashboardTabRef.current = { serverId: server.id, tab: 'overview' };
-                      setSelectedServerId(server.id);
-                      setSelectedDashboardTab('overview');
-                      setSelectedGameFilter(server.game);
-                      setActiveWorkspace(server.game);
-                    }}
+                  Open Servers
+                </GameOpsPrimaryAction>
+              )}
+              metrics={[
+                { label: 'Servers', value: fleetCounts.servers },
+                { label: 'Online', value: fleetCounts.online },
+                { label: 'Players now', value: fleetCounts.activePlayers },
+                { label: 'Updated', value: lastUpdatedAt ? formatClock(lastUpdatedAt) : 'Waiting' }
+              ]}
+            />
+
+            {fleetLoading ? <p className="gameops-loading-note">Loading world status...</p> : null}
+
+            <GameOpsSection
+              eyebrow="Primary information"
+              title="Worlds"
+              description="One readable object per server. Open a world for player, settings, backup, history, and capability detail."
+            >
+              <div className="gameops-world-grid">
+                {worldCards.length === 0 && !serverOptionsLoading ? (
+                  <GameOpsCard className="gameops-empty-card">
+                    <span className="gameops-eyebrow">No worlds</span>
+                    <p>No configured Valheim or Palworld servers found.</p>
+                  </GameOpsCard>
+                ) : null}
+                {worldCards.map(({ server, summary }) => {
+                  const onlineNow = summary?.game === 'palworld'
+                    ? summary.palworldLatestPlayers.filter((player) => player.isOnline).length || summary.activePlayers
+                    : summary?.activePlayers ?? 0;
+                  const activeThisWeek = summary?.serverAliveRhythm.sevenDays.uniqueActivePlayers ?? 0;
+
+                  return (
+                    <GameOpsCard
+                      key={server.id}
+                      className={`gameops-world-card gameops-world-card-${server.game}`}
+                      tone={server.game}
+                      interactive
+                    >
+                      <div className="gameops-world-card-top">
+                        <div>
+                          <span className="gameops-world-identity">
+                            <span className="gameops-world-symbol" aria-hidden="true">{getGameSymbol(server.game)}</span>
+                            <span className="gameops-eyebrow">{getGameLabel(server.game)}</span>
+                          </span>
+                          <h4>{summary?.displayName ?? server.displayName}</h4>
+                        </div>
+                        <GameOpsStatusPill tone={getGameOpsToneFromState(summary?.state)}>
+                          {summary?.state ?? 'loading'}
+                        </GameOpsStatusPill>
+                      </div>
+                      <div className="gameops-world-stats">
+                        <div>
+                          <span>{onlineNow}</span>
+                          <strong>Online now</strong>
+                        </div>
+                        <div>
+                          <span>{activeThisWeek}</span>
+                          <strong>Active this week</strong>
+                        </div>
+                      </div>
+                      <div className="gameops-world-activity">
+                        <span className="gameops-eyebrow">Last activity</span>
+                        <p>{getLatestActivityLabel(summary)}</p>
+                      </div>
+                      <GameOpsPrimaryAction
+                        variant="secondary"
+                        onClick={() => {
+                          setActiveTopLevelArea('servers');
+                          pendingDashboardTabRef.current = { serverId: server.id, tab: 'overview' };
+                          setSelectedServerId(server.id);
+                          setSelectedDashboardTab('overview');
+                          setSelectedGameFilter(server.game);
+                          setActiveWorkspace(server.game);
+                        }}
+                      >
+                        Enter {getGameLabel(server.game)}
+                      </GameOpsPrimaryAction>
+                    </GameOpsCard>
+                  );
+                })}
+              </div>
+            </GameOpsSection>
+
+            <GameOpsSection
+              eyebrow="Quick actions"
+              title="Route to the next useful surface"
+              description="These actions navigate to existing views only. No new operational capability is implied."
+            >
+              <div className="gameops-action-grid">
+                <GameOpsCard>
+                  <span className="gameops-eyebrow">Attention</span>
+                  <h4>Review current work</h4>
+                  <p>{currentOperationItems.length > 0 ? `${currentOperationItems.length} loaded work item${currentOperationItems.length === 1 ? '' : 's'} may need a look.` : 'No current cross-server work is visible in loaded summaries.'}</p>
+                  <GameOpsPrimaryAction
+                    variant="secondary"
+                    onClick={() => setActiveTopLevelArea('events')}
                   >
-                    Enter {getGameLabel(server.game)}
-                  </button>
-                </article>
-              );
-            })}
-          </div>
-        </section>
+                    Open Events
+                  </GameOpsPrimaryAction>
+                </GameOpsCard>
+                <GameOpsCard>
+                  <span className="gameops-eyebrow">History</span>
+                  <h4>Review what changed</h4>
+                  <p>{crossOperationHistoryItems.length > 0 ? 'Recent activity is available across the loaded worlds.' : 'No cross-operation activity has loaded yet.'}</p>
+                  <GameOpsPrimaryAction
+                    variant="secondary"
+                    onClick={() => setActiveTopLevelArea('events')}
+                  >
+                    Open Event History
+                  </GameOpsPrimaryAction>
+                </GameOpsCard>
+                <GameOpsCard>
+                  <span className="gameops-eyebrow">Maintenance</span>
+                  <h4>Check configuration reference</h4>
+                  <p>{administrationReferenceItems.length > 0 ? 'Settings and maintenance evidence remain in read-only reference views.' : 'Configuration reference will appear when server summaries load.'}</p>
+                  <GameOpsPrimaryAction
+                    variant="secondary"
+                    onClick={() => setActiveTopLevelArea('settings')}
+                  >
+                    Open Settings
+                  </GameOpsPrimaryAction>
+                </GameOpsCard>
+              </div>
+            </GameOpsSection>
+
+            <GameOpsSection
+              eyebrow="Recent activity"
+              title="What just happened?"
+              description="Latest loaded activity stays factual and source-backed."
+            >
+              <GameOpsActivityList
+                items={crossOperationHistoryItems.slice(0, 4).map<GameOpsActivityItem>((item) => ({
+                  id: `${item.server.id}:${item.observedAt ?? item.label}`,
+                  title: item.title,
+                  detail: item.detail,
+                  meta: `${item.summary?.displayName ?? item.server.displayName} • ${item.observedAt ? formatRelativeTime(item.observedAt) : 'time unknown'}`,
+                  tone: getGameOpsToneFromOperationTone(item.tone),
+                  action: (
+                    <GameOpsPrimaryAction
+                      variant="secondary"
+                      onClick={() => {
+                        setActiveTopLevelArea('servers');
+                        pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'history' };
+                        setSelectedServerId(item.server.id);
+                        setSelectedGameFilter(item.server.game);
+                        setActiveWorkspace(item.server.game);
+                        setSelectedDashboardTab('history');
+                      }}
+                    >
+                      Open
+                    </GameOpsPrimaryAction>
+                  )
+                }))}
+                emptyTitle="No recent activity"
+                emptyDescription="The loaded fleet summaries do not include cross-server activity yet."
+              />
+            </GameOpsSection>
+
+            <details className="gameops-details-disclosure">
+              <summary>Expandable details</summary>
+              <div className="gameops-detail-grid">
+                <GameOpsCard>
+                  <span className="gameops-eyebrow">Fleet health</span>
+                  <dl className="gameops-detail-list">
+                    <div><dt>API</dt><dd>{apiHealthLabel}</dd></div>
+                    <div><dt>Servers</dt><dd>{fleetCounts.servers}</dd></div>
+                    <div><dt>Online</dt><dd>{fleetCounts.online}</dd></div>
+                    <div><dt>Degraded</dt><dd>{fleetCounts.degraded}</dd></div>
+                  </dl>
+                </GameOpsCard>
+                <GameOpsCard>
+                  <span className="gameops-eyebrow">Loaded sources</span>
+                  <dl className="gameops-detail-list">
+                    <div><dt>Work items</dt><dd>{currentOperationItems.length}</dd></div>
+                    <div><dt>History records</dt><dd>{crossOperationHistoryItems.length}</dd></div>
+                    <div><dt>Reference rows</dt><dd>{administrationReferenceItems.length}</dd></div>
+                    <div><dt>Updated</dt><dd>{lastUpdatedAt ? formatClock(lastUpdatedAt) : 'Waiting'}</dd></div>
+                  </dl>
+                </GameOpsCard>
+              </div>
+            </details>
+          </GameOpsPage>
+        </GameOpsShell>
       ) : null}
 
-      {activeTopLevelArea === 'operations' ? (
-        <section className="operations-shell" aria-label="Operations">
-          <div className="overview-heading">
-            <div>
-              <span className="summary-label">Operations</span>
-              <h2>What work is happening right now?</h2>
-              <p className="subtle">Current server attention and live activity are summarized here. Details still live in the relevant server console.</p>
-            </div>
-          </div>
-
-          <section className="workspace-summary-strip" aria-label="Current operations summary">
-            <div>
-              <span className="summary-label">Current work</span>
-              <strong>{currentOperationItems.length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Degraded</span>
-              <strong>{worldCards.filter(({ summary }) => summary?.state === 'degraded').length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Players active</span>
-              <strong>{worldCards.reduce((sum, { summary }) => sum + (summary?.activePlayers ?? 0), 0)}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Warnings</span>
-              <strong>{worldCards.reduce((sum, { summary }) => sum + (summary?.recentWarnings.length ?? 0), 0)}</strong>
-            </div>
-          </section>
-
-          <div className="operations-work-list">
-            {currentOperationItems.length === 0 ? (
-              <article className="card server-empty-state-card">
-                <span className="summary-label">Current work</span>
-                <h2>No current work detected</h2>
-                <p className="subtle">No active player, warning, stale-data, degraded, or offline work is visible from the currently loaded fleet summaries.</p>
-              </article>
-            ) : null}
-
-            {currentOperationItems.map((item) => (
-              <article key={item.server.id} className="card operations-work-card">
-                <div>
-                  <span className="summary-label">{getGameLabel(item.server.game)}</span>
-                  <h3>{item.summary?.displayName ?? item.server.displayName}</h3>
-                  <p className="subtle">{item.detail}</p>
-                </div>
-                <div className="operations-work-meta">
-                  <span className={`state-pill state-${item.tone}`}>{item.label}</span>
-                  <span className="subtle">{item.activity}</span>
-                  <button
-                    type="button"
-                    className="world-card-entry"
-                    onClick={() => {
-                      setActiveTopLevelArea('servers');
-                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'overview' };
-                      setSelectedServerId(item.server.id);
-                      setSelectedDashboardTab('overview');
-                      setSelectedGameFilter(item.server.game);
-                      setActiveWorkspace(item.server.game);
-                    }}
-                  >
-                    Open server
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+      {activeTopLevelArea === 'events' ? (
+        <EventsHistoryPage
+          currentOperationItems={currentOperationItems}
+          crossOperationHistoryItems={crossOperationHistoryItems}
+          eventTimelineItems={eventTimelineItems}
+          selectedEventsTimelineItemId={selectedEventsTimelineItemId}
+          eventScheduleDraftItems={eventScheduleDraftItems}
+          worldCards={worldCards}
+          onSelectEventsTimelineItem={setSelectedEventsTimelineItemId}
+          onOpenServerTab={openServerTab}
+          onOpenServersOverview={() => {
+            setActiveTopLevelArea('servers');
+            setActiveWorkspace('overview');
+            setSelectedGameFilter('all');
+          }}
+          designMode={gameOpsDesignMode}
+        />
       ) : null}
 
-      {activeTopLevelArea === 'history' ? (
-        <section className="history-shell" aria-label="Cross-operation history">
-          <div className="overview-heading">
-            <div>
-              <span className="summary-label">History</span>
-              <h2>What happened across the operation?</h2>
-              <p className="subtle">Recent cross-server change is summarized here. Detailed timelines, chronicle search, and raw evidence remain in each server History tab.</p>
-            </div>
-          </div>
-
-          <section className="workspace-summary-strip" aria-label="Cross-operation history summary">
-            <div>
-              <span className="summary-label">History records</span>
-              <strong>{crossOperationHistoryItems.length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Servers with activity</span>
-              <strong>{worldCards.filter(({ summary }) => (summary?.activityLog.length ?? 0) > 0).length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Latest warnings</span>
-              <strong>{crossOperationHistoryItems.filter((item) => item.tone === 'warning' || item.tone === 'offline').length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Deep detail</span>
-              <strong>Server History</strong>
-            </div>
-          </section>
-
-          <div className="history-record-list">
-            {crossOperationHistoryItems.length === 0 ? (
-              <article className="card server-empty-state-card">
-                <span className="summary-label">Cross-operation history</span>
-                <h2>No cross-operation history loaded</h2>
-                <p className="subtle">The currently loaded fleet summaries do not include historical activity yet. Server History tabs will show deeper evidence when it is available.</p>
-              </article>
-            ) : null}
-
-            {crossOperationHistoryItems.map((item) => (
-              <article key={`${item.server.id}:${item.observedAt ?? item.label}`} className="card history-record-card">
-                <div>
-                  <span className="summary-label">{getGameLabel(item.server.game)} • {item.observedAt ? formatRelativeTime(item.observedAt) : 'time unknown'}</span>
-                  <h3>{item.title}</h3>
-                  <p className="subtle">{item.detail}</p>
-                </div>
-                <div className="history-record-meta">
-                  <span className={`state-pill state-${item.tone}`}>{item.label}</span>
-                  <span className="subtle">{item.summary?.displayName ?? item.server.displayName}</span>
-                  <span className="subtle">{item.source}</span>
-                  <button
-                    type="button"
-                    className="world-card-entry"
-                    onClick={() => {
-                      setActiveTopLevelArea('servers');
-                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'history' };
-                      setSelectedServerId(item.server.id);
-                      setSelectedGameFilter(item.server.game);
-                      setActiveWorkspace(item.server.game);
-                      setSelectedDashboardTab('history');
-                    }}
-                  >
-                    Open server history
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+      {activeTopLevelArea === 'players' ? (
+        <PlayersHubPage
+          worldCards={worldCards}
+          serverOptionsLoading={serverOptionsLoading}
+          selectedFleetPlayerId={selectedFleetPlayerId}
+          onSelectFleetPlayer={setSelectedFleetPlayerId}
+          onOpenServerTab={openServerTab}
+          onPreparePalworldPlayer={setSelectedPalworldPlayerKey}
+          onPrepareValheimPlayer={(playerId, playerKey) => {
+            if (playerId) {
+              setSelectedPlayerIntelligenceId(playerId);
+            }
+            setSelectedValheimPlayerLookupKey(playerKey);
+          }}
+          designMode={gameOpsDesignMode}
+        />
       ) : null}
 
-      {activeTopLevelArea === 'administration' ? (
-        <section className="administration-shell" aria-label="Administration reference">
-          <div className="overview-heading">
-            <div>
-              <span className="summary-label">Administration</span>
-              <h2>What can I configure or maintain?</h2>
-              <p className="subtle">Configuration and maintenance reference is summarized across configured servers. Detailed controls and evidence remain in each server Settings, Backups, and Capabilities tab.</p>
-            </div>
-          </div>
+      {activeTopLevelArea === 'community' ? (
+        <CommunityPage
+          worldCards={worldCards}
+          serverOptionsLoading={serverOptionsLoading}
+          selectedServer={selectedServer}
+          guildActivity={guildActivity}
+          onOpenPlayersArea={() => setActiveTopLevelArea('players')}
+          onOpenEventsArea={() => setActiveTopLevelArea('events')}
+          onOpenServerTab={openServerTab}
+          designMode={gameOpsDesignMode}
+        />
+      ) : null}
 
-          <section className="workspace-summary-strip" aria-label="Administration reference summary">
-            <div>
-              <span className="summary-label">Configured servers</span>
-              <strong>{serverOptions.length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Readable settings</span>
-              <strong>{worldCards.filter(({ summary }) => summary?.settingsCapabilities.canReadSettings === 'yes').length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Write paths visible</span>
-              <strong>{worldCards.filter(({ summary }) => summary?.settingsCapabilities.canWriteSettings === 'yes').length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Backup evidence</span>
-              <strong>{worldCards.filter(({ summary }) => Boolean(summary?.palworldBackupReadiness)).length}</strong>
-            </div>
-          </section>
-
-          <div className="administration-reference-list">
-            {administrationReferenceItems.length === 0 ? (
-              <article className="card server-empty-state-card">
-                <span className="summary-label">Administration reference</span>
-                <h2>No configuration reference loaded</h2>
-                <p className="subtle">Configured server, settings capability, and maintenance reference will appear here when existing fleet data is loaded.</p>
-              </article>
-            ) : null}
-
-            {administrationReferenceItems.map((item) => (
-              <article key={item.server.id} className="card administration-reference-card">
-                <div>
-                  <span className="summary-label">{getGameLabel(item.server.game)} • read-only reference</span>
-                  <h3>{item.title}</h3>
-                  <p className="subtle">{item.detail}</p>
-                  <p className="subtle">{item.maintenance}</p>
-                </div>
-                <div className="administration-reference-meta">
-                  <span className={`state-pill state-${item.tone}`}>{item.label}</span>
-                  <span className="subtle">{item.source}</span>
-                  <button
-                    type="button"
-                    className="world-card-entry"
-                    onClick={() => {
-                      setActiveTopLevelArea('servers');
-                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'settings' };
-                      setSelectedServerId(item.server.id);
-                      setSelectedGameFilter(item.server.game);
-                      setActiveWorkspace(item.server.game);
-                      setSelectedDashboardTab('settings');
-                    }}
-                  >
-                    Open settings
-                  </button>
-                  <button
-                    type="button"
-                    className="world-card-entry"
-                    onClick={() => {
-                      setActiveTopLevelArea('servers');
-                      pendingDashboardTabRef.current = { serverId: item.server.id, tab: 'capabilities' };
-                      setSelectedServerId(item.server.id);
-                      setSelectedGameFilter(item.server.game);
-                      setActiveWorkspace(item.server.game);
-                      setSelectedDashboardTab('capabilities');
-                    }}
-                  >
-                    Open capabilities
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+      {activeTopLevelArea === 'settings' ? (
+        <SettingsMaintenancePage
+          serverOptions={serverOptions}
+          worldCards={worldCards}
+          onOpenServerTab={openServerTab}
+          designMode={gameOpsDesignMode}
+        />
       ) : null}
 
       {activeTopLevelArea === 'servers' && activeWorkspace !== 'overview' ? (
@@ -8326,176 +8516,25 @@ function App() {
             ) : null}
 
             {selectedDashboardTab === 'overview' ? (
-              <>
-              <div className="server-context-strip server-overview-context-strip" aria-label="Selected server context">
-                <span className={getConnectorStatusTone(selectedServerSummary.operationalStatus.connectorStatus)}>
-                  Connector: {selectedServerSummary.operationalStatus.connectorStatus}
-                </span>
-                <span>Telemetry: {getTelemetryAvailabilityLabel(selectedServerSummary)}</span>
-                <span>Alerts: {selectedAlertCount}</span>
-                <span>Configured: {selectedServerSummary.operationalStatus.configured ? 'yes' : 'no'}</span>
-              </div>
-              <section className="server-decision-spine" aria-label="Decision object evidence path">
-                <article className="decision-spine-panel decision-spine-decision">
-                  <span className="summary-label">Decision</span>
-                  <h2>Next step</h2>
-                  <p>{selectedRecommendedAction}</p>
-                  <button type="button" className="decision-spine-primary-action" onClick={() => setSelectedDashboardTab(selectedDecisionTargetTab)}>
-                    {selectedDecisionTargetTab === 'overview' ? 'Keep watching Overview' : `Open ${selectedDecisionTargetLabel}`}
-                  </button>
-                </article>
-
-                <article className="decision-spine-panel decision-spine-objects">
-                  <span className="summary-label">Review next</span>
-                  <h2>Choose the object to inspect.</h2>
-                  <ul className="next-action-list">
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('players')}>
-                        <span>Players</span>
-                        <small>{selectedOnlinePlayerCount} online</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
-                        <span>Configuration</span>
-                        <small>{selectedSettingsStatus.label}</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('backups')}>
-                        <span>Backups</span>
-                        <small>{selectedBackupStatus.label}</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('history')}>
-                        <span>History</span>
-                        <small>{activeHighlights.length} highlights</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
-                        <span>Capabilities</span>
-                        <small>{selectedCapabilitySummary?.statusLabel ?? selectedServerSummary.operationalStatus.connectorStatus}</small>
-                      </button>
-                    </li>
-                  </ul>
-                </article>
-
-                <article className="decision-spine-panel decision-spine-evidence">
-                  <span className="summary-label">Evidence</span>
-                  <h2>Why this read?</h2>
-                  <dl>
-                    <div>
-                      <dt>State</dt>
-                      <dd>{selectedServerSummary.state}</dd>
-                    </div>
-                    <div>
-                      <dt>Alerts</dt>
-                      <dd>{selectedAlertCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Activity</dt>
-                      <dd>{getLatestActivityLabel(selectedServerSummary)}</dd>
-                    </div>
-                    <div>
-                      <dt>Data</dt>
-                      <dd>{selectedServerSummary.dataFreshness.status}</dd>
-                    </div>
-                  </dl>
-                </article>
-              </section>
-              <ServerAttentionSummary
-                gameLabel={getGameLabel(selectedServer.game)}
-                gameSymbol={getGameSymbol(selectedServer.game)}
-                serverName={selectedServerSummary.displayName}
-                status={selectedServerSummary.state as ServerAttentionStatus}
-                statusMessage={selectedWarningSummary[0]?.snippet ?? selectedServerSummary.operationalStatus.explanation}
-                warningCount={selectedAlertCount}
-                warnings={selectedAttentionWarnings}
-                recommendedAction={selectedRecommendedAction}
-                currentActivity={selectedOnlinePlayerCount > 0
-                  ? `${selectedOnlinePlayerCount} ${selectedOnlinePlayerCount === 1 ? 'player is' : 'players are'} online now.`
-                  : 'No players are online right now.'}
-                recentChange={selectedServer.game === 'palworld' ? palworldOverviewHighlights[0] : activeHighlights[0]}
-                metrics={[
-                  { label: 'Online now', value: selectedOnlinePlayerCount },
-                  { label: 'Active this week', value: selectedServerSummary.serverAliveRhythm.sevenDays.uniqueActivePlayers },
-                  { label: 'Last activity', value: getLatestActivityLabel(selectedServerSummary) },
-                  { label: 'Data', value: selectedServerSummary.dataFreshness.status }
-                ]}
+              <ServerOverviewPage
+                selectedServer={selectedServer}
+                selectedServerSummary={selectedServerSummary}
+                selectedRecommendedAction={selectedRecommendedAction}
+                selectedDecisionTargetTab={selectedDecisionTargetTab}
+                selectedDecisionTargetLabel={selectedDecisionTargetLabel}
+                selectedOnlinePlayerCount={selectedOnlinePlayerCount}
+                selectedBackupStatus={selectedBackupStatus}
+                selectedSettingsStatus={selectedSettingsStatus}
+                selectedAlertCount={selectedAlertCount}
+                selectedWarningSummary={selectedWarningSummary}
+                selectedAttentionWarnings={selectedAttentionWarnings}
+                selectedServerOverviewActivityItems={selectedServerOverviewActivityItems}
+                selectedReadableSettingsCount={selectedReadableSettingsCount}
+                activeHighlights={activeHighlights}
+                telemetryLabel={getTelemetryAvailabilityLabel(selectedServerSummary)}
+                designMode={gameOpsDesignMode}
+                onSelectDashboardTab={setSelectedDashboardTab}
               />
-              <details className="server-overview-disclosure">
-                <summary>Supporting review path and object counts</summary>
-                <section className="card command-panel-card server-overview-next-card" aria-label="Server overview review next">
-                  <div className="command-panel-heading">
-                    <div>
-                      <span className="summary-label">Review Next</span>
-                      <h2>Server review path</h2>
-                    </div>
-                  </div>
-                  <ul className="next-action-list">
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('players')}>
-                        <span>Players</span>
-                        <small>Who is here</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('settings')}>
-                        <span>Configuration</span>
-                        <small>Readiness</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('backups')}>
-                        <span>Backups</span>
-                        <small>Recovery</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('history')}>
-                        <span>History</span>
-                        <small>Recent events</small>
-                      </button>
-                    </li>
-                    <li>
-                      <button type="button" onClick={() => setSelectedDashboardTab('capabilities')}>
-                        <span>Capabilities</span>
-                        <small>Coverage</small>
-                      </button>
-                    </li>
-                  </ul>
-                </section>
-                <section className="server-overview-object-grid" aria-label="Important server objects">
-                  <article className="card server-overview-object-card">
-                    <span className="summary-label">Players</span>
-                    <strong>{selectedOnlinePlayerCount} online</strong>
-                    <span>{selectedServerSummary.knownPlayerCount} known players</span>
-                  </article>
-                  <article className="card server-overview-object-card">
-                    <span className="summary-label">Configuration</span>
-                    <strong>{selectedSettingsStatus.label}</strong>
-                    <span>{selectedReadableSettingsCount} readable settings</span>
-                  </article>
-                  <article className="card server-overview-object-card">
-                    <span className="summary-label">Backups</span>
-                    <strong>{selectedBackupStatus.label}</strong>
-                    <span>{selectedServerSummary.palworldBackupReadiness?.filesToBackup.length ?? 0} files tracked</span>
-                  </article>
-                  <article className="card server-overview-object-card">
-                    <span className="summary-label">Events / History</span>
-                    <strong>{activeHighlights.length} highlights</strong>
-                    <span>{selectedServerSummary.activityLog.length} activity records</span>
-                  </article>
-                  <article className="card server-overview-object-card">
-                    <span className="summary-label">Capabilities</span>
-                    <strong>{selectedCapabilitySummary?.statusLabel ?? selectedServerSummary.operationalStatus.connectorStatus}</strong>
-                    <span>{selectedServerSummary.operationalStatus.capabilities.length} capabilities</span>
-                  </article>
-                </section>
-              </details>
-              </>
             ) : (
             <section className="workspace-summary-strip" aria-label="World summary">
               <div>
@@ -9130,7 +9169,61 @@ function App() {
                 </>
               ) : null}
 
-              <section className="card-grid">
+              {selectedDashboardTab === 'players' ? (
+                <GameOpsShell className={`players-v2-shell players-v2-shell-${selectedServer.game}`}>
+                  <GameOpsPage className="players-v2-page" aria-label={`${selectedServerSummary.displayName} players`}>
+                    <GameOpsHero
+                      eyebrow={`${getGameLabel(selectedServer.game)} Players`}
+                      title="Who is playing?"
+                      body="Online players, recent activity, and source-backed attention items are grouped before deeper identity and telemetry evidence."
+                      status={<GameOpsStatusPill tone={selectedPlayerSurfaceSummary.attentionCount > 0 ? 'warning' : selectedPlayerSurfaceSummary.onlineNow > 0 ? 'healthy' : 'neutral'}>{selectedPlayerSurfaceSummary.attentionLabel}</GameOpsStatusPill>}
+                      primaryAction={(
+                        <GameOpsPrimaryAction
+                          onClick={() => {
+                            const firstOnlinePlayer = selectedPlayerObjectRows.find((row) => row.statusTone === 'online');
+                            const firstPlayer = firstOnlinePlayer ?? selectedPlayerObjectRows[0];
+                            firstPlayer?.onSelect();
+                          }}
+                        >
+                          Inspect Player
+                        </GameOpsPrimaryAction>
+                      )}
+                      metrics={[
+                        { label: 'Online now', value: selectedPlayerSurfaceSummary.onlineNow },
+                        { label: 'Recently active', value: selectedPlayerSurfaceSummary.recentlyActive },
+                        { label: 'Known players', value: selectedPlayerSurfaceSummary.knownPlayers },
+                        { label: 'Attention', value: selectedPlayerSurfaceSummary.attentionCount }
+                      ]}
+                    />
+
+                    <GameOpsSection
+                      eyebrow="Primary information"
+                      title="Player activity"
+                      description="Start with the current and recently active player set. Historical and raw details stay lower on the page."
+                    >
+                      <div className="players-v2-summary-grid">
+                        <GameOpsCard tone={selectedPlayerSurfaceSummary.onlineNow > 0 ? 'healthy' : 'neutral'}>
+                          <span className="gameops-eyebrow">Online now</span>
+                          <h4>{selectedPlayerSurfaceSummary.onlineNow} online</h4>
+                          <p>{selectedPlayerSurfaceSummary.onlineNow > 0 ? 'Current sessions are visible from loaded player data.' : 'No online players are visible in the current data.'}</p>
+                        </GameOpsCard>
+                        <GameOpsCard>
+                          <span className="gameops-eyebrow">Recently active</span>
+                          <h4>{selectedPlayerSurfaceSummary.recentlyActive} active</h4>
+                          <p>Recent activity is based on loaded server rhythm, sessions, or player profile summaries.</p>
+                        </GameOpsCard>
+                        <GameOpsCard tone={selectedPlayerSurfaceSummary.attentionCount > 0 ? 'warning' : 'neutral'}>
+                          <span className="gameops-eyebrow">Attention</span>
+                          <h4>{selectedPlayerSurfaceSummary.attentionLabel}</h4>
+                          <p>Only source-backed identity or link review states appear here.</p>
+                        </GameOpsCard>
+                      </div>
+                    </GameOpsSection>
+                  </GameOpsPage>
+                </GameOpsShell>
+              ) : null}
+
+              <section className={selectedDashboardTab === 'players' ? 'card-grid players-v2-content-grid' : 'card-grid'}>
                 {selectedServer.game === 'valheim' ? (
                   <>
                     {selectedDashboardTab === 'overview' ? (
