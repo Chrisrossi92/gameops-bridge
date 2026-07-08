@@ -94,6 +94,8 @@ import {
 } from '@gameops/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { resolveApiBaseUrl } from './api-base-url.ts';
+import overviewCosmicAtmosphere from './assets/gameops-v2/atmosphere/gameops-v2-atmosphere-overview-cosmic-21x9.avif';
+import serversObservatoryAtmosphere from './assets/gameops-v2/atmosphere/gameops-v2-atmosphere-servers-observatory-21x9.avif';
 import { EvidenceSurfaceSection, EvidenceSummaryCard } from './evidence-surface-section.tsx';
 import {
   GameOpsActivityList,
@@ -8219,7 +8221,10 @@ function App() {
                   designMode={gameOpsDesignMode}
                   label={activeTopLevelArea === 'servers' ? 'Servers atmosphere' : 'Overview atmosphere'}
                   themeClassName={activeTopLevelArea === 'servers' ? 'gameops-theme-servers' : 'gameops-theme-overview'}
-                  focalPoint={activeTopLevelArea === 'servers' ? '50% 54%' : '50% 48%'}
+                  imageSrc={activeTopLevelArea === 'servers' ? serversObservatoryAtmosphere : overviewCosmicAtmosphere}
+                  focalPoint={activeTopLevelArea === 'servers' ? '58% 52%' : '56% 48%'}
+                  crop="cover"
+                  overlayOpacity={activeTopLevelArea === 'servers' ? 0.62 : 0.62}
                 />
               )}
               status={<GameOpsStatusPill tone={fleetCounts.degraded > 0 ? 'warning' : fleetCounts.online > 0 ? 'healthy' : 'unknown'}>{fleetCounts.degraded > 0 ? `${fleetCounts.degraded} need attention` : `${fleetCounts.online} online`}</GameOpsStatusPill>}

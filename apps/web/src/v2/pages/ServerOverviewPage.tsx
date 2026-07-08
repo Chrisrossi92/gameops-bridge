@@ -11,6 +11,8 @@ import {
   type GameOpsActivityItem,
   type GameOpsAtmospherePreset
 } from '../../gameops-v2.tsx';
+import palworldFantasyAtmosphere from '../../assets/gameops-v2/atmosphere/gameops-v2-atmosphere-palworld-fantasy-forest-21x9.avif';
+import valheimNorthernAtmosphere from '../../assets/gameops-v2/atmosphere/gameops-v2-atmosphere-valheim-northern-forest-21x9.avif';
 import type { DashboardTab, ServerOption, ServerSummary } from '../types.ts';
 import { getGameLabel, getGameOpsToneFromServerState, getLatestActivityLabel } from '../utils.ts';
 
@@ -55,6 +57,42 @@ function getServerAtmospherePreset(game: ServerOption['game']): GameOpsAtmospher
   return 'vanilla';
 }
 
+function getServerAtmosphereImage(game: ServerOption['game']): string | undefined {
+  if (game === 'valheim') {
+    return valheimNorthernAtmosphere;
+  }
+
+  if (game === 'palworld') {
+    return palworldFantasyAtmosphere;
+  }
+
+  return undefined;
+}
+
+function getServerAtmosphereFocalPoint(game: ServerOption['game']): string {
+  if (game === 'valheim') {
+    return '58% 48%';
+  }
+
+  if (game === 'palworld') {
+    return '62% 48%';
+  }
+
+  return '50% 48%';
+}
+
+function getServerAtmosphereOverlayOpacity(game: ServerOption['game']): number | undefined {
+  if (game === 'valheim') {
+    return 0.64;
+  }
+
+  if (game === 'palworld') {
+    return 0.64;
+  }
+
+  return undefined;
+}
+
 export function ServerOverviewPage({
   selectedServer,
   selectedServerSummary,
@@ -88,7 +126,10 @@ export function ServerOverviewPage({
               designMode={designMode}
               label={`${selectedServerSummary.displayName} atmosphere`}
               themeClassName={`gameops-theme-${selectedServer.game}`}
-              focalPoint="50% 48%"
+              imageSrc={getServerAtmosphereImage(selectedServer.game)}
+              focalPoint={getServerAtmosphereFocalPoint(selectedServer.game)}
+              crop="cover"
+              overlayOpacity={getServerAtmosphereOverlayOpacity(selectedServer.game)}
             />
           )}
           status={<GameOpsStatusPill tone={getGameOpsToneFromServerState(selectedServerSummary.state)}>{selectedServerSummary.state}</GameOpsStatusPill>}
